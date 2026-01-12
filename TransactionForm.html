@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html dir="rtl">
+
+<head>
+  <base target="_top">
+  <!-- Tom Select CSS & JS -->
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 15px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      max-width: 500px;
+      margin: 0 auto;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #eee;
+    }
+
+    .header h2 {
+      margin: 0;
+      color: #333;
+      font-size: 20px;
+    }
+
+    .header .icon {
+      font-size: 32px;
+      margin-bottom: 6px;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+      flex: 1;
+    }
+
+    .form-group.half {
+      flex: 1;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #444;
+      font-size: 13px;
+    }
+
+    .form-group label .icon {
+      margin-left: 4px;
+    }
+
+    .form-group label .required {
+      color: #c62828;
+    }
+
+    select,
+    input[type="date"],
+    input[type="text"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: all 0.3s ease;
+      background: #fafafa;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    select:focus,
+    input:focus,
+    textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      background: white;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    select {
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: left 12px center;
+      padding-left: 30px;
+    }
+
+    .section-title {
+      background: #f5f5f5;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin: 16px 0 12px;
+      font-weight: 600;
+      color: #555;
+      font-size: 13px;
+    }
+
+    .date-section {
+      background: #f8f9ff;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 14px;
+      border: 1px solid #e8ebff;
+    }
+
+    .date-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .date-toggle button {
+      flex: 1;
+      padding: 8px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .date-toggle button.active {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+    }
+
+    .date-toggle button:hover:not(.active) {
+      border-color: #667eea;
+      background: #f0f3ff;
+    }
+
+    .custom-date {
+      display: none;
+    }
+
+    .custom-date.show {
+      display: block;
+    }
+
+    .payment-section {
+      background: #fff8e1;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 14px;
+      border: 1px solid #ffe082;
+    }
+
+    .payment-section.hidden {
+      display: none;
+    }
+
+    .conditional-field {
+      display: none;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed #ffe082;
+    }
+
+    .conditional-field.show {
+      display: block;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #f5f5f5;
+      color: #666;
+    }
+
+    .btn-secondary:hover {
+      background: #eee;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+
+    .loading .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .success {
+      text-align: center;
+      padding: 30px;
+    }
+
+    .success .icon {
+      font-size: 50px;
+      margin-bottom: 12px;
+    }
+
+    .success h3 {
+      color: #4caf50;
+      margin: 0 0 8px;
+    }
+
+    .error {
+      background: #ffebee;
+      color: #c62828;
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      display: none;
+      font-size: 13px;
+    }
+
+    .amount-section {
+      background: #e8f5e9;
+      border-radius: 10px;
+      padding: 12px;
+      border: 1px solid #a5d6a7;
+    }
+
+    /* Tom Select RTL & Custom Styling */
+    .ts-wrapper {
+      direction: rtl;
+    }
+
+    .ts-wrapper .ts-control {
+      padding: 8px 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fafafa;
+      min-height: 42px;
+    }
+
+    .ts-wrapper .ts-control:hover {
+      border-color: #667eea;
+    }
+
+    .ts-wrapper.focus .ts-control {
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      background: white;
+    }
+
+    .ts-wrapper .ts-dropdown {
+      border: 2px solid #667eea;
+      border-radius: 8px;
+      margin-top: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .ts-wrapper .ts-dropdown .option {
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+
+    .ts-wrapper .ts-dropdown .option:hover,
+    .ts-wrapper .ts-dropdown .option.active {
+      background: #667eea;
+      color: white;
+    }
+
+    .ts-wrapper .ts-dropdown .ts-dropdown-content {
+      max-height: 200px;
+    }
+
+    .ts-wrapper .ts-control input {
+      font-size: 14px;
+    }
+
+    .ts-wrapper .ts-control > .item {
+      background: transparent;
+      color: #333;
+    }
+
+    /* Placeholder styling */
+    .ts-wrapper .ts-control input::placeholder {
+      color: #999;
+    }
+
+    /* No results message */
+    .ts-wrapper .ts-dropdown .no-results {
+      padding: 10px 12px;
+      color: #999;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div id="loadingState" class="loading">
+      <div class="spinner"></div>
+      <p>جاري تحميل البيانات...</p>
+    </div>
+
+    <div id="formState" style="display: none;">
+      <div class="header">
+        <div class="icon">➕</div>
+        <h2>إضافة حركة جديدة</h2>
+      </div>
+
+      <div id="errorMsg" class="error"></div>
+
+      <form id="transactionForm">
+        <!-- اختيار المستخدم -->
+        <div class="form-group" style="background: #e3f2fd; padding: 12px; border-radius: 10px; border: 1px solid #90caf9; margin-bottom: 14px;">
+          <label><span class="icon">👤</span> المستخدم <span class="required">*</span></label>
+          <select id="currentUser" required>
+            <option value="">-- اختر اسمك --</option>
+          </select>
+        </div>
+
+        <!-- التاريخ -->
+        <div class="date-section">
+          <label><span class="icon">📅</span> التاريخ <span class="required">*</span></label>
+          <div class="date-toggle">
+            <button type="button" id="btnToday" class="active" onclick="setDateMode('today')">تاريخ اليوم</button>
+            <button type="button" id="btnCustom" onclick="setDateMode('custom')">تاريخ آخر</button>
+          </div>
+          <div id="customDateInput" class="custom-date">
+            <input type="date" id="dateInput" />
+          </div>
+          <input type="hidden" id="selectedDate" />
+        </div>
+
+        <!-- طبيعة الحركة + تصنيف الحركة -->
+        <div class="form-row">
+          <div class="form-group half">
+            <label><span class="icon">📋</span> طبيعة الحركة <span class="required">*</span></label>
+            <select id="natureType" required onchange="onNatureTypeChange()">
+              <option value="">-- اختر --</option>
+            </select>
+          </div>
+          <div class="form-group half">
+            <label><span class="icon">🏷️</span> تصنيف الحركة <span class="required">*</span></label>
+            <select id="classification" required onchange="onClassificationChange()">
+              <option value="">-- اختر --</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- المشروع -->
+        <div class="form-group" id="projectGroup">
+          <label><span class="icon">📁</span> المشروع <span id="projectRequired" class="required">*</span></label>
+          <select id="projectCode">
+            <option value="">-- اختر المشروع --</option>
+          </select>
+          <small id="projectHint" style="display: none; color: #666; font-size: 11px; margin-top: 4px;">
+            💡 اختياري للمصروفات العمومية
+          </small>
+        </div>
+
+        <!-- البند + الطرف -->
+        <div class="form-row">
+          <div class="form-group half">
+            <label><span class="icon">📄</span> البند <span class="required">*</span></label>
+            <select id="item" required>
+              <option value="">-- اختر --</option>
+            </select>
+          </div>
+          <div class="form-group half">
+            <label><span class="icon">👤</span> المورد/الجهة</label>
+            <select id="partyName">
+              <option value="">-- اختر --</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- التفاصيل -->
+        <div class="form-group">
+          <label><span class="icon">📝</span> التفاصيل</label>
+          <input type="text" id="details" placeholder="وصف مختصر للحركة" />
+        </div>
+
+        <!-- قسم المبلغ -->
+        <div class="section-title">💰 تفاصيل المبلغ</div>
+        <div class="amount-section">
+          <div class="form-row">
+            <div class="form-group half">
+              <label>المبلغ <span class="required">*</span></label>
+              <input type="number" id="amount" step="0.01" min="0" required placeholder="0.00" />
+            </div>
+            <div class="form-group half">
+              <label>العملة <span class="required">*</span></label>
+              <select id="currency" required onchange="onCurrencyChange()">
+                <option value="">-- اختر --</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" id="exchangeRateRow" style="display: none;">
+            <div class="form-group half">
+              <label>سعر الصرف</label>
+              <input type="number" id="exchangeRate" step="0.0001" min="0" placeholder="1.0000" />
+            </div>
+            <div class="form-group half">
+              <label>القيمة بالدولار</label>
+              <input type="text" id="amountUsd" readonly style="background: #e0e0e0;" />
+            </div>
+          </div>
+        </div>
+
+        <!-- طريقة الدفع + رقم مرجعي -->
+        <div class="section-title">💳 تفاصيل الدفع</div>
+        <div class="form-row">
+          <div class="form-group half">
+            <label><span class="icon">💳</span> طريقة الدفع <span class="required">*</span></label>
+            <select id="paymentMethod" required>
+              <option value="">-- اختر --</option>
+            </select>
+          </div>
+          <div class="form-group half">
+            <label><span class="icon">🔢</span> رقم مرجعي</label>
+            <input type="text" id="refNumber" placeholder="اختياري" />
+          </div>
+        </div>
+
+        <!-- قسم شروط الدفع (للاستحقاقات) -->
+        <div id="paymentSection" class="payment-section hidden">
+          <label><span class="icon">📆</span> شرط الدفع</label>
+          <select id="paymentTerm" onchange="onPaymentTermChange()">
+            <option value="">-- اختياري --</option>
+            <option value="فوري">فوري (تاريخ الحركة)</option>
+            <option value="بعد التسليم">بعد التسليم</option>
+            <option value="تاريخ مخصص">تاريخ مخصص</option>
+          </select>
+
+          <div id="weeksField" class="conditional-field">
+            <label>عدد الأسابيع بعد التسليم</label>
+            <input type="number" id="weeksCount" min="0" max="52" value="0" />
+          </div>
+
+          <div id="customDueDateField" class="conditional-field">
+            <label>تاريخ الاستحقاق المخصص</label>
+            <input type="date" id="customDueDate" />
+          </div>
+        </div>
+
+        <!-- ملاحظات -->
+        <div class="form-group">
+          <label><span class="icon">📋</span> ملاحظات</label>
+          <textarea id="notes" placeholder="ملاحظات إضافية (اختياري)"></textarea>
+        </div>
+
+        <div class="buttons">
+          <button type="submit" class="btn btn-primary">✅ إضافة الحركة</button>
+          <button type="button" class="btn btn-secondary" onclick="google.script.host.close()">❌ إلغاء</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="successState" class="success" style="display: none;">
+      <div class="icon">✅</div>
+      <h3 id="successTitle">تمت الإضافة بنجاح!</h3>
+      <p id="successMsg"></p>
+
+      <!-- قسم عرض JSON عند الفشل -->
+      <div id="jsonSection" style="display: none; text-align: right; margin: 16px 0;">
+        <p style="font-size: 12px; color: #666; margin-bottom: 8px;">
+          انسخ هذا النص واستخدم: القائمة ← إعدادات متقدمة ← إدخال حركة يدوياً
+        </p>
+        <textarea id="jsonData" readonly
+          style="width: 100%; height: 100px; font-size: 11px; direction: ltr; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 8px;"></textarea>
+        <button type="button" class="btn btn-secondary" onclick="copyJson()" style="margin-top: 8px; width: 100%;">📋
+          نسخ البيانات</button>
+      </div>
+
+      <div class="buttons" style="margin-top: 16px;">
+        <button id="btnSavePending" class="btn btn-primary" onclick="savePendingTransaction()" style="display: none;">💾
+          حفظ الحركة الآن</button>
+        <button class="btn btn-primary" onclick="resetForm()">➕ إضافة حركة أخرى</button>
+        <button class="btn btn-secondary" onclick="google.script.host.close()">إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let dropdownData = {};
+    let todayDate = '';
+    let lastFormData = null;  // لتخزين بيانات النموذج عند الفشل
+
+    // البيانات المُمررة من السيرفر باستخدام scriptlet
+    const FORM_DATA = <?!= JSON.stringify(formData) ?>;
+
+    // تحميل البيانات عند فتح النافذة
+    document.addEventListener('DOMContentLoaded', function () {
+      try {
+        // استخدام البيانات المُمررة مباشرة
+        if (FORM_DATA && typeof FORM_DATA === 'object') {
+          onDataLoaded(FORM_DATA);
+        } else {
+          throw new Error('لم يتم تحميل البيانات من السيرفر');
+        }
+      } catch (e) {
+        onError({ message: 'خطأ في تحميل النموذج: ' + e.message });
+      }
+    });
+
+    function onDataLoaded(data) {
+      dropdownData = data;
+      todayDate = data.today;
+
+      // تعبئة قائمة المستخدمين
+      populateUsersSelect(data.users);
+
+      // تعبئة القوائم المنسدلة
+      populateSelect('natureType', data.natureTypes);
+      populateSelect('classification', data.classifications);
+      populateSelect('item', data.items);
+      populateSelect('currency', data.currencies);
+      populateSelect('paymentMethod', data.paymentMethods);
+
+      // تعبئة المشاريع (كود + اسم)
+      populateProjectsSelect(data.projects);
+
+      // تعبئة الأطراف
+      populatePartiesSelect(data.parties);
+
+      // تعيين تاريخ اليوم
+      document.getElementById('selectedDate').value = todayDate;
+      document.getElementById('dateInput').value = formatDateForInput(todayDate);
+
+      // تعيين العملة الافتراضية
+      document.getElementById('currency').value = 'USD';
+
+      // إظهار النموذج
+      document.getElementById('loadingState').style.display = 'none';
+      document.getElementById('formState').style.display = 'block';
+
+      // تهيئة Tom Select للقوائم القابلة للبحث
+      initSearchableSelects();
+    }
+
+    // تعبئة قائمة المستخدمين
+    function populateUsersSelect(users) {
+      const select = document.getElementById('currentUser');
+      if (!users || users.length === 0) {
+        // إذا لا يوجد مستخدمين، اجعل الحقل غير مطلوب
+        select.required = false;
+        const option = document.createElement('option');
+        option.value = 'غير محدد';
+        option.textContent = 'غير محدد (لا يوجد مستخدمين مسجلين)';
+        select.appendChild(option);
+        select.value = 'غير محدد';
+        return;
+      }
+      users.forEach(function (user) {
+        const option = document.createElement('option');
+        option.value = user.email || user.name;  // استخدام الإيميل كقيمة أو الاسم
+        option.textContent = user.display;
+        option.setAttribute('data-name', user.name);
+        option.setAttribute('data-email', user.email || '');
+        select.appendChild(option);
+      });
+    }
+
+    function populateSelect(selectId, options) {
+      const select = document.getElementById(selectId);
+      if (!options) return;
+      options.forEach(function (opt) {
+        const option = document.createElement('option');
+        option.value = opt;
+        option.textContent = opt;
+        select.appendChild(option);
+      });
+    }
+
+    function populateProjectsSelect(projects) {
+      const select = document.getElementById('projectCode');
+      if (!projects) return;
+      projects.forEach(function (proj) {
+        const option = document.createElement('option');
+        option.value = proj.code;  // القيمة = الكود
+        option.textContent = proj.display;  // العرض = الاسم (الكود)
+        select.appendChild(option);
+      });
+    }
+
+    function populatePartiesSelect(parties) {
+      const select = document.getElementById('partyName');
+      if (!parties) return;
+      parties.forEach(function (party) {
+        const option = document.createElement('option');
+        option.value = party.name;
+        option.textContent = party.type ? `${party.name} (${party.type})` : party.name;
+        select.appendChild(option);
+      });
+    }
+
+    function setDateMode(mode) {
+      const btnToday = document.getElementById('btnToday');
+      const btnCustom = document.getElementById('btnCustom');
+      const customInput = document.getElementById('customDateInput');
+      const selectedDate = document.getElementById('selectedDate');
+
+      if (mode === 'today') {
+        btnToday.classList.add('active');
+        btnCustom.classList.remove('active');
+        customInput.classList.remove('show');
+        selectedDate.value = todayDate;
+      } else {
+        btnCustom.classList.add('active');
+        btnToday.classList.remove('active');
+        customInput.classList.add('show');
+        updateSelectedDate();
+      }
+    }
+
+    function updateSelectedDate() {
+      const dateInput = document.getElementById('dateInput');
+      const selectedDate = document.getElementById('selectedDate');
+      if (dateInput.value) {
+        const parts = dateInput.value.split('-');
+        selectedDate.value = parts[2] + '/' + parts[1] + '/' + parts[0];
+      }
+    }
+
+    function formatDateForInput(dateStr) {
+      const parts = dateStr.split('/');
+      return parts[2] + '-' + parts[1] + '-' + parts[0];
+    }
+
+    // عند تغيير طبيعة الحركة
+    function onNatureTypeChange() {
+      const natureType = document.getElementById('natureType').value;
+      const paymentSection = document.getElementById('paymentSection');
+
+      // إظهار قسم شروط الدفع فقط للاستحقاقات
+      if (natureType.includes('استحقاق')) {
+        paymentSection.classList.remove('hidden');
+      } else {
+        paymentSection.classList.add('hidden');
+        document.getElementById('paymentTerm').value = '';
+        document.getElementById('weeksField').classList.remove('show');
+        document.getElementById('customDueDateField').classList.remove('show');
+      }
+    }
+
+    // عند تغيير تصنيف الحركة - للتحكم في إلزامية المشروع
+    function onClassificationChange() {
+      const classification = document.getElementById('classification').value;
+      const projectSelect = document.getElementById('projectCode');
+      const projectRequired = document.getElementById('projectRequired');
+      const projectHint = document.getElementById('projectHint');
+
+      // إذا كان التصنيف "مصروفات عمومية" يكون المشروع اختياري
+      if (classification === 'مصروفات عمومية') {
+        projectSelect.required = false;
+        projectRequired.style.display = 'none';
+        projectHint.style.display = 'block';
+      } else {
+        projectSelect.required = true;
+        projectRequired.style.display = 'inline';
+        projectHint.style.display = 'none';
+      }
+    }
+
+    // عند تغيير العملة
+    function onCurrencyChange() {
+      const currency = document.getElementById('currency').value;
+      const exchangeRateRow = document.getElementById('exchangeRateRow');
+
+      if (currency && currency !== 'USD') {
+        exchangeRateRow.style.display = 'flex';
+        document.getElementById('exchangeRate').value = '';
+        document.getElementById('amountUsd').value = '';
+      } else {
+        exchangeRateRow.style.display = 'none';
+      }
+      calculateAmountUsd();
+    }
+
+    // حساب القيمة بالدولار
+    function calculateAmountUsd() {
+      const amount = parseFloat(document.getElementById('amount').value) || 0;
+      const currency = document.getElementById('currency').value;
+      const exchangeRate = parseFloat(document.getElementById('exchangeRate').value) || 1;
+
+      if (currency === 'USD') {
+        document.getElementById('amountUsd').value = amount.toFixed(2);
+      } else if (exchangeRate > 0) {
+        const usd = amount / exchangeRate;
+        document.getElementById('amountUsd').value = usd.toFixed(2);
+      }
+    }
+
+    document.getElementById('amount').addEventListener('input', calculateAmountUsd);
+    document.getElementById('exchangeRate').addEventListener('input', calculateAmountUsd);
+
+    // عند تغيير شرط الدفع
+    function onPaymentTermChange() {
+      const paymentTerm = document.getElementById('paymentTerm').value;
+      const weeksField = document.getElementById('weeksField');
+      const customDueDateField = document.getElementById('customDueDateField');
+
+      weeksField.classList.remove('show');
+      customDueDateField.classList.remove('show');
+
+      if (paymentTerm === 'بعد التسليم') {
+        weeksField.classList.add('show');
+      } else if (paymentTerm === 'تاريخ مخصص') {
+        customDueDateField.classList.add('show');
+      }
+    }
+
+    document.getElementById('dateInput').addEventListener('change', updateSelectedDate);
+
+    // إرسال النموذج
+    document.getElementById('transactionForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      // الحصول على بيانات المستخدم المحدد
+      const userSelect = document.getElementById('currentUser');
+      const selectedOption = userSelect.options[userSelect.selectedIndex];
+      const userName = selectedOption ? selectedOption.getAttribute('data-name') || selectedOption.text : '';
+      const userEmail = selectedOption ? selectedOption.getAttribute('data-email') || userSelect.value : '';
+
+      const formData = {
+        date: document.getElementById('selectedDate').value,
+        natureType: document.getElementById('natureType').value,
+        classification: document.getElementById('classification').value,
+        projectCode: document.getElementById('projectCode').value,
+        item: document.getElementById('item').value,
+        partyName: document.getElementById('partyName').value,
+        details: document.getElementById('details').value,
+        amount: document.getElementById('amount').value,
+        currency: document.getElementById('currency').value,
+        exchangeRate: document.getElementById('exchangeRate').value || '1',
+        paymentMethod: document.getElementById('paymentMethod').value,
+        refNumber: document.getElementById('refNumber').value,
+        paymentTerm: document.getElementById('paymentTerm').value,
+        weeksCount: document.getElementById('weeksCount').value,
+        customDueDate: formatCustomDueDate(),
+        notes: document.getElementById('notes').value,
+        submittedBy: userName,          // اسم المستخدم الذي أدخل الحركة
+        submittedByEmail: userEmail     // إيميل المستخدم
+      };
+
+      // التحقق من الحقول المطلوبة
+      const isGeneralExpense = formData.classification === 'مصروفات عمومية';
+
+      // التحقق من المستخدم
+      if (!userSelect.value && userSelect.required) {
+        showError('يرجى اختيار اسم المستخدم');
+        return;
+      }
+
+      // التحقق من باقي الحقول (المشروع اختياري للمصروفات العمومية)
+      if (!formData.date || !formData.natureType || !formData.classification ||
+        (!isGeneralExpense && !formData.projectCode) || !formData.item || !formData.amount ||
+        !formData.currency || !formData.paymentMethod) {
+        showError('يرجى ملء جميع الحقول المطلوبة');
+        return;
+      }
+
+      // التحقق من سعر الصرف للعملات غير الدولار
+      if (formData.currency !== 'USD' && (!formData.exchangeRate || formData.exchangeRate === '1')) {
+        showError('يرجى إدخال سعر الصرف للعملة المحددة');
+        return;
+      }
+
+      // حفظ البيانات لاستخدامها لاحقاً
+      lastFormData = formData;
+
+      // إظهار حالة التحميل
+      document.getElementById('formState').style.display = 'none';
+      document.getElementById('loadingState').style.display = 'block';
+      document.querySelector('#loadingState p').textContent = 'جاري حفظ الحركة...';
+
+      // محاولة الإرسال المباشر أولاً
+      google.script.run
+        .withSuccessHandler(onSubmitSuccess)
+        .withFailureHandler(function (err) {
+          // فشل الإرسال المباشر - نحاول التخزين المؤقت
+          document.querySelector('#loadingState p').textContent = 'جاري حفظ البيانات مؤقتاً...';
+
+          const jsonData = JSON.stringify(formData);
+          google.script.run
+            .withSuccessHandler(function () {
+              // تم التخزين المؤقت - عرض رسالة
+              document.getElementById('loadingState').style.display = 'none';
+              document.getElementById('successState').style.display = 'block';
+              document.getElementById('successTitle').textContent = '⚠️ تم حفظ البيانات مؤقتاً';
+              document.getElementById('successMsg').textContent =
+                'اضغط "حفظ الحركة الآن" أو من القائمة: إعدادات متقدمة ← حفظ الحركة المعلقة';
+              document.getElementById('btnSavePending').style.display = 'block';
+            })
+            .withFailureHandler(function (err2) {
+              // فشل كل شيء - نعرض JSON
+              document.getElementById('loadingState').style.display = 'none';
+              document.getElementById('successState').style.display = 'block';
+              showJsonFallback('فشل الحفظ: ' + (err2.message || err.message));
+            })
+            .cacheTempFormData(jsonData);
+        })
+        .saveTransactionData(formData);
+    });
+
+    function formatCustomDueDate() {
+      const dateInput = document.getElementById('customDueDate');
+      if (dateInput.value) {
+        const parts = dateInput.value.split('-');
+        return parts[2] + '/' + parts[1] + '/' + parts[0];
+      }
+      return '';
+    }
+
+    function onSubmitSuccess(result) {
+      document.getElementById('loadingState').style.display = 'none';
+      document.getElementById('successState').style.display = 'block';
+      document.getElementById('successMsg').textContent =
+        'تم إضافة الحركة رقم ' + result.transNum + '\n' + result.summary;
+    }
+
+    function showError(msg) {
+      const errorDiv = document.getElementById('errorMsg');
+      errorDiv.textContent = msg;
+      errorDiv.style.display = 'block';
+      setTimeout(function () {
+        errorDiv.style.display = 'none';
+      }, 5000);
+    }
+
+    function onError(error) {
+      document.getElementById('loadingState').style.display = 'none';
+      document.getElementById('formState').style.display = 'block';
+      showError('حدث خطأ: ' + error.message);
+    }
+
+    function resetForm() {
+      document.getElementById('successState').style.display = 'none';
+      document.getElementById('formState').style.display = 'block';
+      document.getElementById('transactionForm').reset();
+      setDateMode('today');
+      document.getElementById('currency').value = 'USD';
+      document.getElementById('exchangeRateRow').style.display = 'none';
+      document.getElementById('paymentSection').classList.add('hidden');
+      document.getElementById('weeksField').classList.remove('show');
+      document.getElementById('customDueDateField').classList.remove('show');
+      // إعادة إخفاء قسم JSON وزر الحفظ
+      document.getElementById('btnSavePending').style.display = 'none';
+      document.getElementById('jsonSection').style.display = 'none';
+      document.getElementById('successTitle').textContent = 'تمت الإضافة بنجاح!';
+      lastFormData = null;
+      // إعادة تعيين Tom Select
+      resetTomSelects();
+    }
+
+    // دالة حفظ الحركة المعلقة
+    function savePendingTransaction() {
+      document.getElementById('successState').style.display = 'none';
+      document.getElementById('loadingState').style.display = 'block';
+      document.querySelector('#loadingState p').textContent = 'جاري حفظ الحركة...';
+
+      google.script.run
+        .withSuccessHandler(function () {
+          // إغلاق النافذة بعد النجاح
+          google.script.host.close();
+        })
+        .withFailureHandler(function (err) {
+          document.getElementById('loadingState').style.display = 'none';
+          document.getElementById('successState').style.display = 'block';
+          showJsonFallback('❌ فشل الحفظ: ' + err.message);
+        })
+        .processPendingTransaction();
+    }
+
+    // عرض JSON كحل احتياطي
+    function showJsonFallback(errorMsg) {
+      document.getElementById('successTitle').textContent = '⚠️ فشل الحفظ التلقائي';
+      document.getElementById('successMsg').textContent = errorMsg;
+      document.getElementById('jsonSection').style.display = 'block';
+      document.getElementById('btnSavePending').style.display = 'block';
+
+      if (lastFormData) {
+        document.getElementById('jsonData').value = JSON.stringify(lastFormData, null, 2);
+      }
+    }
+
+    // نسخ JSON للحافظة
+    function copyJson() {
+      const jsonTextarea = document.getElementById('jsonData');
+      jsonTextarea.select();
+      document.execCommand('copy');
+
+      // تأكيد النسخ
+      const btn = event.target;
+      const originalText = btn.textContent;
+      btn.textContent = '✅ تم النسخ!';
+      setTimeout(function () {
+        btn.textContent = originalText;
+      }, 2000);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Tom Select - القوائم القابلة للبحث
+    // ═══════════════════════════════════════════════════════════════
+
+    // متغيرات لحفظ instances من Tom Select
+    let tomSelectInstances = {};
+
+    // تهيئة Tom Select على القوائم المطلوبة
+    function initSearchableSelects() {
+      // إعدادات مشتركة
+      const commonSettings = {
+        placeholder: 'ابحث أو اختر...',
+        allowEmptyOption: true,
+        create: false,
+        maxOptions: 100,
+        render: {
+          no_results: function(data, escape) {
+            return '<div class="no-results">لا توجد نتائج لـ "' + escape(data.input) + '"</div>';
+          }
+        }
+      };
+
+      // 1. قائمة المستخدمين
+      if (document.getElementById('currentUser')) {
+        tomSelectInstances.currentUser = new TomSelect('#currentUser', {
+          ...commonSettings,
+          placeholder: 'ابحث عن اسمك...'
+        });
+      }
+
+      // 2. قائمة المشاريع
+      if (document.getElementById('projectCode')) {
+        tomSelectInstances.projectCode = new TomSelect('#projectCode', {
+          ...commonSettings,
+          placeholder: 'ابحث عن المشروع...'
+        });
+      }
+
+      // 3. قائمة البنود
+      if (document.getElementById('item')) {
+        tomSelectInstances.item = new TomSelect('#item', {
+          ...commonSettings,
+          placeholder: 'ابحث عن البند...'
+        });
+      }
+
+      // 4. قائمة الأطراف (الموردين/الجهات)
+      if (document.getElementById('partyName')) {
+        tomSelectInstances.partyName = new TomSelect('#partyName', {
+          ...commonSettings,
+          placeholder: 'ابحث عن المورد/الجهة...'
+        });
+      }
+    }
+
+    // دالة لإعادة تعيين Tom Select عند reset النموذج
+    function resetTomSelects() {
+      for (const key in tomSelectInstances) {
+        if (tomSelectInstances[key]) {
+          tomSelectInstances[key].clear();
+        }
+      }
+    }
+  </script>
+</body>
+
+</html>

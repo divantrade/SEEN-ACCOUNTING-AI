@@ -1,0 +1,770 @@
+// ==================== إنشاء وإدارة شيتات البوت ====================
+/**
+ * ملف إنشاء وإدارة شيتات بوت تليجرام
+ * يحتوي على دوال إنشاء الشيتات الثلاثة الجديدة
+ */
+
+/**
+ * إنشاء جميع شيتات البوت
+ * يتم استدعاؤها من القائمة الرئيسية
+ */
+function setupBotSheets() {
+    const ui = SpreadsheetApp.getUi();
+
+    const result = ui.alert(
+        '🤖 إعداد شيتات بوت تليجرام',
+        'سيتم إنشاء الشيتات التالية:\n\n' +
+        '1. حركات البوت (للحركات المعلقة)\n' +
+        '2. أطراف البوت (للأطراف الجديدة المعلقة)\n' +
+        '3. المستخدمين المصرح لهم\n\n' +
+        'هل تريد المتابعة؟',
+        ui.ButtonSet.YES_NO
+    );
+
+    if (result !== ui.Button.YES) {
+        return;
+    }
+
+    try {
+        // إنشاء الشيتات
+        createBotTransactionsSheet();
+        createBotPartiesSheet();
+        createBotUsersSheet();
+
+        ui.alert(
+            '✅ تم بنجاح',
+            'تم إنشاء جميع شيتات البوت بنجاح!\n\n' +
+            'الخطوة التالية: قم بإعداد بوت تليجرام وإضافة أرقام الهواتف المصرح لها.',
+            ui.ButtonSet.OK
+        );
+
+    } catch (error) {
+        ui.alert('❌ خطأ', 'حدث خطأ: ' + error.message, ui.ButtonSet.OK);
+        Logger.log('Error in setupBotSheets: ' + error.message);
+    }
+}
+
+/**
+ * إنشاء شيت حركات البوت
+ */
+function createBotTransactionsSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = CONFIG.SHEETS.BOT_TRANSACTIONS;
+
+    // التحقق من وجود الشيت
+    let sheet = ss.getSheetByName(sheetName);
+    if (sheet) {
+        Logger.log('Sheet already exists: ' + sheetName);
+        return sheet;
+    }
+
+    // إنشاء شيت جديد
+    sheet = ss.insertSheet(sheetName);
+
+    // الأعمدة من BOT_CONFIG
+    const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
+    const headers = [];
+    const widths = [];
+
+    // جمع العناوين والعروض
+    Object.values(columns).forEach(col => {
+        headers[col.index - 1] = col.name;
+        widths[col.index - 1] = col.width;
+    });
+
+    // إضافة صف العناوين
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setValues([headers]);
+
+    // تنسيق الهيدر
+    headerRange
+        .setBackground(CONFIG.COLORS.BOT.HEADER)
+        .setFontColor(CONFIG.COLORS.TEXT.WHITE)
+        .setFontWeight('bold')
+        .setFontSize(CONFIG.FONT.NORMAL)
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle')
+        .setWrap(true);
+
+    // تعيين عرض الأعمدة
+    widths.forEach((width, index) => {
+        sheet.setColumnWidth(index + 1, width);
+    });
+
+    // تجميد الصف الأول
+    sheet.setFrozenRows(1);
+
+    // إضافة Data Validation لحالة المراجعة
+    const reviewStatusCol = columns.REVIEW_STATUS.index;
+    const reviewStatusRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList([
+            CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING,
+            CONFIG.TELEGRAM_BOT.REVIEW_STATUS.APPROVED,
+            CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED,
+            CONFIG.TELEGRAM_BOT.REVIEW_STATUS.NEEDS_EDIT
+        ])
+        .setAllowInvalid(false)
+        .build();
+
+    sheet.getRange(2, reviewStatusCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setDataValidation(reviewStatusRule);
+
+    // إضافة التنسيق الشرطي لحالة المراجعة
+    applyBotReviewConditionalFormatting(sheet, reviewStatusCol);
+
+    // إضافة Data Validation لطبيعة الحركة
+    const natureCol = columns.NATURE.index;
+    const natureRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(CONFIG.TELEGRAM_BOT.ALLOWED_TRANSACTION_TYPES)
+        .setAllowInvalid(false)
+        .build();
+
+    sheet.getRange(2, natureCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setDataValidation(natureRule);
+
+    // إضافة Data Validation للعملة
+    const currencyCol = columns.CURRENCY.index;
+    const currencyRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(CONFIG.CURRENCIES.LIST)
+        .setAllowInvalid(false)
+        .build();
+
+    sheet.getRange(2, currencyCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setDataValidation(currencyRule);
+
+    // تنسيق أعمدة التاريخ
+    sheet.getRange(2, columns.DATE.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat('dd/mm/yyyy');
+    sheet.getRange(2, columns.INPUT_TIMESTAMP.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat('dd/mm/yyyy hh:mm:ss');
+    sheet.getRange(2, columns.REVIEW_TIMESTAMP.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat('dd/mm/yyyy hh:mm:ss');
+
+    // تنسيق أعمدة الأرقام
+    sheet.getRange(2, columns.AMOUNT.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat(CONFIG.FORMATS.CURRENCY);
+    sheet.getRange(2, columns.AMOUNT_USD.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat(CONFIG.FORMATS.CURRENCY);
+    sheet.getRange(2, columns.EXCHANGE_RATE.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat(CONFIG.FORMATS.RATE);
+
+    // تحديد لون التبويب
+    sheet.setTabColor(CONFIG.COLORS.BOT.HEADER);
+
+    Logger.log('Created sheet: ' + sheetName);
+    return sheet;
+}
+
+/**
+ * إنشاء شيت أطراف البوت
+ */
+function createBotPartiesSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = CONFIG.SHEETS.BOT_PARTIES;
+
+    // التحقق من وجود الشيت
+    let sheet = ss.getSheetByName(sheetName);
+    if (sheet) {
+        Logger.log('Sheet already exists: ' + sheetName);
+        return sheet;
+    }
+
+    // إنشاء شيت جديد
+    sheet = ss.insertSheet(sheetName);
+
+    // الأعمدة من BOT_CONFIG
+    const columns = BOT_CONFIG.BOT_PARTIES_COLUMNS;
+    const headers = [];
+    const widths = [];
+
+    // جمع العناوين والعروض
+    Object.values(columns).forEach(col => {
+        headers[col.index - 1] = col.name;
+        widths[col.index - 1] = col.width;
+    });
+
+    // إضافة صف العناوين
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setValues([headers]);
+
+    // تنسيق الهيدر
+    headerRange
+        .setBackground(CONFIG.COLORS.HEADER.PARTIES)
+        .setFontColor(CONFIG.COLORS.TEXT.WHITE)
+        .setFontWeight('bold')
+        .setFontSize(CONFIG.FONT.NORMAL)
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle')
+        .setWrap(true);
+
+    // تعيين عرض الأعمدة
+    widths.forEach((width, index) => {
+        sheet.setColumnWidth(index + 1, width);
+    });
+
+    // تجميد الصف الأول
+    sheet.setFrozenRows(1);
+
+    // إضافة Data Validation لنوع الطرف
+    const partyTypeCol = columns.PARTY_TYPE.index;
+    const partyTypeRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(CONFIG.PARTY_TYPES.LIST)
+        .setAllowInvalid(false)
+        .build();
+
+    sheet.getRange(2, partyTypeCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setDataValidation(partyTypeRule);
+
+    // إضافة Data Validation لحالة المراجعة
+    const reviewStatusCol = columns.REVIEW_STATUS.index;
+    const reviewStatusRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList([
+            CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING,
+            CONFIG.TELEGRAM_BOT.REVIEW_STATUS.APPROVED,
+            CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED
+        ])
+        .setAllowInvalid(false)
+        .build();
+
+    sheet.getRange(2, reviewStatusCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setDataValidation(reviewStatusRule);
+
+    // إضافة التنسيق الشرطي
+    applyBotReviewConditionalFormatting(sheet, reviewStatusCol);
+
+    // تنسيق أعمدة التاريخ
+    sheet.getRange(2, columns.INPUT_TIMESTAMP.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat('dd/mm/yyyy hh:mm:ss');
+    sheet.getRange(2, columns.REVIEW_TIMESTAMP.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat('dd/mm/yyyy hh:mm:ss');
+
+    // تحديد لون التبويب
+    sheet.setTabColor(CONFIG.COLORS.HEADER.PARTIES);
+
+    Logger.log('Created sheet: ' + sheetName);
+    return sheet;
+}
+
+/**
+ * إنشاء شيت المستخدمين المصرح لهم
+ */
+function createBotUsersSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = CONFIG.SHEETS.BOT_USERS;
+
+    // التحقق من وجود الشيت
+    let sheet = ss.getSheetByName(sheetName);
+    if (sheet) {
+        Logger.log('Sheet already exists: ' + sheetName);
+        return sheet;
+    }
+
+    // إنشاء شيت جديد
+    sheet = ss.insertSheet(sheetName);
+
+    // الأعمدة من BOT_CONFIG
+    const columns = BOT_CONFIG.BOT_USERS_COLUMNS;
+    const headers = [];
+    const widths = [];
+
+    // جمع العناوين والعروض
+    Object.values(columns).forEach(col => {
+        headers[col.index - 1] = col.name;
+        widths[col.index - 1] = col.width;
+    });
+
+    // إضافة صف العناوين
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setValues([headers]);
+
+    // تنسيق الهيدر
+    headerRange
+        .setBackground('#7b1fa2') // بنفسجي للمستخدمين
+        .setFontColor(CONFIG.COLORS.TEXT.WHITE)
+        .setFontWeight('bold')
+        .setFontSize(CONFIG.FONT.NORMAL)
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle')
+        .setWrap(true);
+
+    // تعيين عرض الأعمدة
+    widths.forEach((width, index) => {
+        sheet.setColumnWidth(index + 1, width);
+    });
+
+    // تجميد الصف الأول
+    sheet.setFrozenRows(1);
+
+    // إضافة Data Validation لنوع المستخدم
+    const userTypeCol = columns.USER_TYPE.index;
+    const userTypeRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList([
+            BOT_CONFIG.USER_TYPES.BOT,
+            BOT_CONFIG.USER_TYPES.SHEET,
+            BOT_CONFIG.USER_TYPES.BOTH
+        ])
+        .setAllowInvalid(false)
+        .build();
+
+    sheet.getRange(2, userTypeCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setDataValidation(userTypeRule);
+
+    // إضافة Data Validation للصلاحية
+    const permissionCol = columns.PERMISSION.index;
+    const permissionRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList([
+            CONFIG.TELEGRAM_BOT.USER_PERMISSIONS.INPUT,
+            CONFIG.TELEGRAM_BOT.USER_PERMISSIONS.REVIEW,
+            CONFIG.TELEGRAM_BOT.USER_PERMISSIONS.BOTH
+        ])
+        .setAllowInvalid(false)
+        .build();
+
+    sheet.getRange(2, permissionCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setDataValidation(permissionRule);
+
+    // إضافة Data Validation لحالة النشاط
+    const activeCol = columns.IS_ACTIVE.index;
+    const activeRule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(['نعم', 'لا'])
+        .setAllowInvalid(false)
+        .build();
+
+    sheet.getRange(2, activeCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setDataValidation(activeRule);
+
+    // تنسيق أعمدة التاريخ
+    sheet.getRange(2, columns.ADDED_DATE.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat('dd/mm/yyyy');
+
+    // تحديد لون التبويب
+    sheet.setTabColor('#7b1fa2');
+
+    // إضافة تنسيق شرطي للحالة
+    const activeRange = sheet.getRange(2, activeCol, CONFIG.SHEET.DEFAULT_ROWS, 1);
+
+    // أخضر للنشط
+    const activeFormatRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('نعم')
+        .setBackground('#c8e6c9')
+        .setRanges([activeRange])
+        .build();
+
+    // أحمر لغير النشط
+    const inactiveFormatRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo('لا')
+        .setBackground('#ffcdd2')
+        .setRanges([activeRange])
+        .build();
+
+    sheet.setConditionalFormatRules([activeFormatRule, inactiveFormatRule]);
+
+    Logger.log('Created sheet: ' + sheetName);
+    return sheet;
+}
+
+/**
+ * تطبيق التنسيق الشرطي لحالة المراجعة
+ */
+function applyBotReviewConditionalFormatting(sheet, reviewStatusCol) {
+    const range = sheet.getRange(2, 1, CONFIG.SHEET.DEFAULT_ROWS, sheet.getMaxColumns());
+
+    const rules = [];
+
+    // قيد الانتظار - برتقالي
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=$' + columnToLetter(reviewStatusCol) + '2="' + CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING + '"')
+        .setBackground(CONFIG.COLORS.BOT.PENDING)
+        .setRanges([range])
+        .build());
+
+    // معتمد - أخضر
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=$' + columnToLetter(reviewStatusCol) + '2="' + CONFIG.TELEGRAM_BOT.REVIEW_STATUS.APPROVED + '"')
+        .setBackground(CONFIG.COLORS.BOT.APPROVED)
+        .setRanges([range])
+        .build());
+
+    // مرفوض - أحمر
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=$' + columnToLetter(reviewStatusCol) + '2="' + CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED + '"')
+        .setBackground(CONFIG.COLORS.BOT.REJECTED)
+        .setRanges([range])
+        .build());
+
+    // يحتاج تعديل - أصفر
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=$' + columnToLetter(reviewStatusCol) + '2="' + CONFIG.TELEGRAM_BOT.REVIEW_STATUS.NEEDS_EDIT + '"')
+        .setBackground(CONFIG.COLORS.BOT.NEEDS_EDIT)
+        .setRanges([range])
+        .build());
+
+    sheet.setConditionalFormatRules(rules);
+}
+
+/**
+ * تحويل رقم العمود لحرف
+ */
+function columnToLetter(column) {
+    let temp, letter = '';
+    while (column > 0) {
+        temp = (column - 1) % 26;
+        letter = String.fromCharCode(temp + 65) + letter;
+        column = (column - temp - 1) / 26;
+    }
+    return letter;
+}
+
+// ==================== دوال مساعدة للشيتات ====================
+
+/**
+ * الحصول على شيت حركات البوت
+ */
+function getBotTransactionsSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
+
+    if (!sheet) {
+        sheet = createBotTransactionsSheet();
+    }
+
+    return sheet;
+}
+
+/**
+ * الحصول على شيت أطراف البوت
+ */
+function getBotPartiesSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_PARTIES);
+
+    if (!sheet) {
+        sheet = createBotPartiesSheet();
+    }
+
+    return sheet;
+}
+
+/**
+ * الحصول على شيت المستخدمين المصرح لهم
+ */
+function getBotUsersSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_USERS);
+
+    if (!sheet) {
+        sheet = createBotUsersSheet();
+    }
+
+    return sheet;
+}
+
+/**
+ * إضافة حركة جديدة لشيت حركات البوت
+ */
+function addBotTransaction(transactionData) {
+    const sheet = getBotTransactionsSheet();
+    const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
+
+    // إيجاد آخر صف
+    const lastRow = sheet.getLastRow();
+    const newRow = lastRow + 1;
+
+    // تحديد رقم الحركة
+    const transactionId = 'BOT-' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyyMMdd-HHmmss');
+
+    // إعداد البيانات
+    const rowData = new Array(Object.keys(columns).length).fill('');
+
+    rowData[columns.TRANSACTION_ID.index - 1] = transactionId;
+    rowData[columns.DATE.index - 1] = transactionData.date || new Date();
+    rowData[columns.NATURE.index - 1] = transactionData.nature;
+    rowData[columns.CLASSIFICATION.index - 1] = transactionData.classification || '';
+    rowData[columns.PROJECT_CODE.index - 1] = transactionData.projectCode || '';
+    rowData[columns.PROJECT_NAME.index - 1] = transactionData.projectName || '';
+    rowData[columns.ITEM.index - 1] = transactionData.item || '';
+    rowData[columns.DETAILS.index - 1] = transactionData.details || '';
+    rowData[columns.PARTY_NAME.index - 1] = transactionData.partyName || '';
+    rowData[columns.AMOUNT.index - 1] = transactionData.amount || 0;
+    rowData[columns.CURRENCY.index - 1] = transactionData.currency || 'USD';
+    rowData[columns.EXCHANGE_RATE.index - 1] = transactionData.exchangeRate || 1;
+
+    // حساب القيمة بالدولار
+    const amountUSD = transactionData.currency === 'USD' || transactionData.currency === 'دولار'
+        ? transactionData.amount
+        : transactionData.amount / (transactionData.exchangeRate || 1);
+    rowData[columns.AMOUNT_USD.index - 1] = amountUSD;
+
+    // تحديد نوع الحركة
+    const movementType = getMovementType(transactionData.nature);
+    rowData[columns.MOVEMENT_TYPE.index - 1] = movementType;
+
+    rowData[columns.PAYMENT_METHOD.index - 1] = transactionData.paymentMethod || '';
+    rowData[columns.PAYMENT_TERM_TYPE.index - 1] = transactionData.paymentTermType || 'فوري';
+    rowData[columns.WEEKS.index - 1] = transactionData.weeks || 0;
+    rowData[columns.CUSTOM_DATE.index - 1] = transactionData.customDate || '';
+
+    // أعمدة البوت
+    rowData[columns.REVIEW_STATUS.index - 1] = CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING;
+    rowData[columns.TELEGRAM_USER.index - 1] = transactionData.telegramUser || '';
+    rowData[columns.TELEGRAM_CHAT_ID.index - 1] = transactionData.chatId || '';
+    rowData[columns.INPUT_TIMESTAMP.index - 1] = new Date();
+    rowData[columns.ATTACHMENT_URL.index - 1] = transactionData.attachmentUrl || '';
+    rowData[columns.IS_NEW_PARTY.index - 1] = transactionData.isNewParty ? 'نعم' : 'لا';
+
+    // إضافة الصف
+    sheet.getRange(newRow, 1, 1, rowData.length).setValues([rowData]);
+
+    return {
+        success: true,
+        transactionId: transactionId,
+        rowNumber: newRow
+    };
+}
+
+/**
+ * تحديد نوع الحركة من طبيعتها
+ */
+function getMovementType(nature) {
+    if (nature.includes('استحقاق')) {
+        return CONFIG.MOVEMENT.DEBIT;
+    } else if (nature.includes('دفعة') || nature.includes('تحصيل')) {
+        return CONFIG.MOVEMENT.CREDIT;
+    }
+    return '';
+}
+
+/**
+ * إضافة طرف جديد لشيت أطراف البوت
+ */
+function addBotParty(partyData) {
+    const sheet = getBotPartiesSheet();
+    const columns = BOT_CONFIG.BOT_PARTIES_COLUMNS;
+
+    const lastRow = sheet.getLastRow();
+    const newRow = lastRow + 1;
+
+    const rowData = new Array(Object.keys(columns).length).fill('');
+
+    rowData[columns.PARTY_NAME.index - 1] = partyData.name;
+    rowData[columns.PARTY_TYPE.index - 1] = partyData.type;
+    rowData[columns.REVIEW_STATUS.index - 1] = CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING;
+    rowData[columns.TELEGRAM_USER.index - 1] = partyData.telegramUser || '';
+    rowData[columns.TELEGRAM_CHAT_ID.index - 1] = partyData.chatId || '';
+    rowData[columns.INPUT_TIMESTAMP.index - 1] = new Date();
+    rowData[columns.LINKED_TRANSACTIONS.index - 1] = partyData.linkedTransactionId || '';
+
+    sheet.getRange(newRow, 1, 1, rowData.length).setValues([rowData]);
+
+    return {
+        success: true,
+        rowNumber: newRow
+    };
+}
+
+/**
+ * التحقق من صلاحية المستخدم
+ * يبحث بالهاتف أو اسم المستخدم أو معرّف المحادثة
+ */
+function checkUserAuthorization(phoneNumber, chatId, username) {
+    const sheet = getBotUsersSheet();
+    const columns = BOT_CONFIG.BOT_USERS_COLUMNS;
+
+    const data = sheet.getDataRange().getValues();
+
+    // تنظيف المدخلات
+    const inputPhone = phoneNumber ? String(phoneNumber).replace(/\D/g, '') : '';
+    const inputUsername = username ? String(username).toLowerCase().replace('@', '') : '';
+    const inputChatId = chatId ? String(chatId) : '';
+
+    Logger.log('Authorization check - Phone: ' + inputPhone + ', Username: ' + inputUsername + ', ChatId: ' + inputChatId);
+
+    for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+
+        // قراءة البيانات من الشيت
+        const sheetPhone = String(row[columns.PHONE.index - 1] || '').replace(/\D/g, '');
+        const sheetUsername = String(row[columns.TELEGRAM_USERNAME.index - 1] || '').toLowerCase().replace('@', '');
+        const sheetChatId = String(row[columns.TELEGRAM_CHAT_ID.index - 1] || '');
+        const isActive = row[columns.IS_ACTIVE.index - 1];
+        const userType = row[columns.USER_TYPE.index - 1] || '';
+
+        Logger.log('Row ' + (i + 1) + ' - Sheet Phone: ' + sheetPhone + ', Sheet Username: ' + sheetUsername + ', Active: ' + isActive + ', Type: ' + userType);
+
+        // التحقق من أن المستخدم نشط
+        if (isActive !== 'نعم') {
+            continue;
+        }
+
+        // التحقق من أن نوع المستخدم يسمح باستخدام البوت
+        if (userType !== BOT_CONFIG.USER_TYPES.BOT && userType !== BOT_CONFIG.USER_TYPES.BOTH) {
+            Logger.log('User type "' + userType + '" not authorized for bot');
+            continue;
+        }
+
+        // المطابقة بالهاتف (آخر 10 أرقام لتجاوز اختلاف الصيغ الدولية)
+        let matched = false;
+
+        if (inputPhone && sheetPhone) {
+            // مقارنة آخر 10 أرقام فقط (لتغطية صيغة +90 أو 050 أو 500)
+            const inputSuffix = inputPhone.slice(-10);
+            const sheetSuffix = sheetPhone.slice(-10);
+
+            if (inputSuffix === sheetSuffix) {
+                matched = true;
+                Logger.log('Matched by phone (Fuzzy)!');
+            }
+        }
+
+        if (!matched && inputUsername && sheetUsername && inputUsername === sheetUsername) {
+            matched = true;
+            Logger.log('Matched by username!');
+        } else if (!matched && inputChatId && sheetChatId && inputChatId === sheetChatId) {
+            matched = true;
+            Logger.log('Matched by chat ID!');
+        }
+
+        if (matched) {
+            // تحديث Chat ID إذا لم يكن موجوداً
+            if (!sheetChatId && chatId) {
+                sheet.getRange(i + 1, columns.TELEGRAM_CHAT_ID.index).setValue(chatId);
+            }
+
+            // تحديث اسم المستخدم إذا لم يكن موجوداً
+            if (!sheetUsername && username) {
+                sheet.getRange(i + 1, columns.TELEGRAM_USERNAME.index).setValue(username);
+            }
+
+            return {
+                authorized: true,
+                name: row[columns.NAME.index - 1],
+                permission: row[columns.PERMISSION.index - 1]
+            };
+        }
+    }
+
+    Logger.log('No match found - User not authorized');
+    return { authorized: false };
+}
+
+/**
+ * دالة اختبار التحقق من صلاحية المستخدم
+ * شغّلها من Apps Script للتشخيص
+ */
+function testAuthorization() {
+    // اختبار برقم الهاتف من الشيت
+    const testPhone = "905530649846";
+
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("=== بداية اختبار التصريح ===");
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("Testing phone: " + testPhone);
+
+    // عرض محتويات BOT_CONFIG.USER_TYPES
+    Logger.log("BOT_CONFIG.USER_TYPES.BOT = '" + BOT_CONFIG.USER_TYPES.BOT + "'");
+    Logger.log("BOT_CONFIG.USER_TYPES.BOTH = '" + BOT_CONFIG.USER_TYPES.BOTH + "'");
+
+    const result = checkUserAuthorization(testPhone, null, null);
+
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("=== النتيجة ===");
+    Logger.log(JSON.stringify(result));
+
+    if (result.authorized) {
+        Logger.log("✅ المستخدم مصرح له!");
+        Logger.log("الاسم: " + result.name);
+        Logger.log("الصلاحية: " + result.permission);
+    } else {
+        Logger.log("❌ المستخدم غير مصرح له");
+    }
+    Logger.log("═══════════════════════════════════════");
+
+    return result;
+}
+
+/**
+ * البحث عن المستخدم بالإيميل
+ * تُستخدم لتسجيل النشاط مع اسم المستخدم
+ * @param {string} email - البريد الإلكتروني للمستخدم
+ * @returns {Object} بيانات المستخدم أو null
+ */
+function getUserByEmail(email) {
+    try {
+        if (!email) return null;
+
+        const sheet = getBotUsersSheet();
+        const columns = BOT_CONFIG.BOT_USERS_COLUMNS;
+        const data = sheet.getDataRange().getValues();
+
+        const inputEmail = String(email).toLowerCase().trim();
+
+        for (let i = 1; i < data.length; i++) {
+            const row = data[i];
+            const sheetEmail = String(row[columns.EMAIL.index - 1] || '').toLowerCase().trim();
+
+            if (sheetEmail && sheetEmail === inputEmail) {
+                return {
+                    found: true,
+                    name: row[columns.NAME.index - 1] || '',
+                    email: sheetEmail,
+                    userType: row[columns.USER_TYPE.index - 1] || '',
+                    permission: row[columns.PERMISSION.index - 1] || '',
+                    isActive: row[columns.IS_ACTIVE.index - 1] === 'نعم'
+                };
+            }
+        }
+
+        return { found: false };
+    } catch (error) {
+        Logger.log('Error in getUserByEmail: ' + error.message);
+        return { found: false };
+    }
+}
+
+/**
+ * الحصول على الحركات المعلقة للمراجعة
+ */
+function getPendingBotTransactions() {
+    const sheet = getBotTransactionsSheet();
+    const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
+
+    const data = sheet.getDataRange().getValues();
+    const pending = [];
+
+    for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        const status = row[columns.REVIEW_STATUS.index - 1];
+
+        // تسجيل للتشخيص (مؤقت)
+        if (i < 5) { // تسجيل أول 5 صفوف فقط لتجنب امتلاء السجل
+            console.log(`Row ${i + 1}: Status='${status}' (Expected='${CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING}')`);
+        }
+
+        // استخدام String().trim() للتأكد من عدم تأثر المقارنة بالمسافات الزائدة
+        if (String(status).trim() === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING) {
+            pending.push({
+                rowNumber: i + 1,
+                transactionId: row[columns.TRANSACTION_ID.index - 1],
+                date: row[columns.DATE.index - 1],
+                nature: row[columns.NATURE.index - 1],
+                projectName: row[columns.PROJECT_NAME.index - 1],
+                partyName: row[columns.PARTY_NAME.index - 1],
+                amount: row[columns.AMOUNT.index - 1],
+                currency: row[columns.CURRENCY.index - 1],
+                details: row[columns.DETAILS.index - 1],
+                telegramUser: row[columns.TELEGRAM_USER.index - 1],
+                chatId: row[columns.TELEGRAM_CHAT_ID.index - 1],
+                isNewParty: row[columns.IS_NEW_PARTY.index - 1] === 'نعم'
+            });
+        }
+    }
+
+    return pending;
+}
+
+/**
+ * الحصول على عدد الحركات المعلقة
+ */
+function getPendingTransactionsCount() {
+    return getPendingBotTransactions().length;
+}
