@@ -838,6 +838,30 @@ function sendAIMessage(chatId, text, options = {}) {
 
     } catch (error) {
         Logger.log('Send Message Error: ' + error.message);
+
+        // محاولة إعادة الإرسال بدون تنسيق (Plain Text) في حال فشل الـ Markdown
+        if (options.parse_mode && error.message.includes('Bad Request')) {
+            try {
+                Logger.log('Retrying with plain text...');
+                const payload = {
+                    chat_id: chatId,
+                    text: text
+                };
+                if (options.reply_markup) {
+                    payload.reply_markup = options.reply_markup;
+                }
+                const response = UrlFetchApp.fetch(url, {
+                    method: 'post',
+                    contentType: 'application/json',
+                    payload: JSON.stringify(payload),
+                    muteHttpExceptions: true
+                });
+                return JSON.parse(response.getContentText());
+            } catch (retryError) {
+                Logger.log('Retry Failed: ' + retryError.message);
+            }
+        }
+
         return null;
     }
 }
