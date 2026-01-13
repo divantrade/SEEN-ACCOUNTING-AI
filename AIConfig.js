@@ -355,11 +355,12 @@ function setupAIBotCredentials(botToken, geminiKey) {
  * ثم احذفها بعد التشغيل للأمان
  */
 function setupMyAIBot() {
-    setupAIBotCredentials(
-        '8540502876:AAGYe0LSYq0_Jk3J2Xjsfi7_NYq_TQ_6mSo',
-        'AIzaSyDzmihNCikDJTHq85t7A4yKRRzaKd65EhY'
-    );
-    setupAIBot();
+    // ⚠️ هام: لا تقم أبداً بوضع المفاتيح هنا مباشرة وحفظها في الكود (Hardcoding)
+    // هذا هو سبب تسريب المفتاح السابق.
+    // بدلاً من ذلك، استخدم: File -> Project Properties -> Script Properties
+    // أو شغّل الدالة setupAIBotCredentials مرة واحدة مع مفاتيحك الجديدة ثم احذفها.
+
+    Logger.log('الرجاء استخدام setupAIBotCredentials(BOT_TOKEN, API_KEY) مع مفاتيحك الجديدة مباشرة');
 }
 
 /**
