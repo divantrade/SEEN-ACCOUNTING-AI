@@ -9,10 +9,10 @@ const AI_CONFIG = {
     // ==================== إعدادات Gemini API ====================
     GEMINI: {
         // رابط API
-        API_URL: 'https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-lite-001:generateContent',
+        API_URL: 'https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent',
 
         // اسم الموديل
-        MODEL: 'gemini-2.0-flash-lite-001',
+        MODEL: 'gemini-2.0-flash',
 
         // إعدادات التوليد
         GENERATION_CONFIG: {
