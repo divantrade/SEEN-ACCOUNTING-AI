@@ -43,9 +43,17 @@ function callGemini(userMessage, context) {
 
         if (responseCode !== 200) {
             Logger.log('Gemini API Error: ' + responseCode + ' - ' + responseText);
+            let errorDetails = responseText;
+            try {
+                const jsonError = JSON.parse(responseText);
+                if (jsonError.error && jsonError.error.message) {
+                    errorDetails = jsonError.error.message;
+                }
+            } catch (e) { }
+
             return {
                 success: false,
-                error: 'خطأ في الاتصال بـ Gemini API',
+                error: `خطأ في الاتصال بـ Gemini API (${responseCode}): ${errorDetails}`,
                 details: responseText
             };
         }
