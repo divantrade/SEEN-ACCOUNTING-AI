@@ -396,3 +396,50 @@ function checkAIBotSetup() {
 
     return result;
 }
+
+/**
+ * حذف الـ Webhook من البوت الذكي
+ * شغّل هذه الدالة إذا كان هناك بوت آخر يستقبل الرسائل
+ */
+function deleteAIBotWebhook() {
+    try {
+        const token = getAIBotToken();
+
+        // أولاً: التحقق من حالة الـ Webhook الحالية
+        const infoUrl = `https://api.telegram.org/bot${token}/getWebhookInfo`;
+        const infoResponse = UrlFetchApp.fetch(infoUrl);
+        const infoResult = JSON.parse(infoResponse.getContentText());
+
+        Logger.log('═══════════════════════════════════════');
+        Logger.log('=== حالة الـ Webhook الحالية ===');
+        Logger.log(JSON.stringify(infoResult, null, 2));
+
+        if (infoResult.result && infoResult.result.url) {
+            Logger.log('⚠️ يوجد Webhook مسجل: ' + infoResult.result.url);
+        } else {
+            Logger.log('✅ لا يوجد Webhook مسجل');
+        }
+
+        // ثانياً: حذف الـ Webhook
+        const deleteUrl = `https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=true`;
+        const deleteResponse = UrlFetchApp.fetch(deleteUrl);
+        const deleteResult = JSON.parse(deleteResponse.getContentText());
+
+        Logger.log('═══════════════════════════════════════');
+        Logger.log('=== نتيجة حذف الـ Webhook ===');
+        Logger.log(JSON.stringify(deleteResult, null, 2));
+
+        if (deleteResult.ok) {
+            Logger.log('✅ تم حذف الـ Webhook بنجاح!');
+            Logger.log('الآن سيستقبل Google Apps Script الرسائل عبر Long Polling');
+        } else {
+            Logger.log('❌ فشل حذف الـ Webhook');
+        }
+
+        return deleteResult;
+
+    } catch (error) {
+        Logger.log('❌ خطأ: ' + error.message);
+        return { ok: false, error: error.message };
+    }
+}
