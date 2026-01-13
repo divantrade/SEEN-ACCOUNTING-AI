@@ -357,7 +357,7 @@ function setupAIBotCredentials(botToken, geminiKey) {
 function setupMyAIBot() {
     setupAIBotCredentials(
         '8540502876:AAGYe0LSYq0_Jk3J2Xjsfi7_NYq_TQ_6mSo',
-        'AIzaSyCUiCK0EVUJIGg7vc3ysa8-01I_2czZfSU'
+        'AIzaSyDzmihNCikDJTHq85t7A4yKRRzaKd65EhY'
     );
     setupAIBot();
 }
