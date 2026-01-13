@@ -737,6 +737,48 @@ function testAuthorization() {
 }
 
 /**
+ * دالة اختبار صلاحية البوت الذكي
+ * شغّلها من Apps Script للتشخيص
+ */
+function testAIBotAuthorization() {
+    const testChatId = "786700586"; // معرّف المحادثة الخاص بك
+    const testUsername = "adelsolmn";
+
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("=== اختبار صلاحية البوت الذكي ===");
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("ChatId: " + testChatId);
+    Logger.log("Username: " + testUsername);
+
+    // قراءة الشيت للتحقق من البيانات
+    const sheet = getBotUsersSheet();
+    const data = sheet.getDataRange().getValues();
+    Logger.log("عدد الصفوف في الشيت: " + data.length);
+
+    // طباعة كل الصفوف للتحقق
+    for (let i = 0; i < Math.min(data.length, 5); i++) {
+        Logger.log("صف " + i + ": " + JSON.stringify(data[i]));
+    }
+
+    // اختبار الصلاحية
+    const result = checkUserAuthorization(null, testChatId, testUsername, 'ai_bot');
+
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("=== النتيجة ===");
+    Logger.log(JSON.stringify(result));
+
+    if (result.authorized) {
+        Logger.log("✅ مصرح للبوت الذكي!");
+        Logger.log("الاسم: " + result.name);
+    } else {
+        Logger.log("❌ غير مصرح للبوت الذكي");
+    }
+    Logger.log("═══════════════════════════════════════");
+
+    return result;
+}
+
+/**
  * البحث عن المستخدم بالإيميل
  * تُستخدم لتسجيل النشاط مع اسم المستخدم
  * @param {string} email - البريد الإلكتروني للمستخدم
