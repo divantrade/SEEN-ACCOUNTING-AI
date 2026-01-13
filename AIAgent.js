@@ -810,7 +810,7 @@ function listAvailableModels() {
 
     try {
         const apiKey = getGeminiApiKey();
-        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`;
 
         const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
         const result = JSON.parse(response.getContentText());
