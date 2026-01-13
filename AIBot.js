@@ -200,7 +200,8 @@ function processNewTransaction(chatId, text, user) {
 
     } catch (error) {
         Logger.log('Process Transaction Error: ' + error.message);
-        sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ERROR_API);
+        Logger.log('Stack: ' + error.stack);
+        sendAIMessage(chatId, `❌ *حدث خطأ غير متوقع:*\n${error.message}\n\nيرجى إعادة المحاولة أو التواصل مع الدعم التقني.`);
     }
 }
 
