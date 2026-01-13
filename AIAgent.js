@@ -557,32 +557,40 @@ function validateTransaction(transaction, context) {
  * @returns {Object} - نتيجة التحليل مع الحركة
  */
 function analyzeTransaction(userMessage) {
-    // تحميل السياق
-    const context = loadAIContext();
+    try {
+        // تحميل السياق
+        const context = loadAIContext();
 
-    // استدعاء Gemini
-    const aiResult = callGemini(userMessage, context);
+        // استدعاء Gemini
+        const aiResult = callGemini(userMessage, context);
 
-    if (!aiResult.success) {
+        if (!aiResult.success) {
+            return {
+                success: false,
+                error: aiResult.error || AI_CONFIG.AI_MESSAGES.ERROR_PARSE,
+                suggestion: aiResult.suggestion
+            };
+        }
+
+        // التحقق من الحركة وإثرائها
+        const validation = validateTransaction(aiResult, context);
+
+        return {
+            success: true,
+            transaction: validation.enriched,
+            validation: validation,
+            needsInput: validation.missingRequired.length > 0,
+            missingFields: validation.missingRequired,
+            warnings: validation.warnings,
+            confidence: aiResult.confidence || 0.8
+        };
+    } catch (error) {
+        Logger.log('Analyze Transaction Error: ' + error.message);
         return {
             success: false,
-            error: aiResult.error || AI_CONFIG.AI_MESSAGES.ERROR_PARSE,
-            suggestion: aiResult.suggestion
+            error: 'خطأ في تحليل البيانات الداخلية: ' + error.message
         };
     }
-
-    // التحقق من الحركة وإثرائها
-    const validation = validateTransaction(aiResult, context);
-
-    return {
-        success: true,
-        transaction: validation.enriched,
-        validation: validation,
-        needsInput: validation.missingRequired.length > 0,
-        missingFields: validation.missingRequired,
-        warnings: validation.warnings,
-        confidence: aiResult.confidence || 0.8
-    };
 }
 
 
