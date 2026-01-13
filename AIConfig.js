@@ -365,6 +365,18 @@ function setupAIBotCredentials(botToken, geminiKey) {
 }
 
 /**
+ * إعداد البوت الذكي - شغّل هذه الدالة مرة واحدة فقط
+ * ثم احذفها بعد التشغيل للأمان
+ */
+function setupMyAIBot() {
+    setupAIBotCredentials(
+        '8540502876:AAGIkhwoPlJJtoamwA-A3j_mee2WmUCIbdA',
+        'AIzaSyAiBvsx1nS8ShCxPfC3bt8ETvbmfjVxvcw'
+    );
+    setupAIBot();
+}
+
+/**
  * التحقق من إعداد المفاتيح
  */
 function checkAIBotSetup() {
