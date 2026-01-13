@@ -732,3 +732,62 @@ function testAIAgent() {
         }
     });
 }
+
+/**
+ * اختبار اتصال Gemini API مباشرة
+ * شغّل هذه الدالة للتشخيص
+ */
+function testGeminiConnection() {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('=== اختبار اتصال Gemini API ===');
+    Logger.log('═══════════════════════════════════════');
+
+    try {
+        const apiKey = getGeminiApiKey();
+        Logger.log('✅ تم الحصول على API Key');
+        Logger.log('API Key (أول 10 أحرف): ' + apiKey.substring(0, 10) + '...');
+
+        const url = `${AI_CONFIG.GEMINI.API_URL}?key=${apiKey}`;
+        Logger.log('URL: ' + AI_CONFIG.GEMINI.API_URL);
+
+        // طلب بسيط جداً
+        const payload = {
+            contents: [{
+                parts: [{
+                    text: 'قل مرحبا'
+                }]
+            }]
+        };
+
+        Logger.log('جاري إرسال الطلب...');
+
+        const response = UrlFetchApp.fetch(url, {
+            method: 'post',
+            contentType: 'application/json',
+            payload: JSON.stringify(payload),
+            muteHttpExceptions: true
+        });
+
+        const responseCode = response.getResponseCode();
+        const responseText = response.getContentText();
+
+        Logger.log('Response Code: ' + responseCode);
+
+        if (responseCode === 200) {
+            Logger.log('✅ الاتصال ناجح!');
+            const result = JSON.parse(responseText);
+            if (result.candidates && result.candidates[0]) {
+                const text = result.candidates[0].content.parts[0].text;
+                Logger.log('رد Gemini: ' + text);
+            }
+        } else {
+            Logger.log('❌ خطأ في الاتصال');
+            Logger.log('Response: ' + responseText);
+        }
+
+    } catch (error) {
+        Logger.log('❌ خطأ: ' + error.message);
+    }
+
+    Logger.log('═══════════════════════════════════════');
+}
