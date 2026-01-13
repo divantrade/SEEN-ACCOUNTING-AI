@@ -806,42 +806,68 @@ function testGeminiConnection() {
  */
 function listAvailableModels() {
     Logger.log('═══════════════════════════════════════');
-    Logger.log('=== الموديلات المتاحة ===');
-    Logger.log('═══════════════════════════════════════');
+    Logger.log('=== قائمة الموديلات المتاحة (Gemini) ===');
 
     try {
         const apiKey = getGeminiApiKey();
         const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
 
-        const response = UrlFetchApp.fetch(url, {
-            method: 'get',
-            muteHttpExceptions: true
-        });
+        const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+        const result = JSON.parse(response.getContentText());
 
-        const responseCode = response.getResponseCode();
-        const responseText = response.getContentText();
-
-        Logger.log('Response Code: ' + responseCode);
-
-        if (responseCode === 200) {
-            const result = JSON.parse(responseText);
-            if (result.models) {
-                Logger.log('عدد الموديلات: ' + result.models.length);
-                Logger.log('');
-                result.models.forEach((model, index) => {
-                    Logger.log((index + 1) + '. ' + model.name);
-                    if (model.supportedGenerationMethods) {
-                        Logger.log('   Methods: ' + model.supportedGenerationMethods.join(', '));
-                    }
-                });
-            }
+        if (result.models) {
+            Logger.log('✅ تم جلب القائمة بنجاح:');
+            result.models.forEach(model => {
+                // تصفية الموديلات التي تدعم generateContent
+                if (model.supportedGenerationMethods && model.supportedGenerationMethods.includes('generateContent')) {
+                    Logger.log(`• ${model.name.replace('models/', '')} (${model.displayName})`);
+                }
+            });
         } else {
-            Logger.log('❌ خطأ: ' + responseText);
+            Logger.log('❌ لم يتم العثور على موديلات: ' + JSON.stringify(result));
         }
 
-    } catch (error) {
-        Logger.log('❌ خطأ: ' + error.message);
+    } catch (e) {
+        Logger.log('❌ خطأ: ' + e.message);
+    }
+    Logger.log('═══════════════════════════════════════');
+}
+Logger.log('=== الموديلات المتاحة ===');
+Logger.log('═══════════════════════════════════════');
+
+try {
+    const apiKey = getGeminiApiKey();
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+
+    const response = UrlFetchApp.fetch(url, {
+        method: 'get',
+        muteHttpExceptions: true
+    });
+
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
+
+    Logger.log('Response Code: ' + responseCode);
+
+    if (responseCode === 200) {
+        const result = JSON.parse(responseText);
+        if (result.models) {
+            Logger.log('عدد الموديلات: ' + result.models.length);
+            Logger.log('');
+            result.models.forEach((model, index) => {
+                Logger.log((index + 1) + '. ' + model.name);
+                if (model.supportedGenerationMethods) {
+                    Logger.log('   Methods: ' + model.supportedGenerationMethods.join(', '));
+                }
+            });
+        }
+    } else {
+        Logger.log('❌ خطأ: ' + responseText);
     }
 
-    Logger.log('═══════════════════════════════════════');
+} catch (error) {
+    Logger.log('❌ خطأ: ' + error.message);
+}
+
+Logger.log('═══════════════════════════════════════');
 }
