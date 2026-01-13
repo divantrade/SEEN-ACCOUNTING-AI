@@ -69,22 +69,23 @@ const BOT_CONFIG = {
         LINKED_TRANSACTIONS: { index: 16, name: 'الحركات المرتبطة', width: 150 }
     },
 
-    // ==================== هيكل شيت المستخدمين المصرح لهم ====================
+    // ==================== هيكل شيت المستخدمين المصرح لهم (موحد) ====================
     BOT_USERS_COLUMNS: {
         NAME: { index: 1, name: 'الاسم', width: 150 },
         EMAIL: { index: 2, name: 'الإيميل', width: 200 },
         PHONE: { index: 3, name: 'رقم الهاتف', width: 150 },
         TELEGRAM_USERNAME: { index: 4, name: 'اسم المستخدم تليجرام', width: 150 },
         TELEGRAM_CHAT_ID: { index: 5, name: 'معرّف المحادثة', width: 120 },
-        USER_TYPE: { index: 6, name: 'نوع المستخدم', width: 120 },
-        PERMISSION: { index: 7, name: 'الصلاحية', width: 120 },
-        IS_ACTIVE: { index: 8, name: 'نشط', width: 80 },
-        ADDED_DATE: { index: 9, name: 'تاريخ الإضافة', width: 120 },
-        ADDED_BY: { index: 10, name: 'أضافه', width: 120 },
-        NOTES: { index: 11, name: 'ملاحظات', width: 200 }
+        PERM_TRADITIONAL_BOT: { index: 6, name: 'بوت تقليدي', width: 100 },
+        PERM_AI_BOT: { index: 7, name: 'بوت ذكي', width: 100 },
+        PERM_SHEET: { index: 8, name: 'شيت', width: 80 },
+        PERM_REVIEW: { index: 9, name: 'مراجعة', width: 80 },
+        IS_ACTIVE: { index: 10, name: 'نشط', width: 80 },
+        ADDED_DATE: { index: 11, name: 'تاريخ الإضافة', width: 120 },
+        NOTES: { index: 12, name: 'ملاحظات', width: 200 }
     },
 
-    // أنواع المستخدمين
+    // أنواع الصلاحيات (للتوافق مع الكود القديم)
     USER_TYPES: {
         BOT: 'بوت',
         SHEET: 'شيت',

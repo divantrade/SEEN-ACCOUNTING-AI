@@ -246,7 +246,7 @@ function createBotPartiesSheet() {
 }
 
 /**
- * إنشاء شيت المستخدمين المصرح لهم
+ * إنشاء شيت المستخدمين المصرح لهم (موحد مع Checkboxes)
  */
 function createBotUsersSheet() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -295,43 +295,19 @@ function createBotUsersSheet() {
     // تجميد الصف الأول
     sheet.setFrozenRows(1);
 
-    // إضافة Data Validation لنوع المستخدم
-    const userTypeCol = columns.USER_TYPE.index;
-    const userTypeRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList([
-            BOT_CONFIG.USER_TYPES.BOT,
-            BOT_CONFIG.USER_TYPES.SHEET,
-            BOT_CONFIG.USER_TYPES.BOTH
-        ])
-        .setAllowInvalid(false)
-        .build();
+    // إضافة Checkboxes للصلاحيات
+    const checkboxColumns = [
+        columns.PERM_TRADITIONAL_BOT.index,
+        columns.PERM_AI_BOT.index,
+        columns.PERM_SHEET.index,
+        columns.PERM_REVIEW.index,
+        columns.IS_ACTIVE.index
+    ];
 
-    sheet.getRange(2, userTypeCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
-        .setDataValidation(userTypeRule);
-
-    // إضافة Data Validation للصلاحية
-    const permissionCol = columns.PERMISSION.index;
-    const permissionRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList([
-            CONFIG.TELEGRAM_BOT.USER_PERMISSIONS.INPUT,
-            CONFIG.TELEGRAM_BOT.USER_PERMISSIONS.REVIEW,
-            CONFIG.TELEGRAM_BOT.USER_PERMISSIONS.BOTH
-        ])
-        .setAllowInvalid(false)
-        .build();
-
-    sheet.getRange(2, permissionCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
-        .setDataValidation(permissionRule);
-
-    // إضافة Data Validation لحالة النشاط
-    const activeCol = columns.IS_ACTIVE.index;
-    const activeRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(['نعم', 'لا'])
-        .setAllowInvalid(false)
-        .build();
-
-    sheet.getRange(2, activeCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
-        .setDataValidation(activeRule);
+    checkboxColumns.forEach(colIndex => {
+        sheet.getRange(2, colIndex, CONFIG.SHEET.DEFAULT_ROWS, 1)
+            .insertCheckboxes();
+    });
 
     // تنسيق أعمدة التاريخ
     sheet.getRange(2, columns.ADDED_DATE.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
@@ -340,27 +316,63 @@ function createBotUsersSheet() {
     // تحديد لون التبويب
     sheet.setTabColor('#7b1fa2');
 
-    // إضافة تنسيق شرطي للحالة
-    const activeRange = sheet.getRange(2, activeCol, CONFIG.SHEET.DEFAULT_ROWS, 1);
+    // تنسيق أعمدة الـ Checkboxes (توسيط)
+    checkboxColumns.forEach(colIndex => {
+        sheet.getRange(2, colIndex, CONFIG.SHEET.DEFAULT_ROWS, 1)
+            .setHorizontalAlignment('center');
+    });
 
-    // أخضر للنشط
-    const activeFormatRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('نعم')
-        .setBackground('#c8e6c9')
-        .setRanges([activeRange])
+    // إضافة تنسيق شرطي للصف كامل إذا كان غير نشط
+    const dataRange = sheet.getRange(2, 1, CONFIG.SHEET.DEFAULT_ROWS, headers.length);
+    const inactiveRowRule = SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=$' + columnToLetter(columns.IS_ACTIVE.index) + '2=FALSE')
+        .setBackground('#f5f5f5')
+        .setFontColor('#9e9e9e')
+        .setRanges([dataRange])
         .build();
 
-    // أحمر لغير النشط
-    const inactiveFormatRule = SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('لا')
-        .setBackground('#ffcdd2')
-        .setRanges([activeRange])
-        .build();
-
-    sheet.setConditionalFormatRules([activeFormatRule, inactiveFormatRule]);
+    sheet.setConditionalFormatRules([inactiveRowRule]);
 
     Logger.log('Created sheet: ' + sheetName);
     return sheet;
+}
+
+/**
+ * تحديث شيت المستخدمين القديم للهيكل الجديد
+ * شغّل هذه الدالة مرة واحدة لتحويل الشيت القديم
+ */
+function upgradeUsersSheetToNewFormat() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = CONFIG.SHEETS.BOT_USERS;
+    const sheet = ss.getSheetByName(sheetName);
+
+    if (!sheet) {
+        Logger.log('شيت المستخدمين غير موجود - سيتم إنشاء شيت جديد');
+        createBotUsersSheet();
+        return;
+    }
+
+    // حذف الشيت القديم وإنشاء جديد
+    const ui = SpreadsheetApp.getUi();
+    const result = ui.alert(
+        '⚠️ تحديث شيت المستخدمين',
+        'سيتم حذف شيت المستخدمين القديم وإنشاء شيت جديد بالهيكل المحدث.\n\n' +
+        '⚠️ تأكد من نسخ بيانات المستخدمين الحاليين قبل المتابعة!\n\n' +
+        'هل تريد المتابعة؟',
+        ui.ButtonSet.YES_NO
+    );
+
+    if (result !== ui.Button.YES) {
+        return;
+    }
+
+    // حذف الشيت القديم
+    ss.deleteSheet(sheet);
+
+    // إنشاء الشيت الجديد
+    createBotUsersSheet();
+
+    ui.alert('✅ تم', 'تم تحديث شيت المستخدمين بنجاح!\n\nيرجى إعادة إضافة المستخدمين.', ui.ButtonSet.OK);
 }
 
 /**
@@ -563,10 +575,14 @@ function addBotParty(partyData) {
 }
 
 /**
- * التحقق من صلاحية المستخدم
+ * التحقق من صلاحية المستخدم (الهيكل الجديد مع Checkboxes)
  * يبحث بالهاتف أو اسم المستخدم أو معرّف المحادثة
+ * @param {string} phoneNumber - رقم الهاتف
+ * @param {string} chatId - معرّف المحادثة
+ * @param {string} username - اسم المستخدم تليجرام
+ * @param {string} permissionType - نوع الصلاحية المطلوبة: 'traditional_bot' | 'ai_bot' | 'sheet' | 'review'
  */
-function checkUserAuthorization(phoneNumber, chatId, username) {
+function checkUserAuthorization(phoneNumber, chatId, username, permissionType = 'traditional_bot') {
     const sheet = getBotUsersSheet();
     const columns = BOT_CONFIG.BOT_USERS_COLUMNS;
 
@@ -577,7 +593,7 @@ function checkUserAuthorization(phoneNumber, chatId, username) {
     const inputUsername = username ? String(username).toLowerCase().replace('@', '') : '';
     const inputChatId = chatId ? String(chatId) : '';
 
-    Logger.log('Authorization check - Phone: ' + inputPhone + ', Username: ' + inputUsername + ', ChatId: ' + inputChatId);
+    Logger.log('Authorization check - Phone: ' + inputPhone + ', Username: ' + inputUsername + ', ChatId: ' + inputChatId + ', PermType: ' + permissionType);
 
     for (let i = 1; i < data.length; i++) {
         const row = data[i];
@@ -587,18 +603,38 @@ function checkUserAuthorization(phoneNumber, chatId, username) {
         const sheetUsername = String(row[columns.TELEGRAM_USERNAME.index - 1] || '').toLowerCase().replace('@', '');
         const sheetChatId = String(row[columns.TELEGRAM_CHAT_ID.index - 1] || '');
         const isActive = row[columns.IS_ACTIVE.index - 1];
-        const userType = row[columns.USER_TYPE.index - 1] || '';
 
-        Logger.log('Row ' + (i + 1) + ' - Sheet Phone: ' + sheetPhone + ', Sheet Username: ' + sheetUsername + ', Active: ' + isActive + ', Type: ' + userType);
+        // قراءة الصلاحيات (Checkboxes)
+        const permTraditionalBot = row[columns.PERM_TRADITIONAL_BOT.index - 1] === true;
+        const permAIBot = row[columns.PERM_AI_BOT.index - 1] === true;
+        const permSheet = row[columns.PERM_SHEET.index - 1] === true;
+        const permReview = row[columns.PERM_REVIEW.index - 1] === true;
 
         // التحقق من أن المستخدم نشط
-        if (isActive !== 'نعم') {
+        if (isActive !== true) {
             continue;
         }
 
-        // التحقق من أن نوع المستخدم يسمح باستخدام البوت
-        if (userType !== BOT_CONFIG.USER_TYPES.BOT && userType !== BOT_CONFIG.USER_TYPES.BOTH) {
-            Logger.log('User type "' + userType + '" not authorized for bot');
+        // التحقق من الصلاحية المطلوبة
+        let hasPermission = false;
+        switch (permissionType) {
+            case 'traditional_bot':
+                hasPermission = permTraditionalBot;
+                break;
+            case 'ai_bot':
+                hasPermission = permAIBot;
+                break;
+            case 'sheet':
+                hasPermission = permSheet;
+                break;
+            case 'review':
+                hasPermission = permReview;
+                break;
+            default:
+                hasPermission = permTraditionalBot; // افتراضي
+        }
+
+        if (!hasPermission) {
             continue;
         }
 
@@ -606,7 +642,6 @@ function checkUserAuthorization(phoneNumber, chatId, username) {
         let matched = false;
 
         if (inputPhone && sheetPhone) {
-            // مقارنة آخر 10 أرقام فقط (لتغطية صيغة +90 أو 050 أو 500)
             const inputSuffix = inputPhone.slice(-10);
             const sheetSuffix = sheetPhone.slice(-10);
 
@@ -638,13 +673,32 @@ function checkUserAuthorization(phoneNumber, chatId, username) {
             return {
                 authorized: true,
                 name: row[columns.NAME.index - 1],
-                permission: row[columns.PERMISSION.index - 1]
+                permissions: {
+                    traditionalBot: permTraditionalBot,
+                    aiBot: permAIBot,
+                    sheet: permSheet,
+                    review: permReview
+                }
             };
         }
     }
 
     Logger.log('No match found - User not authorized');
     return { authorized: false };
+}
+
+/**
+ * التحقق من صلاحية المستخدم للبوت الذكي
+ */
+function checkAIBotAuthorization(chatId, username) {
+    return checkUserAuthorization(null, chatId, username, 'ai_bot');
+}
+
+/**
+ * التحقق من صلاحية المستخدم للبوت التقليدي
+ */
+function checkTraditionalBotAuthorization(phoneNumber, chatId, username) {
+    return checkUserAuthorization(phoneNumber, chatId, username, 'traditional_bot');
 }
 
 /**
@@ -676,6 +730,48 @@ function testAuthorization() {
         Logger.log("الصلاحية: " + result.permission);
     } else {
         Logger.log("❌ المستخدم غير مصرح له");
+    }
+    Logger.log("═══════════════════════════════════════");
+
+    return result;
+}
+
+/**
+ * دالة اختبار صلاحية البوت الذكي
+ * شغّلها من Apps Script للتشخيص
+ */
+function testAIBotAuthorization() {
+    const testChatId = "786700586"; // معرّف المحادثة الخاص بك
+    const testUsername = "adelsolmn";
+
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("=== اختبار صلاحية البوت الذكي ===");
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("ChatId: " + testChatId);
+    Logger.log("Username: " + testUsername);
+
+    // قراءة الشيت للتحقق من البيانات
+    const sheet = getBotUsersSheet();
+    const data = sheet.getDataRange().getValues();
+    Logger.log("عدد الصفوف في الشيت: " + data.length);
+
+    // طباعة كل الصفوف للتحقق
+    for (let i = 0; i < Math.min(data.length, 5); i++) {
+        Logger.log("صف " + i + ": " + JSON.stringify(data[i]));
+    }
+
+    // اختبار الصلاحية
+    const result = checkUserAuthorization(null, testChatId, testUsername, 'ai_bot');
+
+    Logger.log("═══════════════════════════════════════");
+    Logger.log("=== النتيجة ===");
+    Logger.log(JSON.stringify(result));
+
+    if (result.authorized) {
+        Logger.log("✅ مصرح للبوت الذكي!");
+        Logger.log("الاسم: " + result.name);
+    } else {
+        Logger.log("❌ غير مصرح للبوت الذكي");
     }
     Logger.log("═══════════════════════════════════════");
 

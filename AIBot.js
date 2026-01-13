@@ -782,57 +782,20 @@ function resetAIUserSession(chatId) {
 
 /**
  * التحقق من صلاحيات المستخدم للبوت الذكي
+ * يستخدم الشيت الموحد مع نظام Checkboxes
  */
 function checkAIUserPermission(chatId, user) {
     try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-        let sheet = ss.getSheetByName(AI_CONFIG.SHEETS.AI_BOT_USERS);
+        // استخدام الدالة الموحدة من BotSheets.js
+        const username = user.username || '';
+        const result = checkUserAuthorization(null, chatId, username, 'ai_bot');
 
-        // إذا لم يوجد الشيت، استخدم شيت المستخدمين العادي
-        if (!sheet) {
-            sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_USERS);
-        }
-
-        if (!sheet) {
-            return { authorized: false, reason: 'شيت المستخدمين غير موجود' };
-        }
-
-        const data = sheet.getDataRange().getValues();
-
-        for (let i = 1; i < data.length; i++) {
-            const rowChatId = data[i][4]; // عمود معرّف المحادثة
-            const isActive = data[i][7];  // عمود نشط
-
-            if (rowChatId && rowChatId.toString() === chatId.toString()) {
-                if (isActive === true || isActive === 'TRUE' || isActive === 'نعم' || isActive === 1) {
-                    return {
-                        authorized: true,
-                        userName: data[i][0],
-                        permission: data[i][6]
-                    };
-                }
-            }
-        }
-
-        // التحقق من username
-        if (user.username) {
-            for (let i = 1; i < data.length; i++) {
-                const rowUsername = data[i][3];
-                const isActive = data[i][7];
-
-                if (rowUsername && rowUsername.toString().replace('@', '') === user.username.replace('@', '')) {
-                    // تحديث chat_id
-                    sheet.getRange(i + 1, 5).setValue(chatId);
-
-                    if (isActive === true || isActive === 'TRUE' || isActive === 'نعم' || isActive === 1) {
-                        return {
-                            authorized: true,
-                            userName: data[i][0],
-                            permission: data[i][6]
-                        };
-                    }
-                }
-            }
+        if (result.authorized) {
+            return {
+                authorized: true,
+                userName: result.name,
+                permissions: result.permissions
+            };
         }
 
         return { authorized: false, reason: 'المستخدم غير مصرح' };
@@ -1003,48 +966,21 @@ function parseArabicDate(dateStr) {
 // ==================== إعداد البوت الذكي ====================
 
 /**
- * إنشاء شيت المستخدمين المصرح لهم - ذكي
+ * التحقق من وجود شيت المستخدمين الموحد أو إنشاؤه
+ * ملاحظة: تم توحيد شيت المستخدمين - يُستخدم CONFIG.SHEETS.BOT_USERS
  */
 function setupAIBotUsersSheet() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName(AI_CONFIG.SHEETS.AI_BOT_USERS);
+    let sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_USERS);
 
     if (sheet) {
-        Logger.log('شيت المستخدمين للبوت الذكي موجود بالفعل');
+        Logger.log('شيت المستخدمين الموحد موجود بالفعل');
         return sheet;
     }
 
-    // إنشاء الشيت
-    sheet = ss.insertSheet(AI_CONFIG.SHEETS.AI_BOT_USERS);
-
-    // إعداد الهيدر
-    const headers = [];
-    const widths = [];
-
-    Object.values(AI_CONFIG.AI_BOT_USERS_COLUMNS).forEach(col => {
-        headers.push(col.name);
-        widths.push(col.width);
-    });
-
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-
-    // تنسيق الهيدر
-    const headerRange = sheet.getRange(1, 1, 1, headers.length);
-    headerRange.setBackground('#0088cc');
-    headerRange.setFontColor('#ffffff');
-    headerRange.setFontWeight('bold');
-    headerRange.setHorizontalAlignment('center');
-
-    // ضبط عرض الأعمدة
-    widths.forEach((width, index) => {
-        sheet.setColumnWidth(index + 1, width);
-    });
-
-    // تجميد الصف الأول
-    sheet.setFrozenRows(1);
-
-    Logger.log('تم إنشاء شيت المستخدمين للبوت الذكي بنجاح');
-    return sheet;
+    // إنشاء الشيت باستخدام الدالة من BotSheets.js
+    Logger.log('جاري إنشاء شيت المستخدمين الموحد...');
+    return createBotUsersSheet();
 }
 
 /**
