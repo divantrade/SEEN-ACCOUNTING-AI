@@ -1,0 +1,47 @@
+# ==================== GitHub Actions: Deploy to Google Apps Script ====================
+# يرفع الكود تلقائياً إلى Google Apps Script عند كل push
+
+name: Deploy to Google Apps Script
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'claude/*'  # أي branch يبدأ بـ claude/
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. سحب الكود
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. تثبيت Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 3. تثبيت clasp
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      # 4. إعداد credentials
+      - name: Setup clasp credentials
+        run: |
+          echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+
+      # 5. رفع الكود إلى Google Apps Script
+      - name: Push to Google Apps Script
+        run: |
+          clasp push --force
+
+      # 6. تأكيد النجاح
+      - name: Deploy success
+        run: echo "✅ تم رفع الكود بنجاح إلى Google Apps Script!"
