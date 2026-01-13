@@ -31,24 +31,10 @@ const AI_CONFIG = {
         ]
     },
 
-    // ==================== هيكل شيت المستخدمين المصرح لهم - ذكي ====================
-    AI_BOT_USERS_COLUMNS: {
-        NAME: { index: 1, name: 'الاسم', width: 150 },
-        EMAIL: { index: 2, name: 'الإيميل', width: 200 },
-        PHONE: { index: 3, name: 'رقم الهاتف', width: 150 },
-        TELEGRAM_USERNAME: { index: 4, name: 'اسم المستخدم تليجرام', width: 150 },
-        TELEGRAM_CHAT_ID: { index: 5, name: 'معرّف المحادثة', width: 120 },
-        PERMISSION: { index: 6, name: 'الصلاحية', width: 120 },
-        IS_ACTIVE: { index: 7, name: 'نشط', width: 80 },
-        ADDED_DATE: { index: 8, name: 'تاريخ الإضافة', width: 120 },
-        ADDED_BY: { index: 9, name: 'أضافه', width: 120 },
-        NOTES: { index: 10, name: 'ملاحظات', width: 200 }
-    },
-
-    // اسم شيت المستخدمين للبوت الذكي
-    SHEETS: {
-        AI_BOT_USERS: 'المستخدمين المصرح لهم - ذكي'
-    },
+    // ==================== ملاحظة: شيت المستخدمين ====================
+    // تم توحيد شيت المستخدمين - يُستخدم الآن CONFIG.SHEETS.BOT_USERS
+    // مع أعمدة Checkboxes للصلاحيات المتعددة (بوت تقليدي، بوت ذكي، شيت، مراجعة)
+    // انظر BOT_CONFIG.BOT_USERS_COLUMNS للهيكل الجديد
 
     // ==================== قواعد الاستنتاج الذكي ====================
     INFERENCE_RULES: {
