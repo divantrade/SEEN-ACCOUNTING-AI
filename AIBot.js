@@ -360,6 +360,14 @@ function answerAICallback(callbackQueryId) {
  */
 function handleConfirmation(chatId, session, user) {
     try {
+        Logger.log('AI Confirmation started for chatId: ' + chatId);
+
+        // التحقق من وجود بيانات الحركة
+        if (!session.transaction) {
+            sendAIMessage(chatId, '❌ عذراً، لم أجد بيانات الحركة لتأكيدها. يرجى إعادة المحاولة.');
+            return;
+        }
+
         // حفظ الحركة
         const result = saveAITransaction(session.transaction, user, chatId);
 
@@ -370,14 +378,15 @@ function handleConfirmation(chatId, session, user) {
             // إرسال إشعار للمراجعين (اختياري)
             notifyReviewers(result.transactionId, session.transaction);
         } else {
-            sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ERROR_API);
+            // إرسال رسالة الخطأ المحددة
+            sendAIMessage(chatId, '❌ فشل حفظ الحركة:\n' + result.error);
         }
 
         resetAIUserSession(chatId);
 
     } catch (error) {
         Logger.log('Confirmation Error: ' + error.message);
-        sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ERROR_API);
+        sendAIMessage(chatId, '❌ خطأ غير متوقع عند التأكيد:\n' + error.message);
     }
 }
 
@@ -387,23 +396,40 @@ function handleConfirmation(chatId, session, user) {
 function saveAITransaction(transaction, user, chatId) {
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
+        let sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
 
+        // إذا كان الشيت غير موجود، نقوم بإنشائه (اختياري أو إرسال خطأ واضح)
         if (!sheet) {
-            throw new Error('شيت حركات البوت غير موجود');
+            Logger.log('Sheet "' + CONFIG.SHEETS.BOT_TRANSACTIONS + '" not found. Creating it...');
+            try {
+                sheet = ss.insertSheet(CONFIG.SHEETS.BOT_TRANSACTIONS);
+                // إعداد الهيدر إذا لزم الأمر
+                const headers = Object.values(BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS).map(col => col.name);
+                sheet.appendRow(headers);
+                sheet.getRange(1, 1, 1, headers.length).setBackground('#f3f3f3').setFontWeight('bold');
+            } catch (e) {
+                throw new Error('شيت "' + CONFIG.SHEETS.BOT_TRANSACTIONS + '" غير موجود وفشل إنشاؤه تلقائياً. يرجى إنشاؤه يدوياً.');
+            }
         }
 
         // إنشاء رقم الحركة
         const transactionId = generateTransactionId();
-        const timestamp = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd HH:mm:ss');
-        const month = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM');
+        const now = new Date();
+        const timestamp = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd HH:mm:ss');
+        const month = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM');
 
         // حساب القيمة بالدولار
-        const amountUSD = calculateUSDAmount(
-            transaction.amount,
-            transaction.currency,
-            transaction.exchangeRate
-        );
+        let amountUSD = 0;
+        try {
+            amountUSD = calculateUSDAmount(
+                transaction.amount,
+                transaction.currency,
+                transaction.exchangeRate
+            );
+        } catch (e) {
+            Logger.log('USD Calculation Error: ' + e.message);
+            amountUSD = transaction.amount; // Fallback
+        }
 
         // تحديد نوع الحركة
         const movementType = inferMovementType(transaction.nature);
@@ -411,7 +437,7 @@ function saveAITransaction(transaction, user, chatId) {
         // بناء صف البيانات (مطابق لهيكل BOT_TRANSACTIONS_COLUMNS)
         const rowData = [
             transactionId,                                          // رقم الحركة
-            transaction.due_date || timestamp.split(' ')[0],        // التاريخ
+            transaction.due_date && transaction.due_date !== 'TODAY' ? transaction.due_date : timestamp.split(' ')[0], // التاريخ
             transaction.nature,                                     // طبيعة الحركة
             transaction.classification,                             // تصنيف الحركة
             '',                                                     // كود المشروع
@@ -430,7 +456,7 @@ function saveAITransaction(transaction, user, chatId) {
             'فوري',                                                 // نوع شرط الدفع
             '',                                                     // عدد الأسابيع
             '',                                                     // تاريخ مخصص
-            transaction.due_date || timestamp.split(' ')[0],        // تاريخ الاستحقاق
+            transaction.due_date && transaction.due_date !== 'TODAY' ? transaction.due_date : timestamp.split(' ')[0], // تاريخ الاستحقاق
             'معلق',                                                 // حالة السداد
             month,                                                  // الشهر
             transaction.originalText || '',                         // ملاحظات (النص الأصلي)
@@ -451,7 +477,12 @@ function saveAITransaction(transaction, user, chatId) {
 
         // إذا كان طرف جديد، أضفه لشيت أطراف البوت
         if (transaction.isNewParty) {
-            addNewPartyFromAI(transaction, user, chatId);
+            try {
+                addNewPartyFromAI(transaction, user, chatId);
+            } catch (e) {
+                Logger.log('Add Party Error: ' + e.message);
+                // لا نوقف العملية إذا فشل إضافة الطرف فقط
+            }
         }
 
         return {
