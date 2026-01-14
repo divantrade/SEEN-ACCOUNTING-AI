@@ -226,7 +226,7 @@ function resetBotMenuCompletely() {
                 muteHttpExceptions: true
             });
             Logger.log('   ✓ حذف من: ' + scope.type);
-        } catch(e) {}
+        } catch (e) { }
     });
 
     // 2. تسجيل الأوامر للنطاق الافتراضي
@@ -729,7 +729,7 @@ function updateBotTokenAndSetup() {
  */
 function setWebhookManually() {
     // 👇👇👇 أدخل رابط الـ Web App (المنتهي بـ /exec) هنا بين علامتي التنصيص 👇👇👇
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbxmdDeGESS8LSTXmeMIgP958MhUqQDPlT0ZO_0yKfVWpbHpENACBwR0PCrqn4cJldUz6Q/exec';
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbzsubRAFrfCIxnB-ye1vI8rys8tyeUt-OD7vNL-d1tUt11Fh-Qc9CmSZA_Fvid2_1IsFg/exec';
     // 👆👆👆 تم وضع الرابط الخاص بك 👆👆👆
 
     Logger.log('🔄 جاري تعيين Webhook يدوياً...');
