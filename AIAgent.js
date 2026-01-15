@@ -685,6 +685,11 @@ function validateTransaction(transaction, context) {
         validation.enriched.payment_method = AI_CONFIG.INFERENCE_RULES.DEFAULTS.PAYMENT_METHOD;
     }
 
+    // تحويل سعر الصرف من snake_case إلى camelCase
+    if (transaction.exchange_rate) {
+        validation.enriched.exchangeRate = transaction.exchange_rate;
+    }
+
     validation.isValid = validation.missingRequired.length === 0;
 
     return validation;
