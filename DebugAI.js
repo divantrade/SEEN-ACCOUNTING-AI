@@ -122,3 +122,54 @@ function testSaveToSheet() {
         Logger.log(error.stack);
     }
 }
+
+/**
+ * اختبار حفظ حركة مباشرة عبر دالة saveAITransaction
+ * شغّل هذه الدالة لاختبار الحفظ بدون البوت
+ */
+function testDirectSave() {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('=== 🧪 اختبار الحفظ المباشر ===');
+    Logger.log('═══════════════════════════════════════');
+
+    const testTransaction = {
+        nature: 'استحقاق مصروف',
+        classification: 'مصروفات مباشرة',
+        project: 'خرج ولم يعد',
+        item: 'تصوير',
+        party: 'عبدالله القدومي',
+        amount: 600,
+        currency: 'USD',
+        payment_method: 'تحويل بنكي',
+        due_date: '2025-01-25',
+        details: 'اختبار حفظ مباشر من testDirectSave'
+    };
+
+    Logger.log('📝 بيانات الحركة التجريبية:');
+    Logger.log(JSON.stringify(testTransaction, null, 2));
+
+    try {
+        const result = saveAITransaction(
+            testTransaction,
+            { first_name: 'Test', last_name: 'User' },
+            123456
+        );
+
+        Logger.log('📊 نتيجة الحفظ:');
+        Logger.log(JSON.stringify(result, null, 2));
+
+        if (result.success) {
+            Logger.log('✅ تم الحفظ بنجاح!');
+            Logger.log('🆔 رقم الحركة: ' + result.transactionId);
+            Logger.log('🎉 اذهب لشيت "حركات البوت" وتأكد من ظهور الحركة');
+        } else {
+            Logger.log('❌ فشل الحفظ: ' + result.error);
+        }
+
+    } catch (error) {
+        Logger.log('💥 خطأ استثنائي: ' + error.message);
+        Logger.log(error.stack);
+    }
+
+    Logger.log('═══════════════════════════════════════');
+}
