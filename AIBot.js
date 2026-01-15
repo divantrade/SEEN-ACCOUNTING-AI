@@ -384,7 +384,7 @@ function handleAICallback(callbackQuery) {
     if (data.startsWith('ai_confirm')) {
         Logger.log('🔄 Processing CONFIRM callback...');
         try {
-            handleConfirmation(chatId, session, user);
+            handleAIConfirmation(chatId, session, user);
         } catch (confirmError) {
             Logger.log('🔥 CONFIRM ERROR: ' + confirmError.message);
             Logger.log('🔥 Stack: ' + confirmError.stack);
@@ -432,7 +432,7 @@ function answerAICallback(callbackQueryId) {
 /**
  * معالجة تأكيد الحركة
  */
-function handleConfirmation(chatId, session, user) {
+function handleAIConfirmation(chatId, session, user) {
     Logger.log('=== AI Confirmation Started ===');
     Logger.log('ChatId: ' + chatId);
     Logger.log('Session: ' + JSON.stringify(session));
