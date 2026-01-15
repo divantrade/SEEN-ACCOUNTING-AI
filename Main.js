@@ -2399,6 +2399,10 @@ function addPayment() {
   sheet.getRange(lastRow, 17).setValue(paymentMethod);    // Q
   sheet.getRange(lastRow, 24).setValue('دفعة مسجلة تلقائياً'); // X
 
+  // ⭐ حساب الأعمدة التلقائية (M, O, V) - لأن setValue لا يُفعّل onEdit
+  calculateUsdValue_(sheet, lastRow);
+  recalculatePartyBalance_(sheet, lastRow);
+
   ui.alert(
     '✅ تم تسجيل الدفعة بنجاح!\n\n' +
     'الطرف: ' + vendorName + '\n' +
