@@ -494,6 +494,17 @@ function approveTransaction(rowNumber) {
         SpreadsheetApp.flush();
         Logger.log('✅ تم حفظ التغييرات (flush)');
 
+        // ⭐ حساب الأعمدة التلقائية (M, U, O, V) - لأن setValues لا يُفعّل onEdit
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        try {
+            calculateUsdValue_(mainSheet, newRow);           // M: القيمة بالدولار
+            calculateDueDate_(ss, mainSheet, newRow);        // U: تاريخ الاستحقاق
+            recalculatePartyBalance_(mainSheet, newRow);     // O: الرصيد + V: حالة السداد
+            Logger.log('✅ تم حساب الأعمدة التلقائية (M, U, O, V)');
+        } catch (calcError) {
+            Logger.log('⚠️ خطأ في حساب الأعمدة التلقائية: ' + calcError.message);
+        }
+
         // تحديث حالة الحركة في شيت البوت
         let reviewerEmail = 'Unknown';
         try {
@@ -986,6 +997,17 @@ function manualApproveWithDetails() {
 
         // الإدخال
         mainSheet.getRange(newRow, 1, 1, mainRowData.length).setValues([mainRowData]);
+
+        // ⭐ حساب الأعمدة التلقائية (M, U, O, V) - لأن setValues لا يُفعّل onEdit
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        try {
+            calculateUsdValue_(mainSheet, newRow);           // M: القيمة بالدولار
+            calculateDueDate_(ss, mainSheet, newRow);        // U: تاريخ الاستحقاق
+            recalculatePartyBalance_(mainSheet, newRow);     // O: الرصيد + V: حالة السداد
+            Logger.log('✅ تم حساب الأعمدة التلقائية (M, U, O, V)');
+        } catch (calcError) {
+            Logger.log('⚠️ خطأ في حساب الأعمدة التلقائية: ' + calcError.message);
+        }
 
         // تحديث حالة البوت
         botSheet.getRange(rowNumber, columns.REVIEW_STATUS.index).setValue(CONFIG.TELEGRAM_BOT.REVIEW_STATUS.APPROVED);
