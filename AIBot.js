@@ -594,7 +594,7 @@ function handleEditRequest(chatId, data, session, messageId) {
             parse_mode: 'Markdown',
             reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
         });
-    });
+    }
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT;
     saveAIUserSession(chatId, session);
     return;
