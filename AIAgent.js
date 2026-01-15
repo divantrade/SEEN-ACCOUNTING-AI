@@ -131,11 +131,15 @@ function callGemini(userMessage, context) {
 function buildFullPrompt(userMessage, context) {
     let prompt = AI_CONFIG.SYSTEM_PROMPT + '\n\n';
 
-    // إضافة قائمة المشاريع
+    // إضافة قائمة المشاريع مع أكوادها
     if (context.projects && context.projects.length > 0) {
-        prompt += '## المشاريع المتاحة:\n';
+        prompt += '## المشاريع المتاحة (الكود - الاسم):\n';
         context.projects.forEach(p => {
-            prompt += `- ${p}\n`;
+            if (typeof p === 'object') {
+                prompt += `- ${p.code} - ${p.name}\n`;
+            } else {
+                prompt += `- ${p}\n`;
+            }
         });
         prompt += '\n';
     }
@@ -251,9 +255,13 @@ function loadProjects(ss) {
 
         // تخطي الهيدر، العمود الأول = كود، العمود الثاني = اسم المشروع
         for (let i = 1; i < data.length; i++) {
-            const projectName = data[i][1]; // اسم المشروع في العمود الثاني
+            const projectCode = data[i][0]; // كود المشروع
+            const projectName = data[i][1]; // اسم المشروع
             if (projectName && projectName.toString().trim()) {
-                projects.push(projectName.toString().trim());
+                projects.push({
+                    code: projectCode ? projectCode.toString().trim() : '',
+                    name: projectName.toString().trim()
+                });
             }
         }
 
@@ -374,30 +382,63 @@ function fuzzySearchInArray(searchText, array, minScore = 0.5) {
 
 /**
  * مطابقة اسم المشروع مع المشاريع الموجودة
+ * يدعم المشاريع ككائنات {code, name} أو كنصوص
  */
 function matchProject(projectName, projectsList) {
     if (!projectName || !projectsList || projectsList.length === 0) {
         return { found: false, matches: [] };
     }
 
-    // بحث مطابق تماماً
-    const exactMatch = projectsList.find(p =>
-        normalizeArabicText(p) === normalizeArabicText(projectName)
-    );
+    // تحويل القائمة لأسماء فقط للبحث
+    const isObjectList = projectsList.length > 0 && typeof projectsList[0] === 'object';
 
-    if (exactMatch) {
-        return { found: true, match: exactMatch, score: 1.0 };
+    // بحث مطابق تماماً
+    if (isObjectList) {
+        const exactMatch = projectsList.find(p =>
+            normalizeArabicText(p.name) === normalizeArabicText(projectName)
+        );
+        if (exactMatch) {
+            return {
+                found: true,
+                match: exactMatch.name,
+                code: exactMatch.code,
+                score: 1.0
+            };
+        }
+    } else {
+        const exactMatch = projectsList.find(p =>
+            normalizeArabicText(p) === normalizeArabicText(projectName)
+        );
+        if (exactMatch) {
+            return { found: true, match: exactMatch, score: 1.0 };
+        }
     }
 
     // بحث ذكي
-    const results = fuzzySearchInArray(projectName, projectsList, 0.5);
+    const searchList = isObjectList ? projectsList.map(p => p.name) : projectsList;
+    const results = fuzzySearchInArray(projectName, searchList, 0.5);
 
     if (results.length > 0) {
+        const matchedName = results[0].item;
+        let matchedCode = null;
+
+        if (isObjectList) {
+            const matchedProject = projectsList.find(p => p.name === matchedName);
+            matchedCode = matchedProject ? matchedProject.code : null;
+        }
+
         return {
             found: true,
-            match: results[0].item,
+            match: matchedName,
+            code: matchedCode,
             score: results[0].score,
-            alternatives: results.slice(1, 4).map(r => r.item)
+            alternatives: results.slice(1, 4).map(r => {
+                if (isObjectList) {
+                    const proj = projectsList.find(p => p.name === r.item);
+                    return { name: r.item, code: proj ? proj.code : null };
+                }
+                return r.item;
+            })
         };
     }
 
@@ -535,6 +576,7 @@ function validateTransaction(transaction, context) {
         const projectMatch = matchProject(transaction.project, context.projects);
         if (projectMatch.found) {
             validation.enriched.project = projectMatch.match;
+            validation.enriched.projectCode = projectMatch.code || transaction.project_code || '';
             validation.enriched.projectScore = projectMatch.score;
             if (projectMatch.score < 0.9) {
                 validation.warnings.push({
@@ -547,9 +589,18 @@ function validateTransaction(transaction, context) {
             validation.warnings.push({
                 field: 'project',
                 message: `المشروع "${transaction.project}" غير موجود`,
-                suggestions: context.projects.slice(0, 5)
+                suggestions: context.projects.slice(0, 5).map(p => typeof p === 'object' ? p.name : p)
             });
         }
+    }
+
+    // حفظ شروط الدفع
+    if (transaction.payment_term) {
+        validation.enriched.paymentTerm = transaction.payment_term;
+        validation.enriched.paymentTermWeeks = transaction.payment_term_weeks || null;
+        validation.enriched.paymentTermDate = transaction.payment_term_date || null;
+    } else {
+        validation.enriched.paymentTerm = 'فوري'; // الافتراضي
     }
 
     // مطابقة الطرف
@@ -714,8 +765,13 @@ function buildTransactionSummary(transaction) {
     let summary = `${emoji} *${typeLabel}*\n`;
     summary += '━━━━━━━━━━━━━━━━\n';
 
+    // عرض المشروع مع الكود
     if (transaction.project) {
-        summary += `🎬 *المشروع:* ${transaction.project}\n`;
+        let projectDisplay = transaction.project;
+        if (transaction.project_code) {
+            projectDisplay = `${transaction.project} (${transaction.project_code})`;
+        }
+        summary += `🎬 *المشروع:* ${projectDisplay}\n`;
     }
 
     summary += `📁 *التصنيف:* ${transaction.classification}\n`;
@@ -741,6 +797,17 @@ function buildTransactionSummary(transaction) {
 
     if (transaction.payment_method) {
         summary += `💳 *طريقة الدفع:* ${transaction.payment_method}\n`;
+    }
+
+    // عرض شرط الدفع
+    if (transaction.payment_term) {
+        let termDisplay = transaction.payment_term;
+        if (transaction.payment_term === 'بعد أسابيع' && transaction.payment_term_weeks) {
+            termDisplay = `بعد ${transaction.payment_term_weeks} أسبوع`;
+        } else if (transaction.payment_term === 'تاريخ محدد' && transaction.payment_term_date) {
+            termDisplay = `في ${transaction.payment_term_date}`;
+        }
+        summary += `⏰ *شرط الدفع:* ${termDisplay}\n`;
     }
 
     if (transaction.details) {
