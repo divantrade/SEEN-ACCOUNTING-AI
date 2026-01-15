@@ -359,19 +359,30 @@ function handleAICallback(callbackQuery) {
     const data = callbackQuery.data;
     const user = callbackQuery.from;
 
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📲 AI Callback Received!');
+    Logger.log('ChatId: ' + chatId);
+    Logger.log('Callback Data: ' + data);
+    Logger.log('User: ' + JSON.stringify(user));
+
     // الرد على الـ callback
     answerAICallback(callbackQuery.id);
 
     // التحقق من الصلاحيات
     const permission = checkAIUserPermission(chatId, user);
     if (!permission.authorized) {
+        Logger.log('❌ User not authorized');
         return;
     }
+    Logger.log('✅ User authorized: ' + permission.userName);
 
     const session = getAIUserSession(chatId);
+    Logger.log('📋 Session state: ' + (session ? session.state : 'NULL'));
+    Logger.log('📋 Session has transaction: ' + (session && session.transaction ? 'YES' : 'NO'));
 
     // معالجة حسب نوع الـ callback
     if (data.startsWith('ai_confirm')) {
+        Logger.log('🔄 Processing CONFIRM callback...');
         handleConfirmation(chatId, session, user);
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
@@ -890,9 +901,11 @@ function getAIUserSession(chatId) {
     const cachedData = cache.get(key);
 
     if (cachedData) {
+        Logger.log(`📖 Session loaded for ${chatId}: ${cachedData.substring(0, 200)}...`);
         return JSON.parse(cachedData);
     }
 
+    Logger.log(`📭 No session found for ${chatId}, returning default`);
     // جلسة جديدة افتراضية
     return {
         state: AI_CONFIG.AI_CONVERSATION_STATES.IDLE,
@@ -910,8 +923,11 @@ function getAIUserSession(chatId) {
 function saveAIUserSession(chatId, session) {
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
+    const sessionStr = JSON.stringify(session);
+    Logger.log(`💾 Saving session for ${chatId}: ${sessionStr.substring(0, 200)}...`);
     // حفظ لمدة 6 ساعات (21600 ثانية)
-    cache.put(key, JSON.stringify(session), 21600);
+    cache.put(key, sessionStr, 21600);
+    Logger.log(`✅ Session saved for ${chatId}`);
 }
 
 /**
