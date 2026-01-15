@@ -138,6 +138,23 @@ function callGemini(userMessage, context) {
 function buildFullPrompt(userMessage, context) {
     let prompt = AI_CONFIG.SYSTEM_PROMPT + '\n\n';
 
+    // ⭐ إضافة قوائم طبيعة الحركة والتصنيف (إلزامية من شيت البنود)
+    if (context.natures && context.natures.length > 0) {
+        prompt += '## ⚠️ طبيعة الحركة المسموحة (استخدم إحدى هذه القيم فقط):\n';
+        context.natures.forEach(n => {
+            prompt += `- ${n}\n`;
+        });
+        prompt += '\n';
+    }
+
+    if (context.classifications && context.classifications.length > 0) {
+        prompt += '## ⚠️ تصنيف الحركة المسموح (استخدم إحدى هذه القيم فقط):\n';
+        context.classifications.forEach(c => {
+            prompt += `- ${c}\n`;
+        });
+        prompt += '\n';
+    }
+
     // إضافة قائمة المشاريع مع أكوادها
     if (context.projects && context.projects.length > 0) {
         prompt += '## المشاريع المتاحة (الكود - الاسم):\n';
@@ -172,7 +189,7 @@ function buildFullPrompt(userMessage, context) {
     // إضافة رسالة المستخدم
     prompt += '## نص المستخدم:\n';
     prompt += userMessage + '\n\n';
-    prompt += '## المطلوب:\nحلل النص أعلاه واستخرج بيانات الحركة المالية بصيغة JSON.';
+    prompt += '## المطلوب:\nحلل النص أعلاه واستخرج بيانات الحركة المالية بصيغة JSON. استخدم فقط القيم المتاحة أعلاه لطبيعة الحركة والتصنيف.';
 
     return prompt;
 }
@@ -240,13 +257,15 @@ function parseGeminiResponse(text) {
 // ==================== تحميل السياق ====================
 
 /**
- * تحميل السياق الكامل (المشاريع، البنود، الأطراف)
+ * تحميل السياق الكامل (المشاريع، البنود، الأطراف، الأنواع، التصنيفات)
  */
 function loadAIContext() {
     const context = {
         projects: [],
         items: [],
-        parties: []
+        parties: [],
+        natures: [],        // أنواع الحركات من شيت البنود
+        classifications: [] // تصنيفات الحركات من شيت البنود
     };
 
     try {
@@ -255,11 +274,18 @@ function loadAIContext() {
         // تحميل المشاريع
         context.projects = loadProjects(ss);
 
-        // تحميل البنود
-        context.items = loadItems(ss);
+        // تحميل البنود + الأنواع + التصنيفات من شيت البنود
+        const itemsData = loadItems(ss);
+        context.items = itemsData.items;
+        context.natures = itemsData.natures;
+        context.classifications = itemsData.classifications;
 
         // تحميل الأطراف
         context.parties = loadParties(ss);
+
+        Logger.log('✅ AI Context loaded: ' + context.projects.length + ' projects, ' +
+                   context.items.length + ' items, ' + context.parties.length + ' parties, ' +
+                   context.natures.length + ' natures, ' + context.classifications.length + ' classifications');
 
     } catch (error) {
         Logger.log('Context Load Error: ' + error.message);
@@ -300,30 +326,52 @@ function loadProjects(ss) {
 }
 
 /**
- * تحميل قائمة البنود
+ * تحميل قائمة البنود مع طبيعة الحركة والتصنيف
  */
 function loadItems(ss) {
-    const items = [];
+    const result = {
+        items: [],
+        natures: [],
+        classifications: []
+    };
 
     try {
         const sheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS);
-        if (!sheet) return items;
+        if (!sheet) return result;
 
         const data = sheet.getDataRange().getValues();
+        const naturesSet = new Set();
+        const classificationsSet = new Set();
 
-        // تخطي الهيدر، العمود الأول = اسم البند
+        // تخطي الهيدر
+        // A = البند، B = طبيعة الحركة، C = تصنيف الحركة
         for (let i = 1; i < data.length; i++) {
             const itemName = data[i][0];
+            const nature = data[i][1];
+            const classification = data[i][2];
+
             if (itemName && itemName.toString().trim()) {
-                items.push(itemName.toString().trim());
+                result.items.push(itemName.toString().trim());
+            }
+            if (nature && nature.toString().trim()) {
+                naturesSet.add(nature.toString().trim());
+            }
+            if (classification && classification.toString().trim()) {
+                classificationsSet.add(classification.toString().trim());
             }
         }
+
+        result.natures = Array.from(naturesSet);
+        result.classifications = Array.from(classificationsSet);
+
+        Logger.log('📋 Loaded from Items sheet: ' + result.items.length + ' items, ' +
+                   result.natures.length + ' natures, ' + result.classifications.length + ' classifications');
 
     } catch (error) {
         Logger.log('Load Items Error: ' + error.message);
     }
 
-    return items;
+    return result;
 }
 
 /**
