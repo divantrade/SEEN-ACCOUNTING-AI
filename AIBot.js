@@ -394,33 +394,47 @@ function answerAICallback(callbackQueryId) {
  * معالجة تأكيد الحركة
  */
 function handleConfirmation(chatId, session, user) {
-    try {
-        Logger.log('AI Confirmation started for chatId: ' + chatId);
+    Logger.log('=== AI Confirmation Started ===');
+    Logger.log('ChatId: ' + chatId);
+    Logger.log('Session: ' + JSON.stringify(session));
 
+    try {
         // التحقق من وجود بيانات الحركة
-        if (!session.transaction) {
-            sendAIMessage(chatId, '❌ عذراً، لم أجد بيانات الحركة لتأكيدها. يرجى إعادة المحاولة.');
+        if (!session || !session.transaction) {
+            Logger.log('❌ Session or transaction is null/undefined');
+            sendAIMessage(chatId, '❌ عذراً، لم أجد بيانات الحركة لتأكيدها.\n\nيرجى إعادة إرسال الحركة من جديد.');
             return;
         }
 
+        Logger.log('Transaction data: ' + JSON.stringify(session.transaction));
+
         // حفظ الحركة
+        sendAIMessage(chatId, '⏳ جاري حفظ الحركة...');
+
         const result = saveAITransaction(session.transaction, user, chatId);
+
+        Logger.log('Save result: ' + JSON.stringify(result));
 
         if (result.success) {
             const successMsg = AI_CONFIG.AI_MESSAGES.SUCCESS.replace('#{id}', result.transactionId);
             sendAIMessage(chatId, successMsg, { parse_mode: 'Markdown' });
 
             // إرسال إشعار للمراجعين (اختياري)
-            notifyReviewers(result.transactionId, session.transaction);
+            try {
+                notifyReviewers(result.transactionId, session.transaction);
+            } catch (notifyError) {
+                Logger.log('Notify error (non-critical): ' + notifyError.message);
+            }
         } else {
             // إرسال رسالة الخطأ المحددة
-            sendAIMessage(chatId, '❌ فشل حفظ الحركة:\n' + result.error);
+            sendAIMessage(chatId, '❌ فشل حفظ الحركة:\n' + (result.error || 'خطأ غير معروف'));
         }
 
         resetAIUserSession(chatId);
 
     } catch (error) {
-        Logger.log('Confirmation Error: ' + error.message);
+        Logger.log('❌ Confirmation Error: ' + error.message);
+        Logger.log('Stack: ' + error.stack);
         sendAIMessage(chatId, '❌ خطأ غير متوقع عند التأكيد:\n' + error.message);
     }
 }
