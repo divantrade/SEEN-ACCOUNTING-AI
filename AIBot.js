@@ -10,27 +10,10 @@ const aiUserSessions = {};
 // ==================== معالجة التحديثات ====================
 
 /**
- * معالجة تحديثات البوت الذكي (Long Polling Loop)
- * يعمل لمدة 55 ثانية تقريباً للحفاظ على الاتصال مفتوحاً
- * مما يوفر استجابة شبه فورية (Real-time)
+ * معالجة تحديثات البوت الذكي (Long Polling)
  * يتم استدعاؤها بواسطة Time-driven Trigger كل دقيقة
- * يستخدم LockService لمنع التنفيذ المتزامن (Error 409)
  */
 function processAIBotUpdates() {
-    // استخدام Lock لمنع التنفيذ المتزامن
-    const lock = LockService.getScriptLock();
-
-    // محاولة الحصول على Lock (انتظار 1 ثانية فقط)
-    const hasLock = lock.tryLock(1000);
-
-    if (!hasLock) {
-        // لا يمكن الحصول على Lock - هناك instance أخرى تعمل
-        Logger.log('⏭️ AI Bot: Instance أخرى تعمل بالفعل - تخطي هذا التشغيل');
-        return;
-    }
-
-    Logger.log('🔒 AI Bot: تم الحصول على Lock بنجاح');
-
     try {
         // التحقق من إعداد البوت
         const setup = checkAIBotSetup();
@@ -40,73 +23,44 @@ function processAIBotUpdates() {
         }
 
         const token = getAIBotToken();
+        const lastUpdateId = getAILastUpdateId();
 
-        // بدء المؤقت
-        const startTime = new Date().getTime();
-        // الحد الأقصى للتنفيذ: 55 ثانية (لترك هامش أمان 5 ثوان قبل الدقيقة التالية)
-        const MAX_EXECUTION_TIME = 55000;
+        // جلب التحديثات
+        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${lastUpdateId + 1}&timeout=50`;
 
-        Logger.log('🤖 البوت الذكي جاهز للعمل');
-        Logger.log('🔄 Starting AI Bot Long Polling Loop...');
+        const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+        const data = JSON.parse(response.getContentText());
 
-        // حلقة تكرار تستمر حتى انتهاء الوقت المسموح
-        while (new Date().getTime() - startTime < MAX_EXECUTION_TIME) {
-
-            // جلب الـ offset الحالي في كل دورة
-            let offset = getAILastUpdateId();
-
-            try {
-                // timeout=5: تليجرام ينتظر 5 ثوان إذا لم تكن هناك رسائل (Long Polling)
-                // إذا وصلت رسالة، يرد فوراً.
-                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset + 1}&timeout=5`;
-                const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-                const data = JSON.parse(response.getContentText());
-
-                if (!data.ok) {
-                    Logger.log('AI Bot Error: ' + JSON.stringify(data));
-                    Utilities.sleep(1000);
-                    continue;
-                }
-
-                const updates = data.result;
-
-                if (updates && updates.length > 0) {
-                    Logger.log(`📥 AI Bot: Received ${updates.length} updates`);
-
-                    for (const update of updates) {
-                        try {
-                            if (update.message) {
-                                handleAIMessage(update.message);
-                            } else if (update.callback_query) {
-                                handleAICallback(update.callback_query);
-                            }
-                            // تحديث الـ offset لتجاوز هذا التحديث مستقبلاً
-                            offset = update.update_id;
-                        } catch (e) {
-                            Logger.log('AI Update Processing Error: ' + e.message);
-                        }
-                    }
-
-                    // حفظ آخر offset بعد المعالجة
-                    setAILastUpdateId(offset);
-
-                    // بما أننا وجدنا تحديثات، نكمل الحلقة فوراً لجلب المزيد دون انتظار
-                }
-                // إذا لم توجد تحديثات، الـ timeout في الرابط تكفل بالانتظار 5 ثوان
-
-            } catch (e) {
-                Logger.log('🔥 AI Bot Polling Error: ' + e.message);
-                // انتظار بسيط عند الخطأ لتجنب التكرار السريع جداً
-                Utilities.sleep(1000);
-            }
+        if (!data.ok) {
+            Logger.log('AI Bot Error: ' + JSON.stringify(data));
+            return;
         }
 
-        Logger.log('⏹️ AI Bot Polling Loop finished (Time limit reached).');
+        const updates = data.result;
 
-    } finally {
-        // تحرير الـ Lock دائماً عند الانتهاء
-        lock.releaseLock();
-        Logger.log('🔓 AI Bot: تم تحرير Lock');
+        if (updates.length === 0) {
+            return;
+        }
+
+        // معالجة كل تحديث
+        updates.forEach(update => {
+            try {
+                if (update.message) {
+                    handleAIMessage(update.message);
+                } else if (update.callback_query) {
+                    handleAICallback(update.callback_query);
+                }
+            } catch (error) {
+                Logger.log('Update Processing Error: ' + error.message);
+            }
+        });
+
+        // حفظ آخر update_id
+        const lastId = updates[updates.length - 1].update_id;
+        setAILastUpdateId(lastId);
+
+    } catch (error) {
+        Logger.log('AI Bot Main Error: ' + error.message);
     }
 }
 
@@ -338,9 +292,6 @@ function showTransactionConfirmation(chatId, session) {
 
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_CONFIRMATION;
 
-    // حفظ الجلسة بعد تغيير الحالة (مهم!)
-    saveAIUserSession(chatId, session);
-
     sendAIMessage(chatId, summary, {
         parse_mode: 'Markdown',
         reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.CONFIRMATION)
@@ -359,37 +310,20 @@ function handleAICallback(callbackQuery) {
     const data = callbackQuery.data;
     const user = callbackQuery.from;
 
-    Logger.log('═══════════════════════════════════════');
-    Logger.log('📲 AI Callback Received!');
-    Logger.log('ChatId: ' + chatId);
-    Logger.log('Callback Data: ' + data);
-    Logger.log('User: ' + JSON.stringify(user));
-
     // الرد على الـ callback
     answerAICallback(callbackQuery.id);
 
     // التحقق من الصلاحيات
     const permission = checkAIUserPermission(chatId, user);
     if (!permission.authorized) {
-        Logger.log('❌ User not authorized');
         return;
     }
-    Logger.log('✅ User authorized: ' + permission.userName);
 
     const session = getAIUserSession(chatId);
-    Logger.log('📋 Session state: ' + (session ? session.state : 'NULL'));
-    Logger.log('📋 Session has transaction: ' + (session && session.transaction ? 'YES' : 'NO'));
 
     // معالجة حسب نوع الـ callback
     if (data.startsWith('ai_confirm')) {
-        Logger.log('🔄 Processing CONFIRM callback...');
-        try {
-            handleAIConfirmation(chatId, session, user);
-        } catch (confirmError) {
-            Logger.log('🔥 CONFIRM ERROR: ' + confirmError.message);
-            Logger.log('🔥 Stack: ' + confirmError.stack);
-            sendAIMessage(chatId, '❌ خطأ في التأكيد: ' + confirmError.message);
-        }
+        handleConfirmation(chatId, session, user);
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
     } else if (data.startsWith('ai_cancel')) {
@@ -432,48 +366,34 @@ function answerAICallback(callbackQueryId) {
 /**
  * معالجة تأكيد الحركة
  */
-function handleAIConfirmation(chatId, session, user) {
-    Logger.log('=== AI Confirmation Started ===');
-    Logger.log('ChatId: ' + chatId);
-    Logger.log('Session: ' + JSON.stringify(session));
-
+function handleConfirmation(chatId, session, user) {
     try {
+        Logger.log('AI Confirmation started for chatId: ' + chatId);
+
         // التحقق من وجود بيانات الحركة
-        if (!session || !session.transaction) {
-            Logger.log('❌ Session or transaction is null/undefined');
-            sendAIMessage(chatId, '❌ عذراً، لم أجد بيانات الحركة لتأكيدها.\n\nيرجى إعادة إرسال الحركة من جديد.');
+        if (!session.transaction) {
+            sendAIMessage(chatId, '❌ عذراً، لم أجد بيانات الحركة لتأكيدها. يرجى إعادة المحاولة.');
             return;
         }
 
-        Logger.log('Transaction data: ' + JSON.stringify(session.transaction));
-
         // حفظ الحركة
-        sendAIMessage(chatId, '⏳ جاري حفظ الحركة...');
-
         const result = saveAITransaction(session.transaction, user, chatId);
-
-        Logger.log('Save result: ' + JSON.stringify(result));
 
         if (result.success) {
             const successMsg = AI_CONFIG.AI_MESSAGES.SUCCESS.replace('#{id}', result.transactionId);
             sendAIMessage(chatId, successMsg, { parse_mode: 'Markdown' });
 
             // إرسال إشعار للمراجعين (اختياري)
-            try {
-                notifyReviewers(result.transactionId, session.transaction);
-            } catch (notifyError) {
-                Logger.log('Notify error (non-critical): ' + notifyError.message);
-            }
+            notifyReviewers(result.transactionId, session.transaction);
         } else {
             // إرسال رسالة الخطأ المحددة
-            sendAIMessage(chatId, '❌ فشل حفظ الحركة:\n' + (result.error || 'خطأ غير معروف'));
+            sendAIMessage(chatId, '❌ فشل حفظ الحركة:\n' + result.error);
         }
 
         resetAIUserSession(chatId);
 
     } catch (error) {
-        Logger.log('❌ Confirmation Error: ' + error.message);
-        Logger.log('Stack: ' + error.stack);
+        Logger.log('Confirmation Error: ' + error.message);
         sendAIMessage(chatId, '❌ خطأ غير متوقع عند التأكيد:\n' + error.message);
     }
 }
@@ -907,11 +827,9 @@ function getAIUserSession(chatId) {
     const cachedData = cache.get(key);
 
     if (cachedData) {
-        Logger.log(`📖 Session loaded for ${chatId}: ${cachedData.substring(0, 200)}...`);
         return JSON.parse(cachedData);
     }
 
-    Logger.log(`📭 No session found for ${chatId}, returning default`);
     // جلسة جديدة افتراضية
     return {
         state: AI_CONFIG.AI_CONVERSATION_STATES.IDLE,
@@ -929,11 +847,8 @@ function getAIUserSession(chatId) {
 function saveAIUserSession(chatId, session) {
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
-    const sessionStr = JSON.stringify(session);
-    Logger.log(`💾 Saving session for ${chatId}: ${sessionStr.substring(0, 200)}...`);
     // حفظ لمدة 6 ساعات (21600 ثانية)
-    cache.put(key, sessionStr, 21600);
-    Logger.log(`✅ Session saved for ${chatId}`);
+    cache.put(key, JSON.stringify(session), 21600);
 }
 
 /**

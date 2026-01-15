@@ -493,19 +493,8 @@ function validateTransaction(transaction, context) {
         enriched: { ...transaction }
     };
 
-    // تحويل المبلغ إلى رقم وتنظيفه
-    if (transaction.amount) {
-        // إذا كان نصاً، استخرج الأرقام منه
-        let amountValue = transaction.amount;
-        if (typeof amountValue === 'string') {
-            // إزالة أي نص غير رقمي (مثل "دولار")
-            amountValue = amountValue.replace(/[^0-9.,]/g, '').replace(',', '.');
-        }
-        validation.enriched.amount = parseFloat(amountValue) || 0;
-    }
-
     // التحقق من الحقول الإلزامية الأساسية
-    if (!validation.enriched.amount || validation.enriched.amount <= 0) {
+    if (!transaction.amount || transaction.amount <= 0) {
         validation.missingRequired.push({
             field: 'amount',
             label: 'المبلغ',
@@ -620,25 +609,11 @@ function analyzeTransaction(userMessage) {
         // استدعاء Gemini
         const aiResult = callGemini(userMessage, context);
 
-        Logger.log('🔍 AI Result: ' + JSON.stringify(aiResult));
-
-        // التحقق من فشل التحليل (إذا كان هناك error صريح)
-        if (aiResult.error && aiResult.success === false) {
+        if (!aiResult.success) {
             return {
                 success: false,
                 error: aiResult.error || AI_CONFIG.AI_MESSAGES.ERROR_PARSE,
                 suggestion: aiResult.suggestion
-            };
-        }
-
-        // التحقق من وجود بيانات الحركة الأساسية
-        // إذا لم يكن هناك nature أو amount فالتحليل فاشل
-        if (!aiResult.nature && !aiResult.amount && !aiResult.party) {
-            Logger.log('❌ AI result missing essential fields');
-            return {
-                success: false,
-                error: 'لم أتمكن من فهم الحركة المالية. يرجى المحاولة مرة أخرى بصياغة مختلفة.',
-                rawResponse: aiResult
             };
         }
 
@@ -656,7 +631,6 @@ function analyzeTransaction(userMessage) {
         };
     } catch (error) {
         Logger.log('Analyze Transaction Error: ' + error.message);
-        Logger.log('Stack: ' + error.stack);
         return {
             success: false,
             error: 'خطأ في تحليل البيانات الداخلية: ' + error.message
@@ -787,20 +761,8 @@ function getTypeLabel(nature) {
  * تنسيق الأرقام
  */
 function formatNumber(num) {
-    if (!num && num !== 0) return '0.00';
-
-    // تحويل إلى رقم إذا كان نصاً
-    let value = num;
-    if (typeof value === 'string') {
-        value = parseFloat(value.replace(/[^0-9.,]/g, '').replace(',', '.'));
-    }
-
-    // التحقق من صحة الرقم
-    if (isNaN(value) || !isFinite(value)) {
-        return '0.00';
-    }
-
-    return Number(value).toLocaleString('en-US', {
+    if (!num) return '0';
+    return Number(num).toLocaleString('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
@@ -846,9 +808,8 @@ function testGeminiConnection() {
         Logger.log('✅ تم الحصول على API Key');
         Logger.log('API Key (أول 10 أحرف): ' + apiKey.substring(0, 10) + '...');
 
-        const model = AI_CONFIG.GEMINI.MODEL;
-        const url = `${AI_CONFIG.GEMINI.BASE_URL}${model}:generateContent?key=${apiKey}`;
-        Logger.log('URL: ' + url);
+        const url = `${AI_CONFIG.GEMINI.API_URL}?key=${apiKey}`;
+        Logger.log('URL: ' + AI_CONFIG.GEMINI.API_URL);
 
         // طلب بسيط جداً
         const payload = {
