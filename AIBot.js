@@ -14,6 +14,15 @@ const aiUserSessions = {};
  * يتم استدعاؤها بواسطة Time-driven Trigger كل دقيقة
  */
 function processAIBotUpdates() {
+    // استخدام Lock لمنع التنفيذ المتزامن
+    const lock = LockService.getScriptLock();
+    const hasLock = lock.tryLock(1000);
+
+    if (!hasLock) {
+        Logger.log('⏭️ AI Bot: Instance أخرى تعمل - تخطي');
+        return;
+    }
+
     try {
         // التحقق من إعداد البوت
         const setup = checkAIBotSetup();
@@ -23,44 +32,57 @@ function processAIBotUpdates() {
         }
 
         const token = getAIBotToken();
-        const lastUpdateId = getAILastUpdateId();
+        const startTime = Date.now();
+        const MAX_TIME = 55000; // 55 ثانية
 
-        // جلب التحديثات
-        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${lastUpdateId + 1}&timeout=50`;
+        Logger.log('🤖 البوت الذكي يعمل...');
 
-        const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-        const data = JSON.parse(response.getContentText());
+        // حلقة polling لمدة 55 ثانية
+        while (Date.now() - startTime < MAX_TIME) {
+            const lastUpdateId = getAILastUpdateId();
 
-        if (!data.ok) {
-            Logger.log('AI Bot Error: ' + JSON.stringify(data));
-            return;
-        }
+            // جلب التحديثات مع timeout قصير
+            const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${lastUpdateId + 1}&timeout=5`;
 
-        const updates = data.result;
+            const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+            const data = JSON.parse(response.getContentText());
 
-        if (updates.length === 0) {
-            return;
-        }
-
-        // معالجة كل تحديث
-        updates.forEach(update => {
-            try {
-                if (update.message) {
-                    handleAIMessage(update.message);
-                } else if (update.callback_query) {
-                    handleAICallback(update.callback_query);
-                }
-            } catch (error) {
-                Logger.log('Update Processing Error: ' + error.message);
+            if (!data.ok) {
+                Logger.log('AI Bot Error: ' + JSON.stringify(data));
+                Utilities.sleep(1000);
+                continue;
             }
-        });
 
-        // حفظ آخر update_id
-        const lastId = updates[updates.length - 1].update_id;
-        setAILastUpdateId(lastId);
+            const updates = data.result;
+
+            if (updates.length > 0) {
+                Logger.log('📥 استلام ' + updates.length + ' تحديث');
+
+                // معالجة كل تحديث
+                updates.forEach(update => {
+                    try {
+                        if (update.message) {
+                            handleAIMessage(update.message);
+                        } else if (update.callback_query) {
+                            handleAICallback(update.callback_query);
+                        }
+                    } catch (error) {
+                        Logger.log('Update Processing Error: ' + error.message);
+                    }
+                });
+
+                // حفظ آخر update_id
+                const lastId = updates[updates.length - 1].update_id;
+                setAILastUpdateId(lastId);
+            }
+        }
+
+        Logger.log('⏹️ انتهى وقت البوت');
 
     } catch (error) {
         Logger.log('AI Bot Main Error: ' + error.message);
+    } finally {
+        lock.releaseLock();
     }
 }
 
