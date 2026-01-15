@@ -167,6 +167,7 @@ function onOpen() {
         .addItem('📎 تقرير المرفقات', 'showAttachmentsReport')
         .addSeparator()
         .addItem('🔧 إعداد شيتات البوت', 'setupBotSheets')
+        .addItem('🔄 تحديث قوائم شيت البوت', 'updateBotSheetValidationUI')
         .addItem('🔐 تحديث Token وإعداد Webhook', 'updateBotTokenAndSetup')
         .addItem('🔗 إعداد Webhook', 'setWebhook')
         .addItem('🧪 اختبار Token البوت', 'testBotToken')

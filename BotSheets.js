@@ -45,6 +45,90 @@ function setupBotSheets() {
 }
 
 /**
+ * ⭐ واجهة تحديث Data Validation (تُستدعى من القائمة)
+ */
+function updateBotSheetValidationUI() {
+    const ui = SpreadsheetApp.getUi();
+    const result = updateBotSheetValidation();
+
+    if (result.success) {
+        ui.alert(
+            '✅ تم التحديث',
+            'تم تحديث القوائم المنسدلة في شيت حركات البوت:\n\n' +
+            '• طبيعة الحركة ← من عمود B في شيت البنود\n' +
+            '• تصنيف الحركة ← من عمود C في شيت البنود\n' +
+            '• البند ← من عمود A في شيت البنود',
+            ui.ButtonSet.OK
+        );
+    } else {
+        ui.alert('❌ خطأ', result.error, ui.ButtonSet.OK);
+    }
+}
+
+/**
+ * ⭐ تحديث Data Validation لشيت حركات البوت من شيت البنود
+ * يُستدعى لتحديث الشيت الموجود بالقوائم المنسدلة
+ */
+function updateBotSheetValidation() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const botSheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
+    const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS);
+    const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
+
+    if (!botSheet) {
+        Logger.log('❌ شيت حركات البوت غير موجود');
+        return { success: false, error: 'شيت حركات البوت غير موجود' };
+    }
+
+    if (!itemsSheet) {
+        Logger.log('❌ شيت البنود غير موجود');
+        return { success: false, error: 'شيت البنود غير موجود' };
+    }
+
+    try {
+        const lastItemsRow = Math.max(itemsSheet.getLastRow(), 2);
+        const lastBotRow = Math.max(botSheet.getLastRow(), CONFIG.SHEET.DEFAULT_ROWS);
+
+        // طبيعة الحركة (من عمود B في شيت البنود)
+        const natureRange = itemsSheet.getRange('B2:B' + lastItemsRow);
+        const natureRule = SpreadsheetApp.newDataValidation()
+            .requireValueInRange(natureRange, true)
+            .setAllowInvalid(true)
+            .setHelpText('اختر طبيعة الحركة من "قاعدة بيانات البنود"')
+            .build();
+        botSheet.getRange(2, columns.NATURE.index, lastBotRow, 1)
+            .setDataValidation(natureRule);
+
+        // تصنيف الحركة (من عمود C في شيت البنود)
+        const classRange = itemsSheet.getRange('C2:C' + lastItemsRow);
+        const classRule = SpreadsheetApp.newDataValidation()
+            .requireValueInRange(classRange, true)
+            .setAllowInvalid(true)
+            .setHelpText('اختر تصنيف الحركة من "قاعدة بيانات البنود"')
+            .build();
+        botSheet.getRange(2, columns.CLASSIFICATION.index, lastBotRow, 1)
+            .setDataValidation(classRule);
+
+        // البند (من عمود A في شيت البنود)
+        const itemRange = itemsSheet.getRange('A2:A' + lastItemsRow);
+        const itemRule = SpreadsheetApp.newDataValidation()
+            .requireValueInRange(itemRange, true)
+            .setAllowInvalid(true)
+            .setHelpText('اختر البند من "قاعدة بيانات البنود"')
+            .build();
+        botSheet.getRange(2, columns.ITEM.index, lastBotRow, 1)
+            .setDataValidation(itemRule);
+
+        Logger.log('✅ تم تحديث Data Validation لشيت حركات البوت');
+        return { success: true };
+
+    } catch (error) {
+        Logger.log('❌ خطأ في تحديث Data Validation: ' + error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
  * إنشاء شيت حركات البوت
  */
 function createBotTransactionsSheet() {
