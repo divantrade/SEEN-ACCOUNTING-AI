@@ -101,6 +101,34 @@ function setAILastUpdateId(id) {
     PropertiesService.getScriptProperties().setProperty('AI_BOT_LAST_UPDATE_ID', id.toString());
 }
 
+/**
+ * فحص معلومات البوت - للتحقق من هوية البوت
+ * قم بتشغيل هذه الدالة يدوياً للتحقق من أنك تراسل البوت الصحيح
+ */
+function checkBotInfo() {
+    const token = PropertiesService.getScriptProperties().getProperty('AI_BOT_TOKEN');
+    if (!token) {
+        Logger.log('❌ لم يتم تعيين AI_BOT_TOKEN');
+        return;
+    }
+
+    const url = `https://api.telegram.org/bot${token}/getMe`;
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const data = JSON.parse(response.getContentText());
+
+    if (data.ok) {
+        Logger.log('✅ معلومات البوت:');
+        Logger.log('📛 الاسم: ' + data.result.first_name);
+        Logger.log('🔗 Username: @' + data.result.username);
+        Logger.log('🆔 Bot ID: ' + data.result.id);
+        Logger.log('🤖 Is Bot: ' + data.result.is_bot);
+    } else {
+        Logger.log('❌ خطأ في الاتصال بالبوت: ' + JSON.stringify(data));
+    }
+
+    return data;
+}
+
 
 // ==================== معالجة الرسائل ====================
 
