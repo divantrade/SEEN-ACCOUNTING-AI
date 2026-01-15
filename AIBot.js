@@ -10,58 +10,82 @@ const aiUserSessions = {};
 // ==================== معالجة التحديثات ====================
 
 /**
- * معالجة تحديثات البوت الذكي (Long Polling)
+ * معالجة تحديثات البوت الذكي (Long Polling Loop)
+ * يعمل لمدة 55 ثانية تقريباً للحفاظ على الاتصال مفتوحاً
+ * مما يوفر استجابة شبه فورية (Real-time)
  * يتم استدعاؤها بواسطة Time-driven Trigger كل دقيقة
  */
 function processAIBotUpdates() {
-    try {
-        // التحقق من إعداد البوت
-        const setup = checkAIBotSetup();
-        if (!setup.ready) {
-            Logger.log('البوت الذكي غير جاهز - يرجى إعداد المفاتيح أولاً');
-            return;
-        }
-
-        const token = getAIBotToken();
-        const lastUpdateId = getAILastUpdateId();
-
-        // جلب التحديثات
-        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${lastUpdateId + 1}&timeout=50`;
-
-        const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-        const data = JSON.parse(response.getContentText());
-
-        if (!data.ok) {
-            Logger.log('AI Bot Error: ' + JSON.stringify(data));
-            return;
-        }
-
-        const updates = data.result;
-
-        if (updates.length === 0) {
-            return;
-        }
-
-        // معالجة كل تحديث
-        updates.forEach(update => {
-            try {
-                if (update.message) {
-                    handleAIMessage(update.message);
-                } else if (update.callback_query) {
-                    handleAICallback(update.callback_query);
-                }
-            } catch (error) {
-                Logger.log('Update Processing Error: ' + error.message);
-            }
-        });
-
-        // حفظ آخر update_id
-        const lastId = updates[updates.length - 1].update_id;
-        setAILastUpdateId(lastId);
-
-    } catch (error) {
-        Logger.log('AI Bot Main Error: ' + error.message);
+    // التحقق من إعداد البوت
+    const setup = checkAIBotSetup();
+    if (!setup.ready) {
+        Logger.log('البوت الذكي غير جاهز - يرجى إعداد المفاتيح أولاً');
+        return;
     }
+
+    const token = getAIBotToken();
+
+    // بدء المؤقت
+    const startTime = new Date().getTime();
+    // الحد الأقصى للتنفيذ: 55 ثانية (لترك هامش أمان 5 ثوان قبل الدقيقة التالية)
+    const MAX_EXECUTION_TIME = 55000;
+
+    Logger.log('🤖 البوت الذكي جاهز للعمل');
+    Logger.log('🔄 Starting AI Bot Long Polling Loop...');
+
+    // حلقة تكرار تستمر حتى انتهاء الوقت المسموح
+    while (new Date().getTime() - startTime < MAX_EXECUTION_TIME) {
+
+        // جلب الـ offset الحالي في كل دورة
+        let offset = getAILastUpdateId();
+
+        try {
+            // timeout=5: تليجرام ينتظر 5 ثوان إذا لم تكن هناك رسائل (Long Polling)
+            // إذا وصلت رسالة، يرد فوراً.
+            const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset + 1}&timeout=5`;
+            const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+            const data = JSON.parse(response.getContentText());
+
+            if (!data.ok) {
+                Logger.log('AI Bot Error: ' + JSON.stringify(data));
+                Utilities.sleep(1000);
+                continue;
+            }
+
+            const updates = data.result;
+
+            if (updates && updates.length > 0) {
+                Logger.log(`📥 AI Bot: Received ${updates.length} updates`);
+
+                for (const update of updates) {
+                    try {
+                        if (update.message) {
+                            handleAIMessage(update.message);
+                        } else if (update.callback_query) {
+                            handleAICallback(update.callback_query);
+                        }
+                        // تحديث الـ offset لتجاوز هذا التحديث مستقبلاً
+                        offset = update.update_id;
+                    } catch (e) {
+                        Logger.log('AI Update Processing Error: ' + e.message);
+                    }
+                }
+
+                // حفظ آخر offset بعد المعالجة
+                setAILastUpdateId(offset);
+
+                // بما أننا وجدنا تحديثات، نكمل الحلقة فوراً لجلب المزيد دون انتظار
+            }
+            // إذا لم توجد تحديثات، الـ timeout في الرابط تكفل بالانتظار 5 ثوان
+
+        } catch (e) {
+            Logger.log('🔥 AI Bot Polling Error: ' + e.message);
+            // انتظار بسيط عند الخطأ لتجنب التكرار السريع جداً
+            Utilities.sleep(1000);
+        }
+    }
+
+    Logger.log('⏹️ AI Bot Polling Loop finished (Time limit reached).');
 }
 
 /**
