@@ -173,3 +173,46 @@ function testDirectSave() {
 
     Logger.log('═══════════════════════════════════════');
 }
+
+/**
+ * فحص توكنات البوتات والتأكد من أنها مختلفة
+ * شغّل هذه الدالة للتأكد من إعداد التوكنات بشكل صحيح
+ */
+function checkBotTokens() {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('=== 🔑 فحص توكنات البوتات ===');
+    Logger.log('═══════════════════════════════════════');
+
+    const props = PropertiesService.getScriptProperties();
+
+    const traditionalToken = props.getProperty('TELEGRAM_BOT_TOKEN');
+    const aiToken = props.getProperty('AI_BOT_TOKEN');
+
+    // فحص البوت التقليدي
+    if (traditionalToken) {
+        Logger.log('✅ البوت التقليدي: موجود (آخر 10 أحرف: ...' + traditionalToken.slice(-10) + ')');
+    } else {
+        Logger.log('❌ البوت التقليدي: غير موجود!');
+    }
+
+    // فحص البوت الذكي
+    if (aiToken) {
+        Logger.log('✅ البوت الذكي: موجود (آخر 10 أحرف: ...' + aiToken.slice(-10) + ')');
+    } else {
+        Logger.log('❌ البوت الذكي: غير موجود!');
+    }
+
+    // مقارنة التوكنات
+    Logger.log('-----------------------------------');
+    if (traditionalToken && aiToken) {
+        if (traditionalToken === aiToken) {
+            Logger.log('⚠️⚠️⚠️ تحذير خطير: التوكنان متطابقان!');
+            Logger.log('هذا سيسبب خطأ 409 Conflict');
+            Logger.log('يجب إنشاء بوت جديد في تليجرام للبوت الذكي');
+        } else {
+            Logger.log('✅ ممتاز! التوكنان مختلفان - الإعداد صحيح');
+        }
+    }
+
+    Logger.log('═══════════════════════════════════════');
+}
