@@ -406,6 +406,7 @@ function matchProject(projectName, projectsList) {
 
 /**
  * مطابقة اسم الطرف مع الأطراف الموجودة
+ * يبحث عن تطابق تام فقط - لا يختار أسماء مختلفة
  */
 function matchParty(partyName, partiesList) {
     if (!partyName || !partiesList || partiesList.length === 0) {
@@ -427,8 +428,8 @@ function matchParty(partyName, partiesList) {
         };
     }
 
-    // بحث ذكي
-    const results = fuzzySearchInArray(partyName, partyNames, 0.5);
+    // بحث ذكي بحد مرتفع جداً (0.85) - فقط للأسماء المتشابهة جداً
+    const results = fuzzySearchInArray(partyName, partyNames, 0.85);
 
     if (results.length > 0) {
         const matchedParties = results.map(r => {
@@ -436,11 +437,20 @@ function matchParty(partyName, partiesList) {
             return { ...party, score: r.score };
         });
 
+        // فقط إذا كان التطابق عالي جداً (> 0.9) نعتبره نفس الشخص
+        if (matchedParties[0].score > 0.9) {
+            return {
+                found: true,
+                match: matchedParties[0],
+                score: matchedParties[0].score,
+                alternatives: matchedParties.slice(1, 4)
+            };
+        }
+
+        // تطابق متوسط - نقترح فقط ولا نختار
         return {
-            found: true,
-            match: matchedParties[0],
-            score: matchedParties[0].score,
-            alternatives: matchedParties.slice(1, 4)
+            found: false,
+            suggestions: matchedParties.slice(0, 3)
         };
     }
 
@@ -549,20 +559,27 @@ function validateTransaction(transaction, context) {
             validation.enriched.party = partyMatch.match.name;
             validation.enriched.partyType = partyMatch.match.type;
             validation.enriched.partyScore = partyMatch.score;
-            if (partyMatch.score < 0.9) {
+        } else {
+            // الطرف غير موجود - يجب طلب تأكيد من المستخدم
+            validation.enriched.isNewParty = true;
+            validation.enriched.newPartyName = transaction.party;
+            validation.needsPartyConfirmation = true;
+
+            // إذا وجدت اقتراحات مشابهة
+            if (partyMatch.suggestions && partyMatch.suggestions.length > 0) {
                 validation.warnings.push({
                     field: 'party',
-                    message: `هل تقصد "${partyMatch.match.name}"؟`,
-                    alternatives: partyMatch.alternatives
+                    message: `الطرف "${transaction.party}" غير موجود. هل تقصد أحد هؤلاء؟`,
+                    suggestions: partyMatch.suggestions,
+                    isNew: true
+                });
+            } else {
+                validation.warnings.push({
+                    field: 'party',
+                    message: `الطرف "${transaction.party}" غير موجود في قاعدة البيانات`,
+                    isNew: true
                 });
             }
-        } else {
-            validation.enriched.isNewParty = true;
-            validation.warnings.push({
-                field: 'party',
-                message: `الطرف "${transaction.party}" غير موجود - سيتم إضافته كطرف جديد`,
-                isNew: true
-            });
         }
     }
 

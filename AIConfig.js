@@ -108,6 +108,7 @@ const AI_CONFIG = {
         WAITING_MISSING_FIELD: 'ai_waiting_missing_field',
         WAITING_PROJECT_SELECTION: 'ai_waiting_project',
         WAITING_PARTY_SELECTION: 'ai_waiting_party',
+        WAITING_NEW_PARTY_CONFIRM: 'ai_waiting_new_party_confirm',
         WAITING_CONFIRMATION: 'ai_waiting_confirmation',
         WAITING_EDIT: 'ai_waiting_edit',
         CONFIRM_WAIT: 'ai_confirm_wait'
