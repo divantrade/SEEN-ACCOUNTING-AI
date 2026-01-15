@@ -14,78 +14,100 @@ const aiUserSessions = {};
  * يعمل لمدة 55 ثانية تقريباً للحفاظ على الاتصال مفتوحاً
  * مما يوفر استجابة شبه فورية (Real-time)
  * يتم استدعاؤها بواسطة Time-driven Trigger كل دقيقة
+ * يستخدم LockService لمنع التنفيذ المتزامن (Error 409)
  */
 function processAIBotUpdates() {
-    // التحقق من إعداد البوت
-    const setup = checkAIBotSetup();
-    if (!setup.ready) {
-        Logger.log('البوت الذكي غير جاهز - يرجى إعداد المفاتيح أولاً');
+    // استخدام Lock لمنع التنفيذ المتزامن
+    const lock = LockService.getScriptLock();
+
+    // محاولة الحصول على Lock (انتظار 1 ثانية فقط)
+    const hasLock = lock.tryLock(1000);
+
+    if (!hasLock) {
+        // لا يمكن الحصول على Lock - هناك instance أخرى تعمل
+        Logger.log('⏭️ AI Bot: Instance أخرى تعمل بالفعل - تخطي هذا التشغيل');
         return;
     }
 
-    const token = getAIBotToken();
+    Logger.log('🔒 AI Bot: تم الحصول على Lock بنجاح');
 
-    // بدء المؤقت
-    const startTime = new Date().getTime();
-    // الحد الأقصى للتنفيذ: 55 ثانية (لترك هامش أمان 5 ثوان قبل الدقيقة التالية)
-    const MAX_EXECUTION_TIME = 55000;
+    try {
+        // التحقق من إعداد البوت
+        const setup = checkAIBotSetup();
+        if (!setup.ready) {
+            Logger.log('البوت الذكي غير جاهز - يرجى إعداد المفاتيح أولاً');
+            return;
+        }
 
-    Logger.log('🤖 البوت الذكي جاهز للعمل');
-    Logger.log('🔄 Starting AI Bot Long Polling Loop...');
+        const token = getAIBotToken();
 
-    // حلقة تكرار تستمر حتى انتهاء الوقت المسموح
-    while (new Date().getTime() - startTime < MAX_EXECUTION_TIME) {
+        // بدء المؤقت
+        const startTime = new Date().getTime();
+        // الحد الأقصى للتنفيذ: 55 ثانية (لترك هامش أمان 5 ثوان قبل الدقيقة التالية)
+        const MAX_EXECUTION_TIME = 55000;
 
-        // جلب الـ offset الحالي في كل دورة
-        let offset = getAILastUpdateId();
+        Logger.log('🤖 البوت الذكي جاهز للعمل');
+        Logger.log('🔄 Starting AI Bot Long Polling Loop...');
 
-        try {
-            // timeout=5: تليجرام ينتظر 5 ثوان إذا لم تكن هناك رسائل (Long Polling)
-            // إذا وصلت رسالة، يرد فوراً.
-            const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset + 1}&timeout=5`;
-            const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-            const data = JSON.parse(response.getContentText());
+        // حلقة تكرار تستمر حتى انتهاء الوقت المسموح
+        while (new Date().getTime() - startTime < MAX_EXECUTION_TIME) {
 
-            if (!data.ok) {
-                Logger.log('AI Bot Error: ' + JSON.stringify(data));
-                Utilities.sleep(1000);
-                continue;
-            }
+            // جلب الـ offset الحالي في كل دورة
+            let offset = getAILastUpdateId();
 
-            const updates = data.result;
+            try {
+                // timeout=5: تليجرام ينتظر 5 ثوان إذا لم تكن هناك رسائل (Long Polling)
+                // إذا وصلت رسالة، يرد فوراً.
+                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset + 1}&timeout=5`;
+                const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+                const data = JSON.parse(response.getContentText());
 
-            if (updates && updates.length > 0) {
-                Logger.log(`📥 AI Bot: Received ${updates.length} updates`);
-
-                for (const update of updates) {
-                    try {
-                        if (update.message) {
-                            handleAIMessage(update.message);
-                        } else if (update.callback_query) {
-                            handleAICallback(update.callback_query);
-                        }
-                        // تحديث الـ offset لتجاوز هذا التحديث مستقبلاً
-                        offset = update.update_id;
-                    } catch (e) {
-                        Logger.log('AI Update Processing Error: ' + e.message);
-                    }
+                if (!data.ok) {
+                    Logger.log('AI Bot Error: ' + JSON.stringify(data));
+                    Utilities.sleep(1000);
+                    continue;
                 }
 
-                // حفظ آخر offset بعد المعالجة
-                setAILastUpdateId(offset);
+                const updates = data.result;
 
-                // بما أننا وجدنا تحديثات، نكمل الحلقة فوراً لجلب المزيد دون انتظار
+                if (updates && updates.length > 0) {
+                    Logger.log(`📥 AI Bot: Received ${updates.length} updates`);
+
+                    for (const update of updates) {
+                        try {
+                            if (update.message) {
+                                handleAIMessage(update.message);
+                            } else if (update.callback_query) {
+                                handleAICallback(update.callback_query);
+                            }
+                            // تحديث الـ offset لتجاوز هذا التحديث مستقبلاً
+                            offset = update.update_id;
+                        } catch (e) {
+                            Logger.log('AI Update Processing Error: ' + e.message);
+                        }
+                    }
+
+                    // حفظ آخر offset بعد المعالجة
+                    setAILastUpdateId(offset);
+
+                    // بما أننا وجدنا تحديثات، نكمل الحلقة فوراً لجلب المزيد دون انتظار
+                }
+                // إذا لم توجد تحديثات، الـ timeout في الرابط تكفل بالانتظار 5 ثوان
+
+            } catch (e) {
+                Logger.log('🔥 AI Bot Polling Error: ' + e.message);
+                // انتظار بسيط عند الخطأ لتجنب التكرار السريع جداً
+                Utilities.sleep(1000);
             }
-            // إذا لم توجد تحديثات، الـ timeout في الرابط تكفل بالانتظار 5 ثوان
-
-        } catch (e) {
-            Logger.log('🔥 AI Bot Polling Error: ' + e.message);
-            // انتظار بسيط عند الخطأ لتجنب التكرار السريع جداً
-            Utilities.sleep(1000);
         }
-    }
 
-    Logger.log('⏹️ AI Bot Polling Loop finished (Time limit reached).');
+        Logger.log('⏹️ AI Bot Polling Loop finished (Time limit reached).');
+
+    } finally {
+        // تحرير الـ Lock دائماً عند الانتهاء
+        lock.releaseLock();
+        Logger.log('🔓 AI Bot: تم تحرير Lock');
+    }
 }
 
 /**
