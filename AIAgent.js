@@ -808,8 +808,9 @@ function testGeminiConnection() {
         Logger.log('✅ تم الحصول على API Key');
         Logger.log('API Key (أول 10 أحرف): ' + apiKey.substring(0, 10) + '...');
 
-        const url = `${AI_CONFIG.GEMINI.API_URL}?key=${apiKey}`;
-        Logger.log('URL: ' + AI_CONFIG.GEMINI.API_URL);
+        const model = AI_CONFIG.GEMINI.MODEL;
+        const url = `${AI_CONFIG.GEMINI.BASE_URL}${model}:generateContent?key=${apiKey}`;
+        Logger.log('URL: ' + url);
 
         // طلب بسيط جداً
         const payload = {
