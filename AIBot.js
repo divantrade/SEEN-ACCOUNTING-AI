@@ -492,7 +492,14 @@ function showPartyTypeSelection(chatId, session) {
 function addNewParty(name, type) {
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const partiesSheet = ss.getSheetByName('الأطراف');
+        // جرب أطراف البوت أولاً، ثم قاعدة بيانات الأطراف
+        let partiesSheet = ss.getSheetByName('أطراف البوت');
+        if (!partiesSheet) {
+            partiesSheet = ss.getSheetByName('قاعدة بيانات الأطراف');
+        }
+        if (!partiesSheet) {
+            partiesSheet = ss.getSheetByName('الأطراف');
+        }
 
         if (!partiesSheet) {
             Logger.log('❌ شيت الأطراف غير موجود');
@@ -504,7 +511,7 @@ function addNewParty(name, type) {
         partiesSheet.getRange(lastRow, 1).setValue(name);
         partiesSheet.getRange(lastRow, 2).setValue(type);
 
-        Logger.log(`✅ تم إضافة الطرف: ${name} (${type})`);
+        Logger.log(`✅ تم إضافة الطرف: ${name} (${type}) في شيت: ${partiesSheet.getName()}`);
         return true;
 
     } catch (error) {
