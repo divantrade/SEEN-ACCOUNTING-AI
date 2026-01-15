@@ -1175,6 +1175,47 @@ function stopAIBot() {
 }
 
 /**
+ * حذف Webhook إذا كان موجوداً - مطلوب لعمل Long Polling
+ * شغّل هذه الدالة مرة واحدة إذا كان البوت لا يستجيب
+ */
+function deleteAIBotWebhook() {
+    const token = PropertiesService.getScriptProperties().getProperty('AI_BOT_TOKEN');
+    if (!token) {
+        Logger.log('❌ لم يتم تعيين AI_BOT_TOKEN');
+        return;
+    }
+
+    // أولاً: فحص الـ Webhook الحالي
+    const infoUrl = `https://api.telegram.org/bot${token}/getWebhookInfo`;
+    const infoResponse = UrlFetchApp.fetch(infoUrl);
+    const infoData = JSON.parse(infoResponse.getContentText());
+
+    Logger.log('📋 معلومات Webhook الحالية:');
+    Logger.log(JSON.stringify(infoData, null, 2));
+
+    if (infoData.result && infoData.result.url && infoData.result.url !== '') {
+        Logger.log('⚠️ يوجد Webhook مُفعّل: ' + infoData.result.url);
+        Logger.log('🗑️ جاري حذف الـ Webhook...');
+
+        // حذف الـ Webhook
+        const deleteUrl = `https://api.telegram.org/bot${token}/deleteWebhook`;
+        const deleteResponse = UrlFetchApp.fetch(deleteUrl);
+        const deleteData = JSON.parse(deleteResponse.getContentText());
+
+        if (deleteData.ok) {
+            Logger.log('✅ تم حذف الـ Webhook بنجاح!');
+            Logger.log('🔄 الآن البوت سيعمل بـ Long Polling');
+        } else {
+            Logger.log('❌ فشل حذف الـ Webhook: ' + JSON.stringify(deleteData));
+        }
+    } else {
+        Logger.log('✅ لا يوجد Webhook مُفعّل - البوت يعمل بـ Long Polling');
+    }
+
+    return infoData;
+}
+
+/**
  * إعداد كامل للبوت الذكي
  */
 function setupAIBot() {
