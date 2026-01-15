@@ -44,7 +44,8 @@ const BOT_CONFIG = {
         REVIEW_TIMESTAMP: { index: 31, name: 'تاريخ المراجعة', width: 150 },
         REVIEW_NOTES: { index: 32, name: 'ملاحظات المراجعة', width: 200 },
         ATTACHMENT_URL: { index: 33, name: 'رابط المرفق', width: 200 },
-        IS_NEW_PARTY: { index: 34, name: 'طرف جديد؟', width: 80 }
+        IS_NEW_PARTY: { index: 34, name: 'طرف جديد؟', width: 80 },
+        INPUT_SOURCE: { index: 35, name: 'مصدر الإدخال', width: 120 }
     },
 
     // ==================== هيكل شيت أطراف البوت ====================
