@@ -13,15 +13,15 @@ const AI_CONFIG = {
         BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/models/',
 
         // الموديل الأساسي والموديلات البديلة
-        MODEL: 'gemini-1.5-flash',
+        MODEL: 'gemini-2.0-flash',
         FALLBACK_MODELS: [
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-001',
+            'gemini-flash-latest',
+            'gemini-pro-latest',
+            'gemini-2.0-flash-lite',
+            'gemini-2.0-flash-exp',
             'gemini-1.5-flash',
-            'gemini-1.5-flash-latest',
-            'gemini-1.5-flash-001',
-            'gemini-1.5-flash-002',
-            'gemini-1.5-flash-8b',
-            'gemini-1.5-pro',
-            'gemini-1.0-pro',
             'gemini-pro'
         ],
 
