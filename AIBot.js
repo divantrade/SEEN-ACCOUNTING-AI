@@ -383,7 +383,13 @@ function handleAICallback(callbackQuery) {
     // معالجة حسب نوع الـ callback
     if (data.startsWith('ai_confirm')) {
         Logger.log('🔄 Processing CONFIRM callback...');
-        handleConfirmation(chatId, session, user);
+        try {
+            handleConfirmation(chatId, session, user);
+        } catch (confirmError) {
+            Logger.log('🔥 CONFIRM ERROR: ' + confirmError.message);
+            Logger.log('🔥 Stack: ' + confirmError.stack);
+            sendAIMessage(chatId, '❌ خطأ في التأكيد: ' + confirmError.message);
+        }
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
     } else if (data.startsWith('ai_cancel')) {
