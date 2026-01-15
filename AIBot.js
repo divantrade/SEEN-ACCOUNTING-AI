@@ -711,7 +711,7 @@ function saveAITransaction(transaction, user, chatId) {
             transaction.due_date && transaction.due_date !== 'TODAY' ? transaction.due_date : timestamp.split(' ')[0], // التاريخ
             transaction.nature,                                     // طبيعة الحركة
             transaction.classification,                             // تصنيف الحركة
-            '',                                                     // كود المشروع
+            transaction.project_code || '',                         // كود المشروع
             transaction.project || '',                              // اسم المشروع
             transaction.item || '',                                 // البند
             transaction.details || '',                              // التفاصيل
@@ -724,9 +724,9 @@ function saveAITransaction(transaction, user, chatId) {
             '',                                                     // الرصيد
             '',                                                     // رقم مرجعي
             transaction.payment_method || 'تحويل بنكي',            // طريقة الدفع
-            'فوري',                                                 // نوع شرط الدفع
-            '',                                                     // عدد الأسابيع
-            '',                                                     // تاريخ مخصص
+            transaction.payment_term || 'فوري',                     // نوع شرط الدفع
+            transaction.payment_term_weeks || '',                   // عدد الأسابيع
+            transaction.payment_term_date || '',                    // تاريخ مخصص
             transaction.due_date && transaction.due_date !== 'TODAY' ? transaction.due_date : timestamp.split(' ')[0], // تاريخ الاستحقاق
             'معلق',                                                 // حالة السداد
             month,                                                  // الشهر

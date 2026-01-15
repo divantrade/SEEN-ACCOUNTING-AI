@@ -603,7 +603,7 @@ function validateTransaction(transaction, context) {
         const projectMatch = matchProject(transaction.project, context.projects);
         if (projectMatch.found) {
             validation.enriched.project = projectMatch.match;
-            validation.enriched.projectCode = projectMatch.code || transaction.project_code || '';
+            validation.enriched.project_code = projectMatch.code || transaction.project_code || '';
             validation.enriched.projectScore = projectMatch.score;
             if (projectMatch.score < 0.9) {
                 validation.warnings.push({
@@ -623,11 +623,13 @@ function validateTransaction(transaction, context) {
 
     // حفظ شروط الدفع
     if (transaction.payment_term) {
-        validation.enriched.paymentTerm = transaction.payment_term;
-        validation.enriched.paymentTermWeeks = transaction.payment_term_weeks || null;
-        validation.enriched.paymentTermDate = transaction.payment_term_date || null;
+        validation.enriched.payment_term = transaction.payment_term;
+        validation.enriched.payment_term_weeks = transaction.payment_term_weeks || '';
+        validation.enriched.payment_term_date = transaction.payment_term_date || '';
     } else {
-        validation.enriched.paymentTerm = 'فوري'; // الافتراضي
+        validation.enriched.payment_term = 'فوري'; // الافتراضي
+        validation.enriched.payment_term_weeks = '';
+        validation.enriched.payment_term_date = '';
     }
 
     // مطابقة الطرف
