@@ -594,38 +594,37 @@ function handleEditRequest(chatId, data, session, messageId) {
             parse_mode: 'Markdown',
             reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
         });
+        session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT;
+        saveAIUserSession(chatId, session);
+        return;
     }
+
+    // معالجة تعديل حقل محدد
+    const field = data.replace('ai_edit_', '');
+
+    if (field === 'done') {
+        showTransactionConfirmation(chatId, session);
+        return;
+    }
+
+    session.editingField = field;
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT;
-    saveAIUserSession(chatId, session);
-    return;
-}
 
-// معالجة تعديل حقل محدد
-const field = data.replace('ai_edit_', '');
+    const fieldMessages = {
+        'nature': '📤 اختر طبيعة الحركة الجديدة:',
+        'classification': '📊 اختر التصنيف الجديد:',
+        'project': '🎬 اكتب اسم المشروع:',
+        'item': '📁 اكتب اسم البند:',
+        'party': '👤 اكتب اسم الطرف:',
+        'amount': '💰 اكتب المبلغ الجديد:',
+        'currency': '💱 اختر العملة:',
+        'date': '📅 اكتب التاريخ (مثال: 15/01/2025):',
+        'details': '📝 اكتب التفاصيل:'
+    };
 
-if (field === 'done') {
-    showTransactionConfirmation(chatId, session);
-    return;
-}
-
-session.editingField = field;
-session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT;
-
-const fieldMessages = {
-    'nature': '📤 اختر طبيعة الحركة الجديدة:',
-    'classification': '📊 اختر التصنيف الجديد:',
-    'project': '🎬 اكتب اسم المشروع:',
-    'item': '📁 اكتب اسم البند:',
-    'party': '👤 اكتب اسم الطرف:',
-    'amount': '💰 اكتب المبلغ الجديد:',
-    'currency': '💱 اختر العملة:',
-    'date': '📅 اكتب التاريخ (مثال: 15/01/2025):',
-    'details': '📝 اكتب التفاصيل:'
-};
-
-sendAIMessage(chatId, fieldMessages[field] || 'اكتب القيمة الجديدة:', {
-    parse_mode: 'Markdown'
-});
+    sendAIMessage(chatId, fieldMessages[field] || 'اكتب القيمة الجديدة:', {
+        parse_mode: 'Markdown'
+    });
 }
 
 /**
