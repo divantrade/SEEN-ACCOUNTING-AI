@@ -102,6 +102,44 @@ function setAILastUpdateId(id) {
 }
 
 /**
+ * فحص وإصلاح آخر update_id - شغّل هذه الدالة إذا البوت لا يستجيب
+ */
+function fixLastUpdateId() {
+    const token = PropertiesService.getScriptProperties().getProperty('AI_BOT_TOKEN');
+    const currentId = PropertiesService.getScriptProperties().getProperty('AI_BOT_LAST_UPDATE_ID');
+
+    Logger.log('📋 آخر Update ID المحفوظ: ' + (currentId || 'غير موجود'));
+
+    // جلب آخر update من تليجرام
+    const url = `https://api.telegram.org/bot${token}/getUpdates?limit=1&offset=-1`;
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const data = JSON.parse(response.getContentText());
+
+    Logger.log('📥 استجابة تليجرام: ' + JSON.stringify(data));
+
+    if (data.ok && data.result && data.result.length > 0) {
+        const latestUpdate = data.result[0];
+        Logger.log('📨 آخر رسالة في تليجرام:');
+        Logger.log('   Update ID: ' + latestUpdate.update_id);
+        if (latestUpdate.message) {
+            Logger.log('   النص: ' + (latestUpdate.message.text || '[بدون نص]'));
+            Logger.log('   من: ' + (latestUpdate.message.from?.first_name || 'مجهول'));
+        }
+
+        // إعادة تعيين الـ offset ليبدأ من آخر رسالة
+        const newOffset = latestUpdate.update_id;
+        PropertiesService.getScriptProperties().setProperty('AI_BOT_LAST_UPDATE_ID', newOffset.toString());
+        Logger.log('✅ تم تحديث Last Update ID إلى: ' + newOffset);
+        Logger.log('🔄 الرسائل الجديدة القادمة ستتم معالجتها');
+    } else {
+        Logger.log('ℹ️ لا توجد رسائل في انتظار المعالجة');
+        // إعادة تعيين إلى 0 لبدء من جديد
+        PropertiesService.getScriptProperties().setProperty('AI_BOT_LAST_UPDATE_ID', '0');
+        Logger.log('✅ تم إعادة تعيين Last Update ID إلى 0');
+    }
+}
+
+/**
  * فحص معلومات البوت - للتحقق من هوية البوت
  * قم بتشغيل هذه الدالة يدوياً للتحقق من أنك تراسل البوت الصحيح
  */
