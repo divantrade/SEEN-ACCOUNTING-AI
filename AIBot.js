@@ -323,7 +323,7 @@ function handleAICallback(callbackQuery) {
 
     // معالجة حسب نوع الـ callback
     if (data.startsWith('ai_confirm')) {
-        handleConfirmation(chatId, session, user);
+        handleAIConfirmation(chatId, session, user);
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
     } else if (data.startsWith('ai_cancel')) {
@@ -366,7 +366,7 @@ function answerAICallback(callbackQueryId) {
 /**
  * معالجة تأكيد الحركة
  */
-function handleConfirmation(chatId, session, user) {
+function handleAIConfirmation(chatId, session, user) {
     try {
         Logger.log('AI Confirmation started for chatId: ' + chatId);
 
