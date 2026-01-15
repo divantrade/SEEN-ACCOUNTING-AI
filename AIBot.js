@@ -292,6 +292,9 @@ function showTransactionConfirmation(chatId, session) {
 
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_CONFIRMATION;
 
+    // حفظ الجلسة بعد تغيير الحالة (مهم!)
+    saveAIUserSession(chatId, session);
+
     sendAIMessage(chatId, summary, {
         parse_mode: 'Markdown',
         reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.CONFIRMATION)

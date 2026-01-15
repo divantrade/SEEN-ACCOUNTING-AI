@@ -493,8 +493,19 @@ function validateTransaction(transaction, context) {
         enriched: { ...transaction }
     };
 
+    // تحويل المبلغ إلى رقم وتنظيفه
+    if (transaction.amount) {
+        // إذا كان نصاً، استخرج الأرقام منه
+        let amountValue = transaction.amount;
+        if (typeof amountValue === 'string') {
+            // إزالة أي نص غير رقمي (مثل "دولار")
+            amountValue = amountValue.replace(/[^0-9.,]/g, '').replace(',', '.');
+        }
+        validation.enriched.amount = parseFloat(amountValue) || 0;
+    }
+
     // التحقق من الحقول الإلزامية الأساسية
-    if (!transaction.amount || transaction.amount <= 0) {
+    if (!validation.enriched.amount || validation.enriched.amount <= 0) {
         validation.missingRequired.push({
             field: 'amount',
             label: 'المبلغ',
@@ -761,8 +772,20 @@ function getTypeLabel(nature) {
  * تنسيق الأرقام
  */
 function formatNumber(num) {
-    if (!num) return '0';
-    return Number(num).toLocaleString('en-US', {
+    if (!num && num !== 0) return '0.00';
+
+    // تحويل إلى رقم إذا كان نصاً
+    let value = num;
+    if (typeof value === 'string') {
+        value = parseFloat(value.replace(/[^0-9.,]/g, '').replace(',', '.'));
+    }
+
+    // التحقق من صحة الرقم
+    if (isNaN(value) || !isFinite(value)) {
+        return '0.00';
+    }
+
+    return Number(value).toLocaleString('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
