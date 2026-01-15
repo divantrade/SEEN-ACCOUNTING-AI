@@ -189,6 +189,9 @@ function processNewTransaction(chatId, text, user) {
         session.validation = result.validation;
         session.originalText = text;
 
+        // حفظ التغييرات في الكاش
+        saveAIUserSession(chatId, session);
+
         // التحقق من الحقول الناقصة
         if (result.needsInput && result.missingFields.length > 0) {
             handleMissingFields(chatId, result.missingFields, session);
@@ -212,6 +215,7 @@ function handleMissingFields(chatId, missingFields, session) {
     session.missingFields = missingFields;
     session.currentMissingIndex = 0;
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_MISSING_FIELD;
+    saveAIUserSession(chatId, session);
 
     askForMissingField(chatId, session);
 }
@@ -231,11 +235,13 @@ function askForMissingField(chatId, session) {
             session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PROJECT_SELECTION;
             // بناء لوحة المشاريع
             keyboard = buildProjectsKeyboard();
+            saveAIUserSession(chatId, session);
             break;
 
         case 'party':
             message = AI_CONFIG.AI_MESSAGES.ASK_PARTY;
             session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PARTY_SELECTION;
+            saveAIUserSession(chatId, session);
             break;
 
         case 'amount':
@@ -588,36 +594,38 @@ function handleEditRequest(chatId, data, session, messageId) {
             parse_mode: 'Markdown',
             reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
         });
-        session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT;
-        return;
     }
-
-    // معالجة تعديل حقل محدد
-    const field = data.replace('ai_edit_', '');
-
-    if (field === 'done') {
-        showTransactionConfirmation(chatId, session);
-        return;
-    }
-
-    session.editingField = field;
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT;
+    saveAIUserSession(chatId, session);
+    return;
+}
 
-    const fieldMessages = {
-        'nature': '📤 اختر طبيعة الحركة الجديدة:',
-        'classification': '📊 اختر التصنيف الجديد:',
-        'project': '🎬 اكتب اسم المشروع:',
-        'item': '📁 اكتب اسم البند:',
-        'party': '👤 اكتب اسم الطرف:',
-        'amount': '💰 اكتب المبلغ الجديد:',
-        'currency': '💱 اختر العملة:',
-        'date': '📅 اكتب التاريخ (مثال: 15/01/2025):',
-        'details': '📝 اكتب التفاصيل:'
-    };
+// معالجة تعديل حقل محدد
+const field = data.replace('ai_edit_', '');
 
-    sendAIMessage(chatId, fieldMessages[field] || 'اكتب القيمة الجديدة:', {
-        parse_mode: 'Markdown'
-    });
+if (field === 'done') {
+    showTransactionConfirmation(chatId, session);
+    return;
+}
+
+session.editingField = field;
+session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT;
+
+const fieldMessages = {
+    'nature': '📤 اختر طبيعة الحركة الجديدة:',
+    'classification': '📊 اختر التصنيف الجديد:',
+    'project': '🎬 اكتب اسم المشروع:',
+    'item': '📁 اكتب اسم البند:',
+    'party': '👤 اكتب اسم الطرف:',
+    'amount': '💰 اكتب المبلغ الجديد:',
+    'currency': '💱 اختر العملة:',
+    'date': '📅 اكتب التاريخ (مثال: 15/01/2025):',
+    'details': '📝 اكتب التفاصيل:'
+};
+
+sendAIMessage(chatId, fieldMessages[field] || 'اكتب القيمة الجديدة:', {
+    parse_mode: 'Markdown'
+});
 }
 
 /**
@@ -805,33 +813,48 @@ function buildProjectSuggestionsKeyboard(mainMatch, alternatives) {
 }
 
 
-// ==================== إدارة الجلسات ====================
+// ==================== إدارة الجلسة (Persistent Session) ====================
 
 /**
  * الحصول على جلسة المستخدم
  */
 function getAIUserSession(chatId) {
-    if (!aiUserSessions[chatId]) {
-        aiUserSessions[chatId] = {
-            state: AI_CONFIG.AI_CONVERSATION_STATES.IDLE,
-            transaction: {},
-            missingFields: [],
-            currentMissingIndex: 0
-        };
+    const cache = CacheService.getScriptCache();
+    const key = `AI_SESSION_${chatId}`;
+    const cachedData = cache.get(key);
+
+    if (cachedData) {
+        return JSON.parse(cachedData);
     }
-    return aiUserSessions[chatId];
+
+    // جلسة جديدة افتراضية
+    return {
+        state: AI_CONFIG.AI_CONVERSATION_STATES.IDLE,
+        transaction: null,
+        validation: null,
+        missingFields: [],
+        currentMissingIndex: 0,
+        originalText: ''
+    };
 }
 
 /**
- * إعادة تعيين جلسة المستخدم
+ * حفظ جلسة المستخدم
+ */
+function saveAIUserSession(chatId, session) {
+    const cache = CacheService.getScriptCache();
+    const key = `AI_SESSION_${chatId}`;
+    // حفظ لمدة 6 ساعات (21600 ثانية)
+    cache.put(key, JSON.stringify(session), 21600);
+}
+
+/**
+ * إعادة تعيين الجلسة
  */
 function resetAIUserSession(chatId) {
-    aiUserSessions[chatId] = {
-        state: AI_CONFIG.AI_CONVERSATION_STATES.IDLE,
-        transaction: {},
-        missingFields: [],
-        currentMissingIndex: 0
-    };
+    const cache = CacheService.getScriptCache();
+    const key = `AI_SESSION_${chatId}`;
+    cache.remove(key);
 }
 
 
