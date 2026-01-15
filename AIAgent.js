@@ -760,7 +760,15 @@ function inferPartyType(nature, classification) {
  * استنتاج نوع الحركة (مدين/دائن)
  */
 function inferMovementType(nature) {
-    const creditNatures = ['دفعة مصروف', 'تحصيل إيراد', 'استلام تمويل', 'سداد تمويل'];
+    // دائن دفعة = دفع/خروج نقدية أو تحصيل/دخول نقدية
+    const creditNatures = [
+        'دفعة مصروف',
+        'تحصيل إيراد',
+        'استلام تمويل',
+        'سداد تمويل',
+        'تأمين مدفوع للقناة',
+        'تحويل داخلي'
+    ];
     return creditNatures.includes(nature) ? 'دائن دفعة' : 'مدين استحقاق';
 }
 

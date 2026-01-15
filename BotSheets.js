@@ -112,15 +112,56 @@ function createBotTransactionsSheet() {
     // إضافة التنسيق الشرطي لحالة المراجعة
     applyBotReviewConditionalFormatting(sheet, reviewStatusCol);
 
-    // إضافة Data Validation لطبيعة الحركة
-    const natureCol = columns.NATURE.index;
-    const natureRule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(CONFIG.TELEGRAM_BOT.ALLOWED_TRANSACTION_TYPES)
-        .setAllowInvalid(false)
-        .build();
+    // ✅ إضافة Data Validation لطبيعة الحركة وتصنيف الحركة من شيت البنود
+    const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS);
+    if (itemsSheet) {
+        const lastItemsRow = Math.max(itemsSheet.getLastRow(), 2);
 
-    sheet.getRange(2, natureCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
-        .setDataValidation(natureRule);
+        // طبيعة الحركة (من عمود B في شيت البنود)
+        const natureCol = columns.NATURE.index;
+        const natureRange = itemsSheet.getRange('B2:B' + lastItemsRow);
+        const natureRule = SpreadsheetApp.newDataValidation()
+            .requireValueInRange(natureRange, true)
+            .setAllowInvalid(true)
+            .setHelpText('اختر طبيعة الحركة من "قاعدة بيانات البنود"')
+            .build();
+        sheet.getRange(2, natureCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+            .setDataValidation(natureRule);
+
+        // تصنيف الحركة (من عمود C في شيت البنود)
+        const classificationCol = columns.CLASSIFICATION.index;
+        const classRange = itemsSheet.getRange('C2:C' + lastItemsRow);
+        const classRule = SpreadsheetApp.newDataValidation()
+            .requireValueInRange(classRange, true)
+            .setAllowInvalid(true)
+            .setHelpText('اختر تصنيف الحركة من "قاعدة بيانات البنود"')
+            .build();
+        sheet.getRange(2, classificationCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+            .setDataValidation(classRule);
+
+        // البند (من عمود A في شيت البنود)
+        const itemCol = columns.ITEM.index;
+        const itemRange = itemsSheet.getRange('A2:A' + lastItemsRow);
+        const itemRule = SpreadsheetApp.newDataValidation()
+            .requireValueInRange(itemRange, true)
+            .setAllowInvalid(true)
+            .setHelpText('اختر البند من "قاعدة بيانات البنود"')
+            .build();
+        sheet.getRange(2, itemCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+            .setDataValidation(itemRule);
+
+        Logger.log('✅ تم ربط Data Validation مع شيت البنود');
+    } else {
+        // Fallback: استخدام القائمة الثابتة إذا لم يكن شيت البنود موجوداً
+        Logger.log('⚠️ شيت البنود غير موجود، استخدام القائمة الثابتة');
+        const natureCol = columns.NATURE.index;
+        const natureRule = SpreadsheetApp.newDataValidation()
+            .requireValueInList(CONFIG.NATURE_TYPES)
+            .setAllowInvalid(true)
+            .build();
+        sheet.getRange(2, natureCol, CONFIG.SHEET.DEFAULT_ROWS, 1)
+            .setDataValidation(natureRule);
+    }
 
     // إضافة Data Validation للعملة
     const currencyCol = columns.CURRENCY.index;
