@@ -831,10 +831,10 @@ function buildTransactionSummary(transaction) {
     // عرض شرط الدفع
     if (transaction.payment_term) {
         let termDisplay = transaction.payment_term;
-        if (transaction.payment_term === 'بعد أسابيع' && transaction.payment_term_weeks) {
-            termDisplay = `بعد ${transaction.payment_term_weeks} أسبوع`;
-        } else if (transaction.payment_term === 'تاريخ محدد' && transaction.payment_term_date) {
-            termDisplay = `في ${transaction.payment_term_date}`;
+        if (transaction.payment_term === 'بعد التسليم' && transaction.payment_term_weeks) {
+            termDisplay = `بعد التسليم (${transaction.payment_term_weeks} أسبوع)`;
+        } else if (transaction.payment_term === 'تاريخ مخصص' && transaction.payment_term_date) {
+            termDisplay = `تاريخ مخصص: ${transaction.payment_term_date}`;
         }
         summary += `⏰ *شرط الدفع:* ${termDisplay}\n`;
     }
