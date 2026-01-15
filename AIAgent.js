@@ -620,11 +620,25 @@ function analyzeTransaction(userMessage) {
         // استدعاء Gemini
         const aiResult = callGemini(userMessage, context);
 
-        if (!aiResult.success) {
+        Logger.log('🔍 AI Result: ' + JSON.stringify(aiResult));
+
+        // التحقق من فشل التحليل (إذا كان هناك error صريح)
+        if (aiResult.error && aiResult.success === false) {
             return {
                 success: false,
                 error: aiResult.error || AI_CONFIG.AI_MESSAGES.ERROR_PARSE,
                 suggestion: aiResult.suggestion
+            };
+        }
+
+        // التحقق من وجود بيانات الحركة الأساسية
+        // إذا لم يكن هناك nature أو amount فالتحليل فاشل
+        if (!aiResult.nature && !aiResult.amount && !aiResult.party) {
+            Logger.log('❌ AI result missing essential fields');
+            return {
+                success: false,
+                error: 'لم أتمكن من فهم الحركة المالية. يرجى المحاولة مرة أخرى بصياغة مختلفة.',
+                rawResponse: aiResult
             };
         }
 
@@ -642,6 +656,7 @@ function analyzeTransaction(userMessage) {
         };
     } catch (error) {
         Logger.log('Analyze Transaction Error: ' + error.message);
+        Logger.log('Stack: ' + error.stack);
         return {
             success: false,
             error: 'خطأ في تحليل البيانات الداخلية: ' + error.message
