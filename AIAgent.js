@@ -82,13 +82,20 @@ function callGemini(userMessage, context) {
                     Logger.log(`💾 تم حفظ الموديل ${modelName} كخيار افتراضي سريع.`);
                 }
 
-                // حفظ الموديل الناجح في الاعدادات المستقبلية (اختياري - هنا فقط نستخدمه)
                 const result = JSON.parse(responseText);
+                Logger.log('📋 Gemini response structure: ' + JSON.stringify(Object.keys(result)));
 
                 // استخراج النص من الرد
                 if (result.candidates && result.candidates[0] && result.candidates[0].content) {
                     const text = result.candidates[0].content.parts[0].text;
                     return parseGeminiResponse(text);
+                } else if (result.candidates && result.candidates[0] && result.candidates[0].finishReason) {
+                    // حالة الحظر أو عدم وجود محتوى
+                    Logger.log('⚠️ Gemini blocked or no content: ' + result.candidates[0].finishReason);
+                    lastError = 'تم حظر الرد من قبل Gemini: ' + result.candidates[0].finishReason;
+                } else {
+                    Logger.log('⚠️ Unexpected response structure: ' + responseText.substring(0, 200));
+                    lastError = 'بنية رد غير متوقعة من Gemini';
                 }
             } else {
                 Logger.log(`❌ فشل الموديل ${modelName}: ${responseCode}`);
@@ -175,6 +182,16 @@ function buildFullPrompt(userMessage, context) {
  */
 function parseGeminiResponse(text) {
     try {
+        Logger.log('📥 Raw AI Response (first 500 chars): ' + (text || '').substring(0, 500));
+
+        if (!text || text.trim() === '') {
+            Logger.log('❌ Empty response from AI');
+            return {
+                success: false,
+                error: 'رد فارغ من AI'
+            };
+        }
+
         // محاولة استخراج JSON من النص
         let jsonStr = text;
 
@@ -182,6 +199,7 @@ function parseGeminiResponse(text) {
         const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         if (jsonMatch) {
             jsonStr = jsonMatch[1];
+            Logger.log('📋 Extracted from code block');
         }
 
         // تنظيف النص
@@ -191,20 +209,29 @@ function parseGeminiResponse(text) {
         const startIndex = jsonStr.indexOf('{');
         const endIndex = jsonStr.lastIndexOf('}');
 
-        if (startIndex !== -1 && endIndex !== -1) {
-            jsonStr = jsonStr.substring(startIndex, endIndex + 1);
+        if (startIndex === -1 || endIndex === -1) {
+            Logger.log('❌ No JSON object found in response');
+            return {
+                success: false,
+                error: 'لم يتم العثور على JSON في رد AI',
+                rawResponse: text.substring(0, 200)
+            };
         }
 
+        jsonStr = jsonStr.substring(startIndex, endIndex + 1);
+        Logger.log('📋 JSON to parse (first 300 chars): ' + jsonStr.substring(0, 300));
+
         const parsed = JSON.parse(jsonStr);
+        Logger.log('✅ JSON parsed successfully');
         return parsed;
 
     } catch (error) {
-        Logger.log('JSON Parse Error: ' + error.message);
-        Logger.log('Raw text: ' + text);
+        Logger.log('❌ JSON Parse Error: ' + error.message);
+        Logger.log('Raw text (first 500 chars): ' + (text || '').substring(0, 500));
         return {
             success: false,
-            error: 'فشل في تحليل رد AI',
-            rawResponse: text
+            error: 'فشل في تحليل رد AI: ' + error.message,
+            rawResponse: (text || '').substring(0, 200)
         };
     }
 }
