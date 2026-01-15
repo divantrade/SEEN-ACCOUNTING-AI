@@ -30,7 +30,7 @@ const AI_CONFIG = {
             temperature: 0.1,           // دقة عالية (قيم منخفضة = أكثر تحديداً)
             topP: 0.8,
             topK: 40,
-            maxOutputTokens: 1024
+            maxOutputTokens: 2048       // زيادة الحد لمنع قطع الرد
         },
 
         // إعدادات الأمان
