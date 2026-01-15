@@ -20,14 +20,31 @@
  */
 function callGemini(userMessage, context) {
     const apiKey = getGeminiApiKey();
-    const models = AI_CONFIG.GEMINI.FALLBACK_MODELS;
+    const props = PropertiesService.getScriptProperties();
+    const CACHED_MODEL_KEY = 'GEMINI_WORKING_MODEL';
+
+    // 1. محاولة استخدام الموديل المخزن سابقاً (للسرعة)
+    let cachedModel = props.getProperty(CACHED_MODEL_KEY);
+    const fallbackModels = AI_CONFIG.GEMINI.FALLBACK_MODELS;
+
+    // ترتيب الموديلات: الموديل المخزن أولاً، ثم الباقي
+    let modelsToTry = [];
+    if (cachedModel) {
+        modelsToTry.push(cachedModel);
+        // إضافة الباقي مع تجنب التكرار
+        fallbackModels.forEach(m => {
+            if (m !== cachedModel) modelsToTry.push(m);
+        });
+    } else {
+        modelsToTry = fallbackModels;
+    }
 
     let lastError = null;
 
-    // محاولة الاتصال بكل موديل في القائمة
-    for (let i = 0; i < models.length; i++) {
-        const modelName = models[i];
-        Logger.log(`🔄 جاري تجربة الموديل: ${modelName} (${i + 1}/${models.length})`);
+    // محاولة الاتصال بالموديلات
+    for (let i = 0; i < modelsToTry.length; i++) {
+        const modelName = modelsToTry[i];
+        Logger.log(`🔄 جاري تجربة الموديل: ${modelName} (${i + 1}/${modelsToTry.length})`);
 
         try {
             const url = `${AI_CONFIG.GEMINI.BASE_URL}${modelName}:generateContent?key=${apiKey}`;
@@ -59,6 +76,12 @@ function callGemini(userMessage, context) {
             if (responseCode === 200) {
                 Logger.log(`✅ نجاح الاتصال بالموديل: ${modelName}`);
 
+                // حفظ الموديل الناجح للمستقبل إذا كان مختلفاً
+                if (modelName !== cachedModel) {
+                    props.setProperty(CACHED_MODEL_KEY, modelName);
+                    Logger.log(`💾 تم حفظ الموديل ${modelName} كخيار افتراضي سريع.`);
+                }
+
                 // حفظ الموديل الناجح في الاعدادات المستقبلية (اختياري - هنا فقط نستخدمه)
                 const result = JSON.parse(responseText);
 
@@ -68,8 +91,12 @@ function callGemini(userMessage, context) {
                     return parseGeminiResponse(text);
                 }
             } else {
-                Logger.log(`❌ فشل الموديل ${modelName}: ${responseCode} - ${responseText}`);
-                lastError = `خطأ (${responseCode}): ${responseText}`;
+                Logger.log(`❌ فشل الموديل ${modelName}: ${responseCode}`);
+                if (responseCode === 404) {
+                    // إذا كان 404، نعتبره غير موجود ونكمل
+                } else {
+                    lastError = `خطأ (${responseCode}): ${responseText.substring(0, 100)}`;
+                }
             }
 
         } catch (error) {
@@ -78,11 +105,11 @@ function callGemini(userMessage, context) {
         }
     }
 
-    // إذا فشلت جميع المحاولات
+    // إذا وصلنا هنا، فشل الكل
     return {
         success: false,
-        error: `فشل الاتصال بجميع موديلات Gemini. آخر خطأ: ${lastError}`,
-        details: 'تمت تجربة الموديلات: ' + models.join(', ')
+        error: `عذراً، لم أتمكن من الاتصال بأي موديل ذكاء اصطناعي حالياً.\nآخر خطأ: ${lastError}`,
+        details: 'تمت تجربة جميع الموديلات المتاحة وفشلت.'
     };
 }
 
