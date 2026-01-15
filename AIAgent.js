@@ -12,72 +12,78 @@
  * @param {Object} context - السياق (المشاريع، البنود، الأطراف)
  * @returns {Object} - نتيجة التحليل
  */
+/**
+ * استدعاء Gemini API لتحليل النص
+ * @param {string} userMessage - رسالة المستخدم
+ * @param {Object} context - السياق (المشاريع، البنود، الأطراف)
+ * @returns {Object} - نتيجة التحليل
+ */
 function callGemini(userMessage, context) {
-    try {
-        const apiKey = getGeminiApiKey();
-        const url = `${AI_CONFIG.GEMINI.API_URL}?key=${apiKey}`;
+    const apiKey = getGeminiApiKey();
+    const models = AI_CONFIG.GEMINI.FALLBACK_MODELS;
 
-        // بناء الـ prompt مع السياق
-        const fullPrompt = buildFullPrompt(userMessage, context);
+    let lastError = null;
 
-        const payload = {
-            contents: [{
-                parts: [{
-                    text: fullPrompt
-                }]
-            }],
-            generationConfig: AI_CONFIG.GEMINI.GENERATION_CONFIG,
-            safetySettings: AI_CONFIG.GEMINI.SAFETY_SETTINGS
-        };
+    // محاولة الاتصال بكل موديل في القائمة
+    for (let i = 0; i < models.length; i++) {
+        const modelName = models[i];
+        Logger.log(`🔄 جاري تجربة الموديل: ${modelName} (${i + 1}/${models.length})`);
 
-        const options = {
-            method: 'post',
-            contentType: 'application/json',
-            payload: JSON.stringify(payload),
-            muteHttpExceptions: true
-        };
+        try {
+            const url = `${AI_CONFIG.GEMINI.BASE_URL}${modelName}:generateContent?key=${apiKey}`;
 
-        const response = UrlFetchApp.fetch(url, options);
-        const responseCode = response.getResponseCode();
-        const responseText = response.getContentText();
+            // بناء الـ prompt مع السياق
+            const fullPrompt = buildFullPrompt(userMessage, context);
 
-        if (responseCode !== 200) {
-            Logger.log('Gemini API Error: ' + responseCode + ' - ' + responseText);
-            let errorDetails = responseText;
-            try {
-                const jsonError = JSON.parse(responseText);
-                if (jsonError.error && jsonError.error.message) {
-                    errorDetails = jsonError.error.message;
-                }
-            } catch (e) { }
-
-            return {
-                success: false,
-                error: `خطأ في الاتصال بـ Gemini API (${responseCode}): ${errorDetails}`,
-                details: responseText
+            const payload = {
+                contents: [{
+                    parts: [{
+                        text: fullPrompt
+                    }]
+                }],
+                generationConfig: AI_CONFIG.GEMINI.GENERATION_CONFIG,
+                safetySettings: AI_CONFIG.GEMINI.SAFETY_SETTINGS
             };
+
+            const options = {
+                method: 'post',
+                contentType: 'application/json',
+                payload: JSON.stringify(payload),
+                muteHttpExceptions: true
+            };
+
+            const response = UrlFetchApp.fetch(url, options);
+            const responseCode = response.getResponseCode();
+            const responseText = response.getContentText();
+
+            if (responseCode === 200) {
+                Logger.log(`✅ نجاح الاتصال بالموديل: ${modelName}`);
+
+                // حفظ الموديل الناجح في الاعدادات المستقبلية (اختياري - هنا فقط نستخدمه)
+                const result = JSON.parse(responseText);
+
+                // استخراج النص من الرد
+                if (result.candidates && result.candidates[0] && result.candidates[0].content) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    return parseGeminiResponse(text);
+                }
+            } else {
+                Logger.log(`❌ فشل الموديل ${modelName}: ${responseCode} - ${responseText}`);
+                lastError = `خطأ (${responseCode}): ${responseText}`;
+            }
+
+        } catch (error) {
+            Logger.log(`❌ خطأ استثنائي مع ${modelName}: ${error.message}`);
+            lastError = error.message;
         }
-
-        const result = JSON.parse(responseText);
-
-        // استخراج النص من الرد
-        if (result.candidates && result.candidates[0] && result.candidates[0].content) {
-            const text = result.candidates[0].content.parts[0].text;
-            return parseGeminiResponse(text);
-        }
-
-        return {
-            success: false,
-            error: 'رد غير متوقع من Gemini'
-        };
-
-    } catch (error) {
-        Logger.log('Gemini Error: ' + error.message);
-        return {
-            success: false,
-            error: error.message
-        };
     }
+
+    // إذا فشلت جميع المحاولات
+    return {
+        success: false,
+        error: `فشل الاتصال بجميع موديلات Gemini. آخر خطأ: ${lastError}`,
+        details: 'تمت تجربة الموديلات: ' + models.join(', ')
+    };
 }
 
 /**

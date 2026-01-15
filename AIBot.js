@@ -393,27 +393,40 @@ function handleConfirmation(chatId, session, user) {
 /**
  * حفظ الحركة في شيت حركات البوت
  */
+/**
+ * حفظ الحركة في شيت حركات البوت
+ */
 function saveAITransaction(transaction, user, chatId) {
+    Logger.log('🚀 بدء عملية حفظ الحركة...');
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
-        let sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
+        const sheetName = CONFIG.SHEETS.BOT_TRANSACTIONS;
+        Logger.log(`📂 البحث عن الشيت: "${sheetName}"`);
+
+        let sheet = ss.getSheetByName(sheetName);
 
         // إذا كان الشيت غير موجود، نقوم بإنشائه (اختياري أو إرسال خطأ واضح)
         if (!sheet) {
-            Logger.log('Sheet "' + CONFIG.SHEETS.BOT_TRANSACTIONS + '" not found. Creating it...');
+            Logger.log(`⚠️ الشيت "${sheetName}" غير موجود. جاري إنشاؤه...`);
             try {
-                sheet = ss.insertSheet(CONFIG.SHEETS.BOT_TRANSACTIONS);
+                sheet = ss.insertSheet(sheetName);
                 // إعداد الهيدر إذا لزم الأمر
                 const headers = Object.values(BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS).map(col => col.name);
                 sheet.appendRow(headers);
                 sheet.getRange(1, 1, 1, headers.length).setBackground('#f3f3f3').setFontWeight('bold');
+                Logger.log('✅ تم إنشاء الشيت والهيدر بنجاح.');
             } catch (e) {
-                throw new Error('شيت "' + CONFIG.SHEETS.BOT_TRANSACTIONS + '" غير موجود وفشل إنشاؤه تلقائياً. يرجى إنشاؤه يدوياً.');
+                Logger.log(`❌ فشل إنشاء الشيت: ${e.message}`);
+                throw new Error(`شيت "${sheetName}" غير موجود وفشل إنشاؤه تلقائياً. تأكد من الصلاحيات.`);
             }
+        } else {
+            Logger.log('✅ الشيت موجود.');
         }
 
         // إنشاء رقم الحركة
         const transactionId = generateTransactionId();
+        Logger.log(`🆔 رقم الحركة الجديد: ${transactionId}`);
+
         const now = new Date();
         const timestamp = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd HH:mm:ss');
         const month = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM');
@@ -427,7 +440,7 @@ function saveAITransaction(transaction, user, chatId) {
                 transaction.exchangeRate
             );
         } catch (e) {
-            Logger.log('USD Calculation Error: ' + e.message);
+            Logger.log('⚠️ خطأ في حساب الدولار: ' + e.message);
             amountUSD = transaction.amount; // Fallback
         }
 
@@ -472,15 +485,25 @@ function saveAITransaction(transaction, user, chatId) {
             transaction.isNewParty ? 'نعم' : 'لا'                  // طرف جديد؟
         ];
 
+        Logger.log('📝 تجهيز البيانات للحفظ: ' + JSON.stringify(rowData));
+
         // إضافة الصف
-        sheet.appendRow(rowData);
+        try {
+            sheet.appendRow(rowData);
+            Logger.log('✅ تم إضافة الصف بنجاح!');
+        } catch (appendError) {
+            Logger.log('❌ خطأ أثناء appendRow: ' + appendError.message);
+            throw new Error('فشل في الكتابة في الشيت: ' + appendError.message);
+        }
 
         // إذا كان طرف جديد، أضفه لشيت أطراف البوت
         if (transaction.isNewParty) {
             try {
+                Logger.log('👤 إضافة طرف جديد...');
                 addNewPartyFromAI(transaction, user, chatId);
+                Logger.log('✅ تم إضافة الطرف الجديد.');
             } catch (e) {
-                Logger.log('Add Party Error: ' + e.message);
+                Logger.log('⚠️ تحذير: فشل إضافة الطرف الجديد: ' + e.message);
                 // لا نوقف العملية إذا فشل إضافة الطرف فقط
             }
         }
@@ -491,7 +514,8 @@ function saveAITransaction(transaction, user, chatId) {
         };
 
     } catch (error) {
-        Logger.log('Save Transaction Error: ' + error.message);
+        Logger.log('❌ Save Transaction Error: ' + error.message);
+        Logger.log(error.stack);
         return {
             success: false,
             error: error.message

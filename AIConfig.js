@@ -7,12 +7,23 @@
 const AI_CONFIG = {
 
     // ==================== إعدادات Gemini API ====================
+    // ==================== إعدادات Gemini API ====================
     GEMINI: {
-        // رابط API
-        API_URL: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent',
+        // الرابط الأساسي (سيتم إضافة اسم الموديل ديناميكياً)
+        BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/models/',
 
-        // اسم الموديل
-        MODEL: 'gemini-1.5-flash-latest',
+        // الموديل الأساسي والموديلات البديلة
+        MODEL: 'gemini-1.5-flash',
+        FALLBACK_MODELS: [
+            'gemini-1.5-flash',
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-flash-001',
+            'gemini-1.5-flash-002',
+            'gemini-1.5-flash-8b',
+            'gemini-1.5-pro',
+            'gemini-1.0-pro',
+            'gemini-pro'
+        ],
 
         // إعدادات التوليد
         GENERATION_CONFIG: {

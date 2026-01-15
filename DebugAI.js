@@ -36,3 +36,53 @@ function listAvailableModels() {
         Logger.log('❌ خطأ في جلب الموديلات: ' + error.message);
     }
 }
+
+/**
+ * اختبار جميع الموديلات المحتملة لمعرفة أيها يعمل
+ */
+function testAllModels() {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('=== اختبار اتصال الموديلات (Live Test) ===');
+    Logger.log('═══════════════════════════════════════');
+
+    const modelsToTest = [
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash-001',
+        'gemini-1.5-flash-002',
+        'gemini-1.5-flash-8b',
+        'gemini-1.5-pro',
+        'gemini-1.0-pro',
+        'gemini-pro'
+    ];
+
+    const apiKey = getGeminiApiKey();
+    const payload = {
+        contents: [{ parts: [{ text: "Hello" }] }]
+    };
+
+    modelsToTest.forEach(modelName => {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+        Logger.log(`🔄 تجربة الموديل: ${modelName}...`);
+
+        try {
+            const response = UrlFetchApp.fetch(url, {
+                method: 'post',
+                contentType: 'application/json',
+                payload: JSON.stringify(payload),
+                muteHttpExceptions: true
+            });
+
+            const code = response.getResponseCode();
+            if (code === 200) {
+                Logger.log(`✅ نـجــاح! الموديل ${modelName} يعمل.`);
+            } else {
+                Logger.log(`❌ فشل (${code}): ${response.getContentText().substring(0, 100)}...`);
+            }
+        } catch (e) {
+            Logger.log(`❌ خطأ في التنفيذ: ${e.message}`);
+        }
+        Logger.log('-----------------------------------');
+    });
+}
