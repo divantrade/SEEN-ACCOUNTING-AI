@@ -482,7 +482,8 @@ function saveAITransaction(transaction, user, chatId) {
             '',                                                     // تاريخ المراجعة
             '',                                                     // ملاحظات المراجعة
             '',                                                     // رابط المرفق
-            transaction.isNewParty ? 'نعم' : 'لا'                  // طرف جديد؟
+            transaction.isNewParty ? 'نعم' : 'لا',                 // طرف جديد؟
+            'بوت ذكي'                                               // مصدر الإدخال
         ];
 
         Logger.log('📝 تجهيز البيانات للحفظ: ' + JSON.stringify(rowData));
