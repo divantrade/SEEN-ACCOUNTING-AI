@@ -286,6 +286,12 @@ function processNewTransaction(chatId, text, user) {
             return;
         }
 
+        // التحقق من طرف جديد يحتاج تأكيد
+        if (result.validation && result.validation.needsPartyConfirmation) {
+            askNewPartyConfirmation(chatId, session);
+            return;
+        }
+
         // عرض ملخص للتأكيد
         showTransactionConfirmation(chatId, session);
 
@@ -369,6 +375,144 @@ function handleMissingFieldInput(chatId, text, session) {
     }
 }
 
+/**
+ * طلب تأكيد إضافة طرف جديد
+ */
+function askNewPartyConfirmation(chatId, session) {
+    const partyName = session.validation.enriched.newPartyName || session.transaction.party;
+
+    // تحديد نوع الطرف بناءً على نوع الحركة
+    let partyType = 'مورد';
+    const nature = session.transaction.nature || '';
+    if (nature.includes('إيراد')) {
+        partyType = 'عميل';
+    } else if (nature.includes('تمويل')) {
+        partyType = 'ممول';
+    }
+
+    session.newPartyName = partyName;
+    session.newPartyType = partyType;
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_NEW_PARTY_CONFIRM;
+    saveAIUserSession(chatId, session);
+
+    const message = `⚠️ *الطرف غير موجود في قاعدة البيانات*
+
+👤 الاسم: *${partyName}*
+📋 النوع المقترح: ${partyType}
+
+هل تريد إضافة هذا الطرف الجديد؟`;
+
+    const keyboard = {
+        inline_keyboard: [
+            [
+                { text: '✅ نعم، أضف الطرف', callback_data: 'ai_add_party_yes' },
+                { text: '❌ لا، إلغاء', callback_data: 'ai_add_party_no' }
+            ],
+            [
+                { text: '✏️ تعديل الاسم', callback_data: 'ai_add_party_edit' },
+                { text: '🔄 تغيير النوع', callback_data: 'ai_add_party_type' }
+            ]
+        ]
+    };
+
+    sendAIMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(keyboard)
+    });
+}
+
+/**
+ * معالجة تأكيد إضافة طرف جديد
+ */
+function handleNewPartyConfirmation(chatId, action, session) {
+    switch (action) {
+        case 'ai_add_party_yes':
+            // إضافة الطرف لقاعدة البيانات
+            const added = addNewParty(session.newPartyName, session.newPartyType);
+            if (added) {
+                sendAIMessage(chatId, `✅ تم إضافة الطرف *${session.newPartyName}* بنجاح!`, { parse_mode: 'Markdown' });
+
+                // تحديث الجلسة والمتابعة
+                session.transaction.party = session.newPartyName;
+                session.validation.enriched.party = session.newPartyName;
+                session.validation.enriched.partyType = session.newPartyType;
+                session.validation.needsPartyConfirmation = false;
+                session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
+                saveAIUserSession(chatId, session);
+
+                // عرض تأكيد الحركة
+                showTransactionConfirmation(chatId, session);
+            } else {
+                sendAIMessage(chatId, '❌ فشل في إضافة الطرف. يرجى المحاولة مرة أخرى.');
+            }
+            break;
+
+        case 'ai_add_party_no':
+            sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.CANCELLED);
+            resetAIUserSession(chatId);
+            break;
+
+        case 'ai_add_party_edit':
+            session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PARTY_SELECTION;
+            saveAIUserSession(chatId, session);
+            sendAIMessage(chatId, '✏️ أدخل اسم الطرف الصحيح:');
+            break;
+
+        case 'ai_add_party_type':
+            showPartyTypeSelection(chatId, session);
+            break;
+    }
+}
+
+/**
+ * عرض اختيار نوع الطرف
+ */
+function showPartyTypeSelection(chatId, session) {
+    const keyboard = {
+        inline_keyboard: [
+            [
+                { text: '🏭 مورد', callback_data: 'ai_party_type_مورد' },
+                { text: '👥 عميل', callback_data: 'ai_party_type_عميل' }
+            ],
+            [
+                { text: '💰 ممول', callback_data: 'ai_party_type_ممول' }
+            ]
+        ]
+    };
+
+    sendAIMessage(chatId, `اختر نوع الطرف *${session.newPartyName}*:`, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(keyboard)
+    });
+}
+
+/**
+ * إضافة طرف جديد لقاعدة البيانات
+ */
+function addNewParty(name, type) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const partiesSheet = ss.getSheetByName('الأطراف');
+
+        if (!partiesSheet) {
+            Logger.log('❌ شيت الأطراف غير موجود');
+            return false;
+        }
+
+        // إضافة الطرف في نهاية الشيت
+        const lastRow = partiesSheet.getLastRow() + 1;
+        partiesSheet.getRange(lastRow, 1).setValue(name);
+        partiesSheet.getRange(lastRow, 2).setValue(type);
+
+        Logger.log(`✅ تم إضافة الطرف: ${name} (${type})`);
+        return true;
+
+    } catch (error) {
+        Logger.log('Error adding party: ' + error.message);
+        return false;
+    }
+}
+
 
 // ==================== عرض التأكيد ====================
 
@@ -420,6 +564,17 @@ function handleAICallback(callbackQuery) {
     } else if (data.startsWith('ai_project_')) {
         const project = data.replace('ai_project_', '');
         handleProjectCallback(chatId, project, session);
+    } else if (data.startsWith('ai_add_party_')) {
+        // معالجة تأكيد إضافة طرف جديد
+        handleNewPartyConfirmation(chatId, data, session);
+    } else if (data.startsWith('ai_party_type_')) {
+        // معالجة اختيار نوع الطرف الجديد
+        const partyType = data.replace('ai_party_type_', '');
+        session.newPartyType = partyType;
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, `✅ تم تحديد النوع: ${partyType}`);
+        // إعادة عرض رسالة التأكيد
+        askNewPartyConfirmation(chatId, session);
     } else if (data.startsWith('ai_party_')) {
         const party = data.replace('ai_party_', '');
         handlePartyCallback(chatId, party, session);
@@ -791,16 +946,33 @@ function handlePartySelection(chatId, text, session) {
     const context = loadAIContext();
     const match = matchParty(text, context.parties);
 
-    if (match.found && match.score > 0.7) {
+    if (match.found && match.score > 0.9) {
+        // طرف موجود
         session.transaction.party = match.match.name;
         session.transaction.partyType = match.match.type;
         session.transaction.isNewParty = false;
-        moveToNextMissingField(chatId, session);
+        session.validation.needsPartyConfirmation = false;
+        saveAIUserSession(chatId, session);
+
+        // إذا كنا في مرحلة تأكيد طرف جديد، انتقل لتأكيد الحركة
+        if (session.newPartyName) {
+            delete session.newPartyName;
+            delete session.newPartyType;
+            session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
+            saveAIUserSession(chatId, session);
+            showTransactionConfirmation(chatId, session);
+        } else {
+            moveToNextMissingField(chatId, session);
+        }
     } else {
-        // طرف جديد
+        // طرف جديد - تحديث الاسم وطلب التأكيد
         session.transaction.party = text;
+        session.newPartyName = text;
         session.transaction.isNewParty = true;
-        showNewPartyTypeSelection(chatId, session);
+        saveAIUserSession(chatId, session);
+
+        // طلب تأكيد إضافة الطرف الجديد
+        askNewPartyConfirmation(chatId, session);
     }
 }
 
