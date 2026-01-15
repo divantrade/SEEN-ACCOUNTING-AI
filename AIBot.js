@@ -270,11 +270,13 @@ function handleMissingFieldInput(chatId, text, session) {
     // الانتقال للحقل التالي
     session.currentMissingIndex++;
 
+    saveAIUserSession(chatId, session);
+
     if (session.currentMissingIndex < session.missingFields.length) {
         askForMissingField(chatId, session);
     } else {
         // اكتملت الحقول - عرض التأكيد
-        session.state = AI_CONFIG.AI_CONVERSATION_STATES.IDLE;
+        session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
         showTransactionConfirmation(chatId, session);
     }
 }
@@ -753,10 +755,12 @@ function handleNewPartyType(chatId, partyType, session) {
 function moveToNextMissingField(chatId, session) {
     session.currentMissingIndex++;
 
+    saveAIUserSession(chatId, session);
+
     if (session.missingFields && session.currentMissingIndex < session.missingFields.length) {
         askForMissingField(chatId, session);
     } else {
-        session.state = AI_CONFIG.AI_CONVERSATION_STATES.IDLE;
+        session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
         showTransactionConfirmation(chatId, session);
     }
 }
