@@ -414,11 +414,18 @@ function refreshBotReviewData() {
  */
 function approveTransaction(rowNumber) {
     try {
+        Logger.log('=== بدء اعتماد الحركة ===');
+        Logger.log('Row Number: ' + rowNumber);
+
         const botSheet = getBotTransactionsSheet();
         const mainSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
         const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
 
+        Logger.log('Main Sheet Name: ' + CONFIG.SHEETS.TRANSACTIONS);
+        Logger.log('Main Sheet Found: ' + (mainSheet ? 'YES' : 'NO'));
+
         if (!mainSheet) {
+            Logger.log('❌ لم يتم العثور على دفتر الحركات');
             return { success: false, error: 'لم يتم العثور على دفتر الحركات' };
         }
 
@@ -445,6 +452,9 @@ function approveTransaction(rowNumber) {
         // نسخ البيانات لدفتر الحركات الرئيسي
         const mainLastRow = mainSheet.getLastRow();
         const newRow = mainLastRow + 1;
+
+        Logger.log('Main Sheet Last Row: ' + mainLastRow);
+        Logger.log('New Row Number: ' + newRow);
 
         // إعداد بيانات الصف الجديد (25 عمود فقط - بدون أعمدة البوت)
         const mainRowData = [
@@ -476,7 +486,13 @@ function approveTransaction(rowNumber) {
         ];
 
         // إضافة الصف
+        Logger.log('📝 جاري كتابة البيانات في الصف ' + newRow);
         mainSheet.getRange(newRow, 1, 1, 25).setValues([mainRowData]);
+        Logger.log('✅ تم كتابة البيانات بنجاح!');
+
+        // Force flush to ensure data is written
+        SpreadsheetApp.flush();
+        Logger.log('✅ تم حفظ التغييرات (flush)');
 
         // تحديث حالة الحركة في شيت البوت
         let reviewerEmail = 'Unknown';
