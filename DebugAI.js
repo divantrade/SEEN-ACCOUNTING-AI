@@ -38,33 +38,42 @@ function listAvailableModels() {
 }
 
 /**
- * اختبار جميع الموديلات المحتملة لمعرفة أيها يعمل
+ * اختبار جميع الموديلات المحتملة لمعرفة أيها يعمل (تشخيص عميق)
  */
 function testAllModels() {
     Logger.log('═══════════════════════════════════════');
-    Logger.log('=== اختبار اتصال الموديلات (Live Test) ===');
+    Logger.log('=== 🕵️‍♂️ تشخيص اتصال Gemini العميق ===');
     Logger.log('═══════════════════════════════════════');
+
+    // 1. فحص المفتاح
+    let apiKey = '';
+    try {
+        apiKey = getGeminiApiKey();
+        if (!apiKey) throw new Error('المفتاح فارغ');
+        Logger.log(`🔑 حالة المفتاح: ✅ موجود (ينتهي بـ ...${apiKey.slice(-4)})`);
+    } catch (e) {
+        Logger.log(`⛔ خطا حرج: لم يتم العثور على مفتاح API! السبب: ${e.message}`);
+        return;
+    }
 
     const modelsToTest = [
         'gemini-1.5-flash',
         'gemini-1.5-flash-latest',
         'gemini-1.5-flash-001',
         'gemini-1.5-flash-002',
-        'gemini-1.5-flash-8b',
         'gemini-1.5-pro',
-        'gemini-1.0-pro',
         'gemini-pro'
     ];
 
-    const apiKey = getGeminiApiKey();
     const payload = {
         contents: [{ parts: [{ text: "Hello" }] }]
     };
 
+    // 2. تجربة الموديلات
     modelsToTest.forEach(modelName => {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-        Logger.log(`🔄 تجربة الموديل: ${modelName}...`);
+        Logger.log(`🔄 تجربة: ${modelName}`);
 
         try {
             const response = UrlFetchApp.fetch(url, {
@@ -75,14 +84,30 @@ function testAllModels() {
             });
 
             const code = response.getResponseCode();
+            const text = response.getContentText();
+
             if (code === 200) {
-                Logger.log(`✅ نـجــاح! الموديل ${modelName} يعمل.`);
+                Logger.log(`✅ نـجــاح! (${modelName}) يعمل.`);
             } else {
-                Logger.log(`❌ فشل (${code}): ${response.getContentText().substring(0, 100)}...`);
+                Logger.log(`❌ فشل (${code}):`);
+                // محاولة استخراج رسالة الخطأ من JSON
+                try {
+                    const json = JSON.parse(text);
+                    if (json.error) {
+                        Logger.log(`   الرسالة: ${json.error.message}`);
+                        Logger.log(`   الحالة: ${json.error.status}`);
+                    } else {
+                        Logger.log(`   الرد الخام: ${text.substring(0, 200)}`);
+                    }
+                } catch (e) {
+                    Logger.log(`   الرد الخام: ${text.substring(0, 200)}`);
+                }
             }
         } catch (e) {
-            Logger.log(`❌ خطأ في التنفيذ: ${e.message}`);
+            Logger.log(`💥 خطأ تنفيذ: ${e.message}`);
         }
         Logger.log('-----------------------------------');
     });
+
+    Logger.log('📝 انتهى التشخيص. انسخ هذا السجل وأرسله للمطور.');
 }
