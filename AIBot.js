@@ -1590,19 +1590,141 @@ function handleAIProjectSelection(chatId, text, session) {
     const context = loadAIContext();
     const match = matchProject(text, context.projects);
 
-    if (match.found && match.score > 0.7) {
+    Logger.log('🔍 Project search for: "' + text + '"');
+    Logger.log('🔍 Match result: ' + JSON.stringify(match));
+
+    if (match.found && match.score >= 0.9) {
+        // ⭐ تطابق عالي - نقبله مباشرة
+        Logger.log('✅ High score match: ' + match.match);
         session.transaction.project = match.match;
-        moveToNextMissingField(chatId, session);
-    } else if (match.found && match.alternatives) {
-        // عرض اقتراحات
-        const keyboard = buildProjectSuggestionsKeyboard(match.match, match.alternatives);
-        sendAIMessage(chatId, `🎬 هل تقصد "${match.match}"؟`, {
+        session.transaction.project_code = match.code || '';
+
+        // إذا كنا في وضع اختيار المشروع الاختياري
+        if (session.validation && session.validation.needsProjectSelection) {
+            session.validation.needsProjectSelection = false;
+            saveAIUserSession(chatId, session);
+            sendAIMessage(chatId, `✅ تم اختيار المشروع: ${match.match}`);
+            continueValidation(chatId, session);
+        } else {
+            saveAIUserSession(chatId, session);
+            moveToNextMissingField(chatId, session);
+        }
+    } else if (match.found && match.score >= 0.5) {
+        // ⭐ تطابق متوسط - نسأل للتأكيد مع بدائل
+        Logger.log('🔄 Medium score match, showing suggestions');
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: `✅ نعم: ${match.match}`, callback_data: `ai_project_${match.match}` }]
+            ]
+        };
+
+        // إضافة البدائل
+        if (match.alternatives && match.alternatives.length > 0) {
+            match.alternatives.slice(0, 3).forEach(alt => {
+                const altName = typeof alt === 'object' ? alt.name : alt;
+                keyboard.inline_keyboard.push([
+                    { text: `🎬 ${altName}`, callback_data: `ai_project_${altName}` }
+                ]);
+            });
+        }
+
+        keyboard.inline_keyboard.push([{ text: '⏭️ تخطي - بدون مشروع', callback_data: 'ai_skip_project' }]);
+        keyboard.inline_keyboard.push([{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]);
+
+        sendAIMessage(chatId, `🔍 هل تقصد *"${match.match}"*؟\n\nأو اختر من القائمة:`, {
             parse_mode: 'Markdown',
             reply_markup: JSON.stringify(keyboard)
         });
     } else {
-        sendAIMessage(chatId, '❌ لم أجد هذا المشروع. حاول مرة أخرى أو اكتب اسماً مختلفاً:');
+        // ⭐ لم نجد تطابق - نعرض أقرب المشاريع
+        Logger.log('❌ No match found, showing closest projects');
+
+        // البحث عن أقرب المشاريع بناءً على الكلمات المشتركة
+        const suggestions = findClosestProjects(text, context.projects, 5);
+
+        if (suggestions.length > 0) {
+            const keyboard = {
+                inline_keyboard: []
+            };
+
+            suggestions.forEach(proj => {
+                const name = typeof proj === 'object' ? proj.name : proj;
+                keyboard.inline_keyboard.push([
+                    { text: `🎬 ${name}`, callback_data: `ai_project_${name}` }
+                ]);
+            });
+
+            keyboard.inline_keyboard.push([{ text: '⏭️ تخطي - بدون مشروع', callback_data: 'ai_skip_project' }]);
+            keyboard.inline_keyboard.push([{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]);
+
+            sendAIMessage(chatId, `🔍 لم أجد *"${text}"* بالضبط.\n\nهل تقصد أحد هذه المشاريع؟`, {
+                parse_mode: 'Markdown',
+                reply_markup: JSON.stringify(keyboard)
+            });
+        } else {
+            // لا توجد اقتراحات
+            sendAIMessage(chatId, '❌ لم أجد هذا المشروع. يمكنك:\n• كتابة جزء من اسم المشروع\n• الضغط على تخطي للمتابعة بدون مشروع', {
+                parse_mode: 'Markdown',
+                reply_markup: JSON.stringify({
+                    inline_keyboard: [
+                        [{ text: '⏭️ تخطي - بدون مشروع', callback_data: 'ai_skip_project' }],
+                        [{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]
+                    ]
+                })
+            });
+        }
     }
+}
+
+/**
+ * ⭐ البحث عن أقرب المشاريع بناءً على الكلمات المشتركة
+ */
+function findClosestProjects(searchText, projectsList, limit) {
+    if (!searchText || !projectsList || projectsList.length === 0) {
+        return [];
+    }
+
+    const normalizedSearch = normalizeArabicText(searchText).toLowerCase();
+    const searchWords = normalizedSearch.split(/\s+/);
+
+    const scored = projectsList.map(proj => {
+        const name = typeof proj === 'object' ? proj.name : proj;
+        const normalizedName = normalizeArabicText(name).toLowerCase();
+
+        let score = 0;
+
+        // التحقق من الاحتواء الكامل
+        if (normalizedName.includes(normalizedSearch)) {
+            score += 10;
+        }
+
+        // التحقق من الكلمات المشتركة
+        searchWords.forEach(word => {
+            if (word.length >= 2 && normalizedName.includes(word)) {
+                score += 5;
+            }
+        });
+
+        // التحقق من بداية الكلمات
+        const nameWords = normalizedName.split(/\s+/);
+        searchWords.forEach(searchWord => {
+            nameWords.forEach(nameWord => {
+                if (nameWord.startsWith(searchWord) || searchWord.startsWith(nameWord)) {
+                    score += 3;
+                }
+            });
+        });
+
+        return { project: proj, score };
+    });
+
+    // ترتيب وإرجاع الأعلى درجة
+    return scored
+        .filter(s => s.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit || 5)
+        .map(s => s.project);
 }
 
 /**
