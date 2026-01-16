@@ -517,11 +517,11 @@ function handleNewPartyConfirmation(chatId, action, session) {
                 session.validation.enriched.party = session.newPartyName;
                 session.validation.enriched.partyType = session.newPartyType;
                 session.validation.needsPartyConfirmation = false;
-                session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
+                session.transaction.isNewParty = true;
                 saveAIUserSession(chatId, session);
 
-                // عرض تأكيد الحركة
-                showTransactionConfirmation(chatId, session);
+                // ⭐ التحقق من باقي الحقول المطلوبة
+                continueValidation(chatId, session);
             } else {
                 sendAIMessage(chatId, '❌ فشل في إضافة الطرف. يرجى المحاولة مرة أخرى.');
             }
@@ -583,13 +583,12 @@ function handleSelectPartyFromSuggestions(chatId, index, session) {
         session.validation.enriched.partyType = partyType;
         session.validation.needsPartyConfirmation = false;
         session.validation.enriched.isNewParty = false;
-        session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
         saveAIUserSession(chatId, session);
 
         sendAIMessage(chatId, `✅ تم اختيار الطرف: *${partyName}* (${partyType})`, { parse_mode: 'Markdown' });
 
-        // عرض تأكيد الحركة
-        showTransactionConfirmation(chatId, session);
+        // ⭐ التحقق من باقي الحقول المطلوبة (طريقة الدفع، العملة، سعر الصرف، إلخ)
+        continueValidation(chatId, session);
     } else {
         sendAIMessage(chatId, '❌ حدث خطأ في اختيار الطرف. يرجى المحاولة مرة أخرى.');
     }
