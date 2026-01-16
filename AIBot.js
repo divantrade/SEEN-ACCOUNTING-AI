@@ -1335,6 +1335,13 @@ function handleEditRejectedTransaction(chatId, session, user) {
         let message = '✏️ *تعديل الحركة المرفوضة*\n';
         message += '━━━━━━━━━━━━━━━━━━━━\n\n';
         message += `❌ *سبب الرفض:* ${rejectionReason}\n\n`;
+
+        // ⭐ عرض النص الأصلي الذي أرسله المستخدم
+        if (transactionData.originalText) {
+            message += '📝 *النص الأصلي الذي أرسلته:*\n';
+            message += `"${transactionData.originalText}"\n\n`;
+        }
+
         message += '📋 *بيانات الحركة:*\n';
         message += `• الطبيعة: ${transactionData.nature}\n`;
         message += `• التصنيف: ${transactionData.classification}\n`;
