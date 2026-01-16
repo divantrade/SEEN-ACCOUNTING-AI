@@ -178,15 +178,23 @@ function handleAIMessage(message) {
     const text = message.text;
     const user = message.from;
 
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📨 NEW MESSAGE RECEIVED');
+    Logger.log('📨 chatId: ' + chatId);
+    Logger.log('📨 text: "' + text + '"');
+    Logger.log('═══════════════════════════════════════');
+
     // التحقق من الصلاحيات
     const permission = checkAIUserPermission(chatId, user);
     if (!permission.authorized) {
+        Logger.log('❌ User not authorized');
         sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.UNAUTHORIZED);
         return;
     }
 
     // معالجة الأوامر
     if (text && text.startsWith('/')) {
+        Logger.log('📍 Processing as command');
         handleAICommand(chatId, text, user);
         return;
     }
@@ -194,9 +202,15 @@ function handleAIMessage(message) {
     // الحصول على جلسة المستخدم
     const session = getAIUserSession(chatId);
 
-    // ⭐ تسجيل حالة الجلسة للتصحيح
-    Logger.log('📍 Session state: ' + (session.state || 'IDLE'));
-    Logger.log('📍 User text: ' + text);
+    // ⭐ تسجيل حالة الجلسة للتصحيح - مفصّل
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📍 SESSION DEBUG INFO');
+    Logger.log('📍 Session state: "' + (session.state || 'undefined/null') + '"');
+    Logger.log('📍 Expected WAITING_EXCHANGE_RATE: "' + AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EXCHANGE_RATE + '"');
+    Logger.log('📍 States match: ' + (session.state === AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EXCHANGE_RATE));
+    Logger.log('📍 Has transaction: ' + (session.transaction ? 'yes' : 'no'));
+    Logger.log('📍 Has validation: ' + (session.validation ? 'yes' : 'no'));
+    Logger.log('═══════════════════════════════════════');
 
     // معالجة حسب حالة المحادثة
     switch (session.state) {
@@ -255,6 +269,8 @@ function handleAIMessage(message) {
 
         default:
             // تحليل النص كحركة مالية جديدة
+            Logger.log('⚠️ DEFAULT CASE - Processing as new transaction');
+            Logger.log('⚠️ Session state was: "' + session.state + '"');
             processNewTransaction(chatId, text, user);
     }
 }
@@ -711,8 +727,17 @@ function handleCurrencySelection(chatId, currency, session) {
  * ⭐ السؤال عن سعر الصرف
  */
 function askExchangeRate(chatId, session) {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📤 askExchangeRate CALLED');
+    Logger.log('📤 Setting state to: ' + AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EXCHANGE_RATE);
+
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EXCHANGE_RATE;
     saveAIUserSession(chatId, session);
+
+    Logger.log('📤 State saved. Verifying...');
+    const verifySession = getAIUserSession(chatId);
+    Logger.log('📤 Verified state: ' + verifySession.state);
+    Logger.log('═══════════════════════════════════════');
 
     const currency = session.transaction.currency || session.validation.enriched.currency;
     const currencyNames = { 'TRY': 'الليرة التركية', 'EGP': 'الجنيه المصري' };
