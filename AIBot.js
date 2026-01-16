@@ -217,6 +217,11 @@ function handleAIMessage(message) {
             handleExchangeRateInput(chatId, text, session);
             break;
 
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_TERM:
+            // ⭐ معالجة إدخال شرط الدفع (أسابيع أو تاريخ)
+            handlePaymentTermInput(chatId, text, session);
+            break;
+
         default:
             // تحليل النص كحركة مالية جديدة
             processNewTransaction(chatId, text, user);
@@ -312,6 +317,24 @@ function processNewTransaction(chatId, text, user) {
         // ⭐ التحقق من سعر الصرف (إذا العملة غير دولار)
         if (result.validation && result.validation.needsExchangeRate) {
             askExchangeRate(chatId, session);
+            return;
+        }
+
+        // ⭐ التحقق من شرط الدفع (للاستحقاقات فقط)
+        if (result.validation && result.validation.needsPaymentTerm) {
+            askPaymentTerm(chatId, session);
+            return;
+        }
+
+        // ⭐ التحقق من عدد الأسابيع (لشرط بعد التسليم)
+        if (result.validation && result.validation.needsPaymentTermWeeks) {
+            askPaymentTermWeeks(chatId, session);
+            return;
+        }
+
+        // ⭐ التحقق من تاريخ الدفع المخصص
+        if (result.validation && result.validation.needsPaymentTermDate) {
+            askPaymentTermDate(chatId, session);
             return;
         }
 
@@ -676,6 +699,109 @@ function handleExchangeRateInput(chatId, text, session) {
 }
 
 /**
+ * ⭐ السؤال عن شرط الدفع (للاستحقاقات فقط)
+ */
+function askPaymentTerm(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_TERM;
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ASK_PAYMENT_TERM, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.PAYMENT_TERM)
+    });
+}
+
+/**
+ * ⭐ معالجة اختيار شرط الدفع
+ */
+function handlePaymentTermSelection(chatId, term, session) {
+    session.transaction.payment_term = term;
+    session.validation.enriched.payment_term = term;
+    session.validation.needsPaymentTerm = false;
+    saveAIUserSession(chatId, session);
+
+    const termLabels = { 'فوري': '⚡ فوري', 'بعد التسليم': '📦 بعد التسليم', 'تاريخ مخصص': '📅 تاريخ مخصص' };
+    sendAIMessage(chatId, `✅ تم تحديد شرط الدفع: *${termLabels[term] || term}*`, { parse_mode: 'Markdown' });
+
+    // إذا كان "بعد التسليم"، نسأل عن عدد الأسابيع
+    if (term === 'بعد التسليم') {
+        session.validation.needsPaymentTermWeeks = true;
+        saveAIUserSession(chatId, session);
+        askPaymentTermWeeks(chatId, session);
+    } else if (term === 'تاريخ مخصص') {
+        // إذا كان "تاريخ مخصص"، نسأل عن التاريخ
+        session.validation.needsPaymentTermDate = true;
+        saveAIUserSession(chatId, session);
+        askPaymentTermDate(chatId, session);
+    } else {
+        // فوري - نكمل
+        continueValidation(chatId, session);
+    }
+}
+
+/**
+ * ⭐ السؤال عن عدد الأسابيع بعد التسليم
+ */
+function askPaymentTermWeeks(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_TERM;
+    session.waitingFor = 'weeks';
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ASK_PAYMENT_TERM_WEEKS, { parse_mode: 'Markdown' });
+}
+
+/**
+ * ⭐ السؤال عن تاريخ الدفع المخصص
+ */
+function askPaymentTermDate(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_TERM;
+    session.waitingFor = 'date';
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ASK_PAYMENT_TERM_DATE, { parse_mode: 'Markdown' });
+}
+
+/**
+ * ⭐ معالجة إدخال بيانات شرط الدفع (أسابيع أو تاريخ)
+ */
+function handlePaymentTermInput(chatId, text, session) {
+    if (session.waitingFor === 'weeks') {
+        // إدخال عدد الأسابيع
+        const weeks = parseInt(text.replace(/[^0-9]/g, ''));
+        if (isNaN(weeks) || weeks <= 0) {
+            sendAIMessage(chatId, '❌ يرجى إدخال رقم صحيح (مثال: 2):');
+            return;
+        }
+
+        session.transaction.payment_term_weeks = weeks;
+        session.validation.enriched.payment_term_weeks = weeks;
+        session.validation.needsPaymentTermWeeks = false;
+        delete session.waitingFor;
+        saveAIUserSession(chatId, session);
+
+        sendAIMessage(chatId, `✅ تم تحديد: الدفع بعد *${weeks}* أسبوع من التسليم`, { parse_mode: 'Markdown' });
+        continueValidation(chatId, session);
+
+    } else if (session.waitingFor === 'date') {
+        // إدخال تاريخ مخصص
+        const parsedDate = parseArabicDate(text);
+        if (!parsedDate) {
+            sendAIMessage(chatId, '❌ تنسيق التاريخ غير صحيح. يرجى الإدخال بصيغة: 15/2/2026');
+            return;
+        }
+
+        session.transaction.payment_term_date = parsedDate;
+        session.validation.enriched.payment_term_date = parsedDate;
+        session.validation.needsPaymentTermDate = false;
+        delete session.waitingFor;
+        saveAIUserSession(chatId, session);
+
+        sendAIMessage(chatId, `✅ تم تحديد تاريخ الدفع: *${parsedDate}*`, { parse_mode: 'Markdown' });
+        continueValidation(chatId, session);
+    }
+}
+
+/**
  * ⭐ متابعة التحقق من البيانات بعد إكمال حقل
  */
 function continueValidation(chatId, session) {
@@ -694,6 +820,24 @@ function continueValidation(chatId, session) {
     // التحقق من سعر الصرف
     if (session.validation.needsExchangeRate) {
         askExchangeRate(chatId, session);
+        return;
+    }
+
+    // التحقق من شرط الدفع (للاستحقاقات)
+    if (session.validation.needsPaymentTerm) {
+        askPaymentTerm(chatId, session);
+        return;
+    }
+
+    // التحقق من عدد الأسابيع
+    if (session.validation.needsPaymentTermWeeks) {
+        askPaymentTermWeeks(chatId, session);
+        return;
+    }
+
+    // التحقق من تاريخ الدفع المخصص
+    if (session.validation.needsPaymentTermDate) {
+        askPaymentTermDate(chatId, session);
         return;
     }
 
@@ -806,6 +950,10 @@ function handleAICallback(callbackQuery) {
         // ⭐ معالجة اختيار العملة
         const currency = data.replace('ai_currency_', '');
         handleCurrencySelection(chatId, currency, session);
+    } else if (data.startsWith('ai_term_')) {
+        // ⭐ معالجة اختيار شرط الدفع
+        const term = data.replace('ai_term_', '');
+        handlePaymentTermSelection(chatId, term, session);
     } else if (data.startsWith('ai_add_party_')) {
         // معالجة تأكيد إضافة طرف جديد
         handleNewPartyConfirmation(chatId, data, session);
