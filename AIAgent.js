@@ -375,29 +375,58 @@ function loadItems(ss) {
 }
 
 /**
- * تحميل قائمة الأطراف
+ * تحميل قائمة الأطراف من الشيتين (الرئيسي + أطراف البوت)
  */
 function loadParties(ss) {
     const parties = [];
+    const addedNames = new Set(); // لتجنب التكرار
 
     try {
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
-        if (!sheet) return parties;
+        // ⭐ 1. تحميل من شيت الأطراف الرئيسي
+        const mainSheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
+        if (mainSheet) {
+            const mainData = mainSheet.getDataRange().getValues();
+            for (let i = 1; i < mainData.length; i++) {
+                const partyName = mainData[i][0];
+                const partyType = mainData[i][1];
 
-        const data = sheet.getDataRange().getValues();
-
-        // تخطي الهيدر
-        for (let i = 1; i < data.length; i++) {
-            const partyName = data[i][0]; // اسم الطرف
-            const partyType = data[i][1]; // نوع الطرف
-
-            if (partyName && partyName.toString().trim()) {
-                parties.push({
-                    name: partyName.toString().trim(),
-                    type: partyType ? partyType.toString().trim() : 'مورد'
-                });
+                if (partyName && partyName.toString().trim()) {
+                    const name = partyName.toString().trim();
+                    if (!addedNames.has(name.toLowerCase())) {
+                        parties.push({
+                            name: name,
+                            type: partyType ? partyType.toString().trim() : 'مورد'
+                        });
+                        addedNames.add(name.toLowerCase());
+                    }
+                }
             }
         }
+
+        // ⭐ 2. تحميل من شيت أطراف البوت (الأطراف الجديدة)
+        const botPartiesSheet = ss.getSheetByName(CONFIG.SHEETS.BOT_PARTIES);
+        if (botPartiesSheet) {
+            const botData = botPartiesSheet.getDataRange().getValues();
+            for (let i = 1; i < botData.length; i++) {
+                const partyName = botData[i][0]; // اسم الطرف
+                const partyType = botData[i][1]; // نوع الطرف
+
+                if (partyName && partyName.toString().trim()) {
+                    const name = partyName.toString().trim();
+                    // إضافة فقط إذا لم يكن موجوداً بالفعل
+                    if (!addedNames.has(name.toLowerCase())) {
+                        parties.push({
+                            name: name,
+                            type: partyType ? partyType.toString().trim() : 'مورد'
+                        });
+                        addedNames.add(name.toLowerCase());
+                        Logger.log('📋 Added bot party: ' + name);
+                    }
+                }
+            }
+        }
+
+        Logger.log('✅ Loaded ' + parties.length + ' parties (main + bot)');
 
     } catch (error) {
         Logger.log('Load Parties Error: ' + error.message);
