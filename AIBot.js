@@ -751,7 +751,27 @@ function askExchangeRate(chatId, session) {
  * ⭐ معالجة إدخال سعر الصرف
  */
 function handleExchangeRateInput(chatId, text, session) {
-    Logger.log('📥 Exchange rate input received: "' + text + '"');
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📥 handleExchangeRateInput CALLED');
+    Logger.log('📥 Input text: "' + text + '"');
+    Logger.log('📥 Session exists: ' + (session ? 'yes' : 'no'));
+    Logger.log('📥 Session.transaction: ' + (session && session.transaction ? 'exists' : 'UNDEFINED'));
+    Logger.log('📥 Session.validation: ' + (session && session.validation ? 'exists' : 'UNDEFINED'));
+
+    // ⭐ التحقق من وجود البيانات أولاً - قبل أي شيء آخر
+    if (!session || !session.transaction || !session.validation) {
+        Logger.log('❌ SESSION DATA MISSING!');
+        Logger.log('❌ session: ' + JSON.stringify(session ? Object.keys(session) : 'null'));
+        sendAIMessage(chatId, '⚠️ حدث خطأ في الجلسة. يرجى إعادة إرسال الحركة من البداية.');
+        resetAIUserSession(chatId);
+        return;
+    }
+
+    if (!session.validation.enriched) {
+        session.validation.enriched = {};
+    }
+
+    Logger.log('✅ Session data validated');
 
     // ⭐ تحويل الأرقام العربية للإنجليزية
     const arabicNumerals = '٠١٢٣٤٥٦٧٨٩';
@@ -771,21 +791,12 @@ function handleExchangeRateInput(chatId, text, session) {
     Logger.log('📥 Parsed rate: ' + rate);
 
     if (isNaN(rate) || rate <= 0) {
+        Logger.log('❌ Invalid rate: ' + rate);
         sendAIMessage(chatId, '❌ سعر الصرف غير صحيح. يرجى إدخال رقم صحيح (مثال: 32.5 أو ٣٢٫٥):');
         return;
     }
 
-    // ⭐ التحقق من وجود البيانات
-    if (!session.transaction || !session.validation) {
-        Logger.log('❌ Session data missing in handleExchangeRateInput');
-        sendAIMessage(chatId, '⚠️ حدث خطأ. يرجى إعادة إرسال الحركة.');
-        resetAIUserSession(chatId);
-        return;
-    }
-
-    if (!session.validation.enriched) {
-        session.validation.enriched = {};
-    }
+    Logger.log('✅ Rate is valid: ' + rate);
 
     session.transaction.exchangeRate = rate;
     session.transaction.exchange_rate = rate;
@@ -796,6 +807,8 @@ function handleExchangeRateInput(chatId, text, session) {
     sendAIMessage(chatId, `✅ تم تحديد سعر الصرف: *${rate}*`, { parse_mode: 'Markdown' });
 
     Logger.log('✅ Exchange rate saved: ' + rate);
+    Logger.log('═══════════════════════════════════════');
+
     // التحقق من الخطوات التالية
     continueValidation(chatId, session);
 }
