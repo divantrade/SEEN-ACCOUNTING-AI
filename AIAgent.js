@@ -699,13 +699,33 @@ function validateTransaction(transaction, context) {
         }
     }
 
-    // حفظ شروط الدفع
-    if (transaction.payment_term) {
+    // ⭐ شروط الدفع (تعتمد على نوع الحركة)
+    const nature = transaction.nature || '';
+    const isPayment = nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استلام');
+
+    if (isPayment) {
+        // الدفعات الفعلية: شرط الدفع "فوري" تلقائياً (تم الدفع بتاريخ الحركة)
+        validation.enriched.payment_term = 'فوري';
+        validation.enriched.payment_term_weeks = '';
+        validation.enriched.payment_term_date = '';
+    } else if (transaction.payment_term) {
+        // استحقاق مع شرط دفع محدد من المستخدم
         validation.enriched.payment_term = transaction.payment_term;
         validation.enriched.payment_term_weeks = transaction.payment_term_weeks || '';
         validation.enriched.payment_term_date = transaction.payment_term_date || '';
+
+        // إذا كان "بعد التسليم" ولم يُحدد عدد الأسابيع
+        if (transaction.payment_term === 'بعد التسليم' && !transaction.payment_term_weeks) {
+            validation.needsPaymentTermWeeks = true;
+        }
+        // إذا كان "تاريخ مخصص" ولم يُحدد التاريخ
+        if (transaction.payment_term === 'تاريخ مخصص' && !transaction.payment_term_date) {
+            validation.needsPaymentTermDate = true;
+        }
     } else {
-        validation.enriched.payment_term = 'فوري'; // الافتراضي
+        // استحقاق بدون شرط دفع - نسأل المستخدم
+        validation.needsPaymentTerm = true;
+        validation.enriched.payment_term = null;
         validation.enriched.payment_term_weeks = '';
         validation.enriched.payment_term_date = '';
     }
