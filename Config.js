@@ -175,7 +175,9 @@ const CONFIG = {
         // ألوان التبويب
         TAB: {
             TRANSACTIONS: '#2e7d32',
-            VENDOR_STATEMENT: '#00897b'
+            VENDOR_STATEMENT: '#00897b',
+            CLIENT_STATEMENT: '#4caf50',
+            FUNDER_STATEMENT: '#ff9800'
         },
 
         // ألوان البوت والمراجعة

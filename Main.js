@@ -4946,6 +4946,25 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   }
 
   // ═══════════════════════════════════════════════════════════
+  // جلب لوجو الشركة من قاعدة بيانات البنود (D2)
+  // يجب أن يكون رابط صورة مباشر وليس رابط مجلد
+  // ═══════════════════════════════════════════════════════════
+  let companyLogo = '';
+  try {
+    const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
+    if (itemsSheet) {
+      const logoUrl = itemsSheet.getRange('D2').getValue() || '';
+      // التحقق من أن الرابط هو رابط صورة مباشر وليس مجلد
+      if (logoUrl && !logoUrl.includes('/folders/') && (logoUrl.includes('.png') || logoUrl.includes('.jpg') || logoUrl.includes('.jpeg') || logoUrl.includes('.gif') || logoUrl.includes('googleusercontent.com') || logoUrl.includes('uc?id='))) {
+        companyLogo = logoUrl;
+      }
+      Logger.log('🖼️ Company logo URL: ' + (companyLogo ? 'Valid image URL found' : 'Not found or invalid'));
+    }
+  } catch (e) {
+    Logger.log('⚠️ Could not get company logo: ' + e.message);
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // تحديد عنوان الكشف ولون التبويب حسب نوع الطرف
   // ═══════════════════════════════════════════════════════════
   let titlePrefix = 'كشف حساب';
@@ -5012,36 +5031,58 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setVerticalAlignment('middle');
 
   // ═══════════════════════════════════════════════════════════
-  // كارت بيانات الطرف
+  // إضافة اللوجو إذا وجد (رابط صورة مباشر)
   // ═══════════════════════════════════════════════════════════
-  sheet.getRange('A3:F3').merge()
+  let logoRowOffset = 0;
+  if (companyLogo) {
+    try {
+      sheet.getRange('A2:F2').merge()
+        .setFormula('=IMAGE("' + companyLogo + '", 4, 80, 80)')
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle');
+      sheet.setRowHeight(2, 90);
+      logoRowOffset = 1;
+      Logger.log('✅ Logo inserted successfully');
+    } catch (e) {
+      Logger.log('⚠️ Could not insert logo: ' + e.message);
+      logoRowOffset = 0;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // كارت بيانات الطرف (ديناميكي حسب وجود اللوجو)
+  // ═══════════════════════════════════════════════════════════
+  const cardHeaderRow = 3 + logoRowOffset;
+  const cardDataStartRow = cardHeaderRow + 1;
+
+  sheet.getRange('A' + cardHeaderRow + ':F' + cardHeaderRow).merge()
     .setValue('بيانات ' + partyType)
     .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  sheet.getRange('A4:F7').setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+  sheet.getRange('A' + cardDataStartRow + ':F' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
-  sheet.getRange('A4').setValue('الاسم:').setFontWeight('bold');
-  sheet.getRange('B4:C4').merge().setValue(partyName);
+  sheet.getRange('A' + cardDataStartRow).setValue('الاسم:').setFontWeight('bold');
+  sheet.getRange('B' + cardDataStartRow + ':C' + cardDataStartRow).merge().setValue(partyName);
 
-  sheet.getRange('D4').setValue('التخصص:').setFontWeight('bold');
-  sheet.getRange('E4:F4').merge().setValue(partyData.specialization || '');
+  sheet.getRange('D' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
+  sheet.getRange('E' + cardDataStartRow + ':F' + cardDataStartRow).merge().setValue(partyData.specialization || '');
 
-  sheet.getRange('A5').setValue('الهاتف:').setFontWeight('bold');
-  sheet.getRange('B5:C5').merge().setValue(partyData.phone || '');
+  sheet.getRange('A' + (cardDataStartRow + 1)).setValue('الهاتف:').setFontWeight('bold');
+  sheet.getRange('B' + (cardDataStartRow + 1) + ':C' + (cardDataStartRow + 1)).merge().setValue(partyData.phone || '');
 
-  sheet.getRange('D5').setValue('البريد:').setFontWeight('bold');
-  sheet.getRange('E5:F5').merge().setValue(partyData.email || '');
+  sheet.getRange('D' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
+  sheet.getRange('E' + (cardDataStartRow + 1) + ':F' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
 
-  sheet.getRange('A6').setValue('البنك:').setFontWeight('bold');
-  sheet.getRange('B6:F6').merge().setValue(partyData.bankInfo || '');
+  sheet.getRange('A' + (cardDataStartRow + 2)).setValue('البنك:').setFontWeight('bold');
+  sheet.getRange('B' + (cardDataStartRow + 2) + ':F' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
 
-  sheet.getRange('A7').setValue('ملاحظات:').setFontWeight('bold');
-  sheet.getRange('B7:F7').merge().setValue(partyData.notes || '').setWrap(true);
+  sheet.getRange('A' + (cardDataStartRow + 3)).setValue('ملاحظات:').setFontWeight('bold');
+  sheet.getRange('B' + (cardDataStartRow + 3) + ':F' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
 
-  sheet.getRange('A4:F7').setBorder(
+  sheet.getRange('A' + cardDataStartRow + ':F' + (cardDataStartRow + 3)).setBorder(
     true, true, true, true, true, true,
     '#1565c0', SpreadsheetApp.BorderStyle.SOLID
   );
@@ -5110,39 +5151,43 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // الملخص المالي
+  // الملخص المالي (ديناميكي حسب وجود اللوجو)
   // ═══════════════════════════════════════════════════════════
-  sheet.getRange('A9:F9').merge()
+  const summaryHeaderRow = cardDataStartRow + 5;
+  const summaryDataStartRow = summaryHeaderRow + 1;
+
+  sheet.getRange('A' + summaryHeaderRow + ':F' + summaryHeaderRow).merge()
     .setValue('الملخص المالي')
     .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  sheet.getRange('A10:F11').setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+  sheet.getRange('A' + summaryDataStartRow + ':F' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
-  sheet.getRange('A10').setValue('إجمالي المدين:').setFontWeight('bold');
-  sheet.getRange('B10').setValue(totalDebit).setNumberFormat('$#,##0.00');
+  sheet.getRange('A' + summaryDataStartRow).setValue('إجمالي المدين:').setFontWeight('bold');
+  sheet.getRange('B' + summaryDataStartRow).setValue(totalDebit).setNumberFormat('$#,##0.00');
 
-  sheet.getRange('D10').setValue('إجمالي الدائن:').setFontWeight('bold');
-  sheet.getRange('E10').setValue(totalCredit).setNumberFormat('$#,##0.00');
+  sheet.getRange('D' + summaryDataStartRow).setValue('إجمالي الدائن:').setFontWeight('bold');
+  sheet.getRange('E' + summaryDataStartRow).setValue(totalCredit).setNumberFormat('$#,##0.00');
 
-  sheet.getRange('A11').setValue('الرصيد الحالي:').setFontWeight('bold');
-  sheet.getRange('B11').setValue(balance).setNumberFormat('$#,##0.00')
+  sheet.getRange('A' + (summaryDataStartRow + 1)).setValue('الرصيد الحالي:').setFontWeight('bold');
+  sheet.getRange('B' + (summaryDataStartRow + 1)).setValue(balance).setNumberFormat('$#,##0.00')
     .setFontWeight('bold')
     .setBackground(balance > 0 ? '#ffcdd2' : '#c8e6c9');
 
-  sheet.getRange('D11').setValue('عدد الحركات:').setFontWeight('bold');
-  sheet.getRange('E11').setValue(rows.length);
+  sheet.getRange('D' + (summaryDataStartRow + 1)).setValue('عدد الحركات:').setFontWeight('bold');
+  sheet.getRange('E' + (summaryDataStartRow + 1)).setValue(rows.length);
 
-  sheet.getRange('A10:F11').setBorder(
+  sheet.getRange('A' + summaryDataStartRow + ':F' + (summaryDataStartRow + 1)).setBorder(
     true, true, true, true, true, true,
     '#1565c0', SpreadsheetApp.BorderStyle.SOLID
   );
 
   // ═══════════════════════════════════════════════════════════
-  // رأس جدول الحركات (بدون طبيعة الحركة والبند)
+  // رأس جدول الحركات (ديناميكي حسب وجود اللوجو)
   // ═══════════════════════════════════════════════════════════
+  const tableHeaderRow = summaryDataStartRow + 3;
   const headers = [
     '📅 التاريخ',
     '🎬 المشروع',
@@ -5152,7 +5197,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     '📊 الرصيد (USD)'
   ];
 
-  sheet.getRange(13, 1, 1, headers.length)
+  sheet.getRange(tableHeaderRow, 1, 1, headers.length)
     .setValues([headers])
     .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
@@ -5160,33 +5205,35 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setHorizontalAlignment('center');
 
   // ═══════════════════════════════════════════════════════════
-  // بيانات الحركات
+  // بيانات الحركات (ديناميكي حسب وجود اللوجو)
   // ═══════════════════════════════════════════════════════════
+  const dataStartRow = tableHeaderRow + 1;
+
   if (rows.length > 0) {
-    sheet.getRange(14, 1, rows.length, headers.length).setValues(rows);
-    sheet.getRange(14, 1, rows.length, 1).setNumberFormat('dd/mm/yyyy');
-    sheet.getRange(14, 4, rows.length, 3).setNumberFormat('$#,##0.00');
+    sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
+    sheet.getRange(dataStartRow, 1, rows.length, 1).setNumberFormat('dd/mm/yyyy');
+    sheet.getRange(dataStartRow, 4, rows.length, 3).setNumberFormat('$#,##0.00');
 
     // تلوين متناوب للصفوف
     for (let i = 0; i < rows.length; i++) {
-      const r = 14 + i;
-      const bg = i % 2 === 0 ? '#ffffff' : '#e3f2fd';
+      const r = dataStartRow + i;
+      const bg = i % 2 === 0 ? '#ffffff' : CONFIG.COLORS.BG.LIGHT_BLUE;
       sheet.getRange(r, 1, 1, headers.length).setBackground(bg);
     }
 
     // إطار الجدول
-    sheet.getRange(13, 1, rows.length + 1, headers.length)
+    sheet.getRange(tableHeaderRow, 1, rows.length + 1, headers.length)
       .setBorder(true, true, true, true, true, true, '#bdbdbd', SpreadsheetApp.BorderStyle.SOLID);
   } else {
-    sheet.getRange(14, 1).setValue('لا توجد حركات').setFontStyle('italic');
+    sheet.getRange(dataStartRow, 1).setValue('لا توجد حركات').setFontStyle('italic');
   }
 
-  sheet.setFrozenRows(13);
+  sheet.setFrozenRows(tableHeaderRow);
 
   // ═══════════════════════════════════════════════════════════
-  // التذييل
+  // التذييل (ديناميكي حسب وجود اللوجو)
   // ═══════════════════════════════════════════════════════════
-  const footerStart = 14 + rows.length + 3;
+  const footerStart = dataStartRow + Math.max(rows.length, 1) + 3;
 
   sheet.getRange(footerStart, 1, 1, 6).merge()
     .setBackground(CONFIG.COLORS.HEADER.DASHBOARD);
