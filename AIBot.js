@@ -194,6 +194,10 @@ function handleAIMessage(message) {
     // الحصول على جلسة المستخدم
     const session = getAIUserSession(chatId);
 
+    // ⭐ تسجيل حالة الجلسة للتصحيح
+    Logger.log('📍 Session state: ' + (session.state || 'IDLE'));
+    Logger.log('📍 User text: ' + text);
+
     // معالجة حسب حالة المحادثة
     switch (session.state) {
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_MISSING_FIELD:
@@ -220,6 +224,33 @@ function handleAIMessage(message) {
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_TERM:
             // ⭐ معالجة إدخال شرط الدفع (أسابيع أو تاريخ)
             handlePaymentTermInput(chatId, text, session);
+            break;
+
+        // ⭐ حالات انتظار ضغط الأزرار - إذا أرسل المستخدم نص، نطلب منه الضغط على الزر
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_METHOD:
+            Logger.log('⚠️ User sent text while waiting for payment method button');
+            sendAIMessage(chatId, '⚠️ يرجى اختيار طريقة الدفع من الأزرار أعلاه (تحويل بنكي / نقدي)', { parse_mode: 'Markdown' });
+            // إعادة إرسال الأزرار
+            askPaymentMethod(chatId, session);
+            break;
+
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_CURRENCY:
+            Logger.log('⚠️ User sent text while waiting for currency button');
+            sendAIMessage(chatId, '⚠️ يرجى اختيار العملة من الأزرار أعلاه', { parse_mode: 'Markdown' });
+            askCurrency(chatId, session);
+            break;
+
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_NEW_PARTY_CONFIRM:
+            Logger.log('⚠️ User sent text while waiting for party confirmation');
+            sendAIMessage(chatId, '⚠️ يرجى اختيار أحد الخيارات من الأزرار أعلاه', { parse_mode: 'Markdown' });
+            askNewPartyConfirmation(chatId, session);
+            break;
+
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_CONFIRMATION:
+        case AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT:
+            Logger.log('⚠️ User sent text while waiting for confirmation');
+            sendAIMessage(chatId, '⚠️ يرجى تأكيد الحركة أو تعديلها من الأزرار أعلاه', { parse_mode: 'Markdown' });
+            showTransactionConfirmation(chatId, session);
             break;
 
         default:
@@ -695,12 +726,40 @@ function askExchangeRate(chatId, session) {
  * ⭐ معالجة إدخال سعر الصرف
  */
 function handleExchangeRateInput(chatId, text, session) {
+    Logger.log('📥 Exchange rate input received: "' + text + '"');
+
+    // ⭐ تحويل الأرقام العربية للإنجليزية
+    const arabicNumerals = '٠١٢٣٤٥٦٧٨٩';
+    const englishNumerals = '0123456789';
+    let convertedText = text;
+    for (let i = 0; i < arabicNumerals.length; i++) {
+        convertedText = convertedText.replace(new RegExp(arabicNumerals[i], 'g'), englishNumerals[i]);
+    }
+    // تحويل الفاصلة العربية للنقطة
+    convertedText = convertedText.replace(/٫/g, '.');
+    convertedText = convertedText.replace(/،/g, '.');
+
+    Logger.log('📥 Converted text: "' + convertedText + '"');
+
     // استخراج الرقم من النص
-    const rate = parseFloat(text.replace(/[^0-9.]/g, ''));
+    const rate = parseFloat(convertedText.replace(/[^0-9.]/g, ''));
+    Logger.log('📥 Parsed rate: ' + rate);
 
     if (isNaN(rate) || rate <= 0) {
-        sendAIMessage(chatId, '❌ سعر الصرف غير صحيح. يرجى إدخال رقم صحيح (مثال: 32.5):');
+        sendAIMessage(chatId, '❌ سعر الصرف غير صحيح. يرجى إدخال رقم صحيح (مثال: 32.5 أو ٣٢٫٥):');
         return;
+    }
+
+    // ⭐ التحقق من وجود البيانات
+    if (!session.transaction || !session.validation) {
+        Logger.log('❌ Session data missing in handleExchangeRateInput');
+        sendAIMessage(chatId, '⚠️ حدث خطأ. يرجى إعادة إرسال الحركة.');
+        resetAIUserSession(chatId);
+        return;
+    }
+
+    if (!session.validation.enriched) {
+        session.validation.enriched = {};
     }
 
     session.transaction.exchangeRate = rate;
@@ -711,6 +770,7 @@ function handleExchangeRateInput(chatId, text, session) {
 
     sendAIMessage(chatId, `✅ تم تحديد سعر الصرف: *${rate}*`, { parse_mode: 'Markdown' });
 
+    Logger.log('✅ Exchange rate saved: ' + rate);
     // التحقق من الخطوات التالية
     continueValidation(chatId, session);
 }
@@ -782,11 +842,36 @@ function askPaymentTermDate(chatId, session) {
  * ⭐ معالجة إدخال بيانات شرط الدفع (أسابيع أو تاريخ)
  */
 function handlePaymentTermInput(chatId, text, session) {
+    Logger.log('📥 Payment term input: "' + text + '", waitingFor: ' + session.waitingFor);
+
+    // ⭐ تحويل الأرقام العربية للإنجليزية
+    const arabicNumerals = '٠١٢٣٤٥٦٧٨٩';
+    const englishNumerals = '0123456789';
+    let convertedText = text;
+    for (let i = 0; i < arabicNumerals.length; i++) {
+        convertedText = convertedText.replace(new RegExp(arabicNumerals[i], 'g'), englishNumerals[i]);
+    }
+    Logger.log('📥 Converted text: "' + convertedText + '"');
+
+    // ⭐ التحقق من وجود البيانات
+    if (!session.transaction || !session.validation) {
+        Logger.log('❌ Session data missing in handlePaymentTermInput');
+        sendAIMessage(chatId, '⚠️ حدث خطأ. يرجى إعادة إرسال الحركة.');
+        resetAIUserSession(chatId);
+        return;
+    }
+
+    if (!session.validation.enriched) {
+        session.validation.enriched = {};
+    }
+
     if (session.waitingFor === 'weeks') {
         // إدخال عدد الأسابيع
-        const weeks = parseInt(text.replace(/[^0-9]/g, ''));
+        const weeks = parseInt(convertedText.replace(/[^0-9]/g, ''));
+        Logger.log('📥 Parsed weeks: ' + weeks);
+
         if (isNaN(weeks) || weeks <= 0) {
-            sendAIMessage(chatId, '❌ يرجى إدخال رقم صحيح (مثال: 2):');
+            sendAIMessage(chatId, '❌ يرجى إدخال رقم صحيح (مثال: 2 أو ٢):');
             return;
         }
 
@@ -801,9 +886,9 @@ function handlePaymentTermInput(chatId, text, session) {
 
     } else if (session.waitingFor === 'date') {
         // إدخال تاريخ مخصص
-        const parsedDate = parseArabicDate(text);
+        const parsedDate = parseArabicDate(convertedText);
         if (!parsedDate) {
-            sendAIMessage(chatId, '❌ تنسيق التاريخ غير صحيح. يرجى الإدخال بصيغة: 15/2/2026');
+            sendAIMessage(chatId, '❌ تنسيق التاريخ غير صحيح. يرجى الإدخال بصيغة: 15/2/2026 أو ١٥/٢/٢٠٢٦');
             return;
         }
 
@@ -1784,6 +1869,14 @@ function notifyReviewers(transactionId, transaction) {
  */
 function parseArabicDate(dateStr) {
     try {
+        // ⭐ تحويل الأرقام العربية للإنجليزية أولاً
+        const arabicNumerals = '٠١٢٣٤٥٦٧٨٩';
+        const englishNumerals = '0123456789';
+        let convertedStr = dateStr;
+        for (let i = 0; i < arabicNumerals.length; i++) {
+            convertedStr = convertedStr.replace(new RegExp(arabicNumerals[i], 'g'), englishNumerals[i]);
+        }
+
         // محاولة تحويل صيغ مختلفة
         const formats = [
             /(\d{1,2})\/(\d{1,2})\/(\d{4})/,  // dd/mm/yyyy
@@ -1793,7 +1886,7 @@ function parseArabicDate(dateStr) {
         ];
 
         for (const format of formats) {
-            const match = dateStr.match(format);
+            const match = convertedStr.match(format);
             if (match) {
                 if (match[1].length === 4) {
                     // yyyy-mm-dd
@@ -1805,7 +1898,7 @@ function parseArabicDate(dateStr) {
             }
         }
 
-        return dateStr;
+        return convertedStr;
     } catch (error) {
         return Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd');
     }
