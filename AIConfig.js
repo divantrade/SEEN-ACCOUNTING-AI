@@ -265,8 +265,8 @@ const AI_CONFIG = {
         PAYMENT_METHOD: {
             inline_keyboard: [
                 [
-                    { text: '🏦 بنك', callback_data: 'ai_payment_بنك' },
-                    { text: '💵 خزنة', callback_data: 'ai_payment_خزنة' }
+                    { text: '🏦 تحويل بنكي', callback_data: 'ai_payment_تحويل بنكي' },
+                    { text: '💵 نقدي', callback_data: 'ai_payment_نقدي' }
                 ],
                 [
                     { text: '❌ إلغاء', callback_data: 'ai_cancel' }
