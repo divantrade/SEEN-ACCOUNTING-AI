@@ -502,6 +502,30 @@ function generateStatementForBot_(ss, partyName, partyType) {
         throw new Error('شيت دفتر الحركات المالية غير موجود!');
     }
 
+    // ⭐ تشخيص: طباعة عناوين الأعمدة
+    const transData = transSheet.getDataRange().getValues();
+    const headerRow = transData[0];
+    Logger.log('📋 Headers: ' + JSON.stringify(headerRow.slice(0, 15)));
+
+    // ⭐ البحث الديناميكي عن فهارس الأعمدة
+    let dateIdx = 1, projectIdx = 5, detailsIdx = 7;
+    let partyIdx = 8, amountUsdIdx = 12, movementIdx = 13;
+
+    for (let j = 0; j < headerRow.length; j++) {
+        const h = String(headerRow[j] || '').trim();
+        if (h === 'التاريخ' || h === 'تاريخ') dateIdx = j;
+        if (h === 'اسم المشروع' || h === 'المشروع') projectIdx = j;
+        if (h === 'التفاصيل' || h === 'البيان' || h === 'الوصف') detailsIdx = j;
+        if (h === 'اسم الطرف' || h === 'الطرف' || h === 'المورد/الجهة' || h === 'اسم المورد/الجهة') partyIdx = j;
+        if (h.includes('بالدولار') || h === 'القيمة USD' || h === 'المبلغ USD') amountUsdIdx = j;
+        if (h === 'نوع الحركة' || h === 'طبيعة الحركة') movementIdx = j;
+    }
+
+    Logger.log('📊 Column indices: date=' + dateIdx + ', project=' + projectIdx +
+               ', details=' + detailsIdx + ', party=' + partyIdx +
+               ', amountUSD=' + amountUsdIdx + ', movement=' + movementIdx);
+    Logger.log('🔍 Looking for party: "' + partyName + '"');
+
     // تحديد عنوان الكشف ولون التبويب
     let titlePrefix = 'كشف حساب';
     let tabColor = '#4a86e8';
@@ -560,47 +584,51 @@ function generateStatementForBot_(ss, partyName, partyType) {
         .setFontWeight('bold')
         .setHorizontalAlignment('center');
 
-    // جلب الحركات - استخدام نفس منطق الدالة الأصلية
-    const transData = transSheet.getDataRange().getValues();
-
-    // ⭐ فهارس الأعمدة الثابتة (نفس الدالة الأصلية)
-    // row[1] = التاريخ (B)
-    // row[5] = اسم المشروع (F)
-    // row[7] = التفاصيل (H)
-    // row[8] = اسم المورد/الجهة (I)
-    // row[12] = القيمة بالدولار (M)
-    // row[13] = نوع الحركة (N)
-
     let rows = [];
     let totalDebit = 0, totalCredit = 0, balance = 0;
+    let matchCount = 0;
+
+    // ⭐ تشخيص: طباعة أول 3 صفوف من البيانات
+    for (let i = 1; i < Math.min(4, transData.length); i++) {
+        const row = transData[i];
+        Logger.log('📋 Row ' + i + ' party: "' + row[partyIdx] + '"');
+    }
 
     for (let i = 1; i < transData.length; i++) {
         const row = transData[i];
+        const rowParty = String(row[partyIdx] || '').trim();
 
-        // الفلتر: اسم الطرف (العمود I - فهرس 8)
-        if (row[8] !== partyName) continue;
+        // ⭐ المقارنة مع trim
+        if (rowParty !== partyName.trim()) continue;
 
-        const movementKind = String(row[13] || '');  // N: نوع الحركة
-        const amountUsd = Number(row[12]) || 0;      // M: القيمة بالدولار
+        matchCount++;
+        const movementKind = String(row[movementIdx] || '');
+        const amountUsd = Number(row[amountUsdIdx]) || 0;
 
         // تجاهل الحركات بدون مبلغ
         if (!amountUsd) continue;
 
-        const date = row[1];       // B: التاريخ
-        const project = row[5];    // F: اسم المشروع
-        const details = row[7];    // H: التفاصيل
+        const date = row[dateIdx];
+        const project = row[projectIdx];
+        const details = row[detailsIdx];
 
         let debit = 0, credit = 0;
 
-        // التحقق من نوع الحركة (مدين/دائن)
-        if (movementKind.includes('مدين') || movementKind.includes('📤')) {
+        // التحقق من نوع الحركة
+        if (movementKind.includes('مدين') || movementKind.includes('📤') || movementKind.includes('دفعة')) {
             debit = amountUsd;
             balance += debit;
             totalDebit += debit;
-        } else if (movementKind.includes('دائن') || movementKind.includes('📥')) {
+        } else if (movementKind.includes('دائن') || movementKind.includes('📥') || movementKind.includes('استحقاق')) {
             credit = amountUsd;
             balance -= credit;
             totalCredit += credit;
+        } else {
+            // إذا لم نتعرف على النوع، نفترض مدين
+            Logger.log('⚠️ Unknown movement type: "' + movementKind + '" - treating as debit');
+            debit = amountUsd;
+            balance += debit;
+            totalDebit += debit;
         }
 
         rows.push([
@@ -612,6 +640,9 @@ function generateStatementForBot_(ss, partyName, partyType) {
             Math.round(balance * 100) / 100
         ]);
     }
+
+    Logger.log('📊 Matched rows for "' + partyName + '": ' + matchCount);
+    Logger.log('📊 Rows with amounts: ' + rows.length);
 
     // ترتيب زمني
     rows.sort((a, b) => {
@@ -628,8 +659,6 @@ function generateStatementForBot_(ss, partyName, partyType) {
         balance += debit - credit;
         rows[i][5] = Math.round(balance * 100) / 100;
     }
-
-    Logger.log('📊 Found ' + rows.length + ' transactions for ' + partyName);
 
     // كتابة البيانات
     if (rows.length > 0) {
@@ -662,11 +691,18 @@ function generateStatementForBot_(ss, partyName, partyType) {
             .setBackground(balance > 0 ? '#ffcdd2' : '#c8e6c9')
             .setNumberFormat('#,##0.00');
 
+        Logger.log('✅ Data written: ' + rows.length + ' rows, total debit: ' + totalDebit + ', total credit: ' + totalCredit);
+
     } else {
         sheet.getRange('A5:F5').merge()
             .setValue('لا توجد حركات لهذا الطرف')
             .setHorizontalAlignment('center');
+        Logger.log('⚠️ No transactions found for: ' + partyName);
     }
+
+    // ⭐ مهم جداً: flush لضمان كتابة البيانات قبل التصدير
+    SpreadsheetApp.flush();
+    Logger.log('✅ SpreadsheetApp.flush() completed');
 
     Logger.log('✅ Statement sheet created for: ' + partyName + ' with ' + rows.length + ' rows');
     return sheet;
