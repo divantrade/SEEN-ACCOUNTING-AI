@@ -910,6 +910,12 @@ function showTransactionConfirmation(chatId, session) {
  * معالجة ضغطات الأزرار
  */
 function handleAICallback(callbackQuery) {
+    // ⭐ فحص وجود البيانات المطلوبة
+    if (!callbackQuery || !callbackQuery.message || !callbackQuery.data) {
+        Logger.log('⚠️ Callback query missing required data: ' + JSON.stringify(callbackQuery));
+        return;
+    }
+
     const chatId = callbackQuery.message.chat.id;
     const messageId = callbackQuery.message.message_id;
     const data = callbackQuery.data;
@@ -925,6 +931,14 @@ function handleAICallback(callbackQuery) {
     }
 
     const session = getAIUserSession(chatId);
+
+    // ⭐ فحص وجود الجلسة والـ validation
+    if (!session || !session.validation) {
+        Logger.log('⚠️ Session or validation missing for callback: ' + data);
+        sendAIMessage(chatId, '⚠️ انتهت الجلسة. يرجى إعادة إرسال الحركة.');
+        resetAIUserSession(chatId);
+        return;
+    }
 
     // معالجة حسب نوع الـ callback
     if (data.startsWith('ai_confirm')) {
