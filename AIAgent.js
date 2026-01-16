@@ -755,12 +755,36 @@ function validateTransaction(transaction, context) {
         validation.enriched.due_date = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd');
     }
 
-    // تعيين القيم الافتراضية
-    if (!validation.enriched.currency) {
-        validation.enriched.currency = AI_CONFIG.INFERENCE_RULES.DEFAULTS.CURRENCY;
+    // ⭐ التحقق من طريقة الدفع (يجب أن تكون محددة)
+    if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
+        // إذا لم تحدد أو كانت القيمة الافتراضية، نحتاج تأكيد من المستخدم
+        validation.needsPaymentMethod = true;
+        validation.enriched.payment_method = transaction.payment_method || null;
+    } else {
+        // تحويل القيم المختلفة لـ "بنك" أو "خزنة"
+        const method = transaction.payment_method.toLowerCase();
+        if (method.includes('نقد') || method.includes('كاش') || method.includes('خزن') || method.includes('يد')) {
+            validation.enriched.payment_method = 'خزنة';
+        } else if (method.includes('بنك') || method.includes('تحويل') || method.includes('حوال')) {
+            validation.enriched.payment_method = 'بنك';
+        } else {
+            // قيمة غير معروفة - نسأل المستخدم
+            validation.needsPaymentMethod = true;
+            validation.enriched.payment_method = null;
+        }
     }
-    if (!validation.enriched.payment_method) {
-        validation.enriched.payment_method = AI_CONFIG.INFERENCE_RULES.DEFAULTS.PAYMENT_METHOD;
+
+    // ⭐ التحقق من العملة (يجب أن تكون محددة)
+    if (!transaction.currency) {
+        validation.needsCurrency = true;
+        validation.enriched.currency = null;
+    } else {
+        validation.enriched.currency = transaction.currency;
+
+        // ⭐ إذا كانت العملة غير دولار، يجب تحديد سعر الصرف
+        if (transaction.currency !== 'USD' && !transaction.exchange_rate) {
+            validation.needsExchangeRate = true;
+        }
     }
 
     // تحويل سعر الصرف من snake_case إلى camelCase

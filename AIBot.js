@@ -212,6 +212,11 @@ function handleAIMessage(message) {
             handleEditInput(chatId, text, session);
             break;
 
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EXCHANGE_RATE:
+            // ⭐ معالجة إدخال سعر الصرف
+            handleExchangeRateInput(chatId, text, session);
+            break;
+
         default:
             // تحليل النص كحركة مالية جديدة
             processNewTransaction(chatId, text, user);
@@ -289,6 +294,24 @@ function processNewTransaction(chatId, text, user) {
         // التحقق من طرف جديد يحتاج تأكيد
         if (result.validation && result.validation.needsPartyConfirmation) {
             askNewPartyConfirmation(chatId, session);
+            return;
+        }
+
+        // ⭐ التحقق من طريقة الدفع
+        if (result.validation && result.validation.needsPaymentMethod) {
+            askPaymentMethod(chatId, session);
+            return;
+        }
+
+        // ⭐ التحقق من العملة
+        if (result.validation && result.validation.needsCurrency) {
+            askCurrency(chatId, session);
+            return;
+        }
+
+        // ⭐ التحقق من سعر الصرف (إذا العملة غير دولار)
+        if (result.validation && result.validation.needsExchangeRate) {
+            askExchangeRate(chatId, session);
             return;
         }
 
@@ -550,6 +573,143 @@ function handleSelectPartyFromSuggestions(chatId, index, session) {
 }
 
 /**
+ * ⭐ السؤال عن طريقة الدفع
+ */
+function askPaymentMethod(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_METHOD;
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ASK_PAYMENT_METHOD, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.PAYMENT_METHOD)
+    });
+}
+
+/**
+ * ⭐ معالجة اختيار طريقة الدفع
+ */
+function handlePaymentMethodSelection(chatId, method, session) {
+    session.transaction.payment_method = method;
+    session.validation.enriched.payment_method = method;
+    session.validation.needsPaymentMethod = false;
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, `✅ تم تحديد طريقة الدفع: *${method}*`, { parse_mode: 'Markdown' });
+
+    // التحقق من الخطوات التالية
+    continueValidation(chatId, session);
+}
+
+/**
+ * ⭐ السؤال عن العملة
+ */
+function askCurrency(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_CURRENCY;
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ASK_CURRENCY, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.CURRENCY)
+    });
+}
+
+/**
+ * ⭐ معالجة اختيار العملة
+ */
+function handleCurrencySelection(chatId, currency, session) {
+    session.transaction.currency = currency;
+    session.validation.enriched.currency = currency;
+    session.validation.needsCurrency = false;
+    saveAIUserSession(chatId, session);
+
+    const currencyNames = { 'USD': 'دولار', 'TRY': 'ليرة', 'EGP': 'جنيه' };
+    sendAIMessage(chatId, `✅ تم تحديد العملة: *${currencyNames[currency] || currency}*`, { parse_mode: 'Markdown' });
+
+    // إذا كانت العملة غير دولار، نسأل عن سعر الصرف
+    if (currency !== 'USD') {
+        session.validation.needsExchangeRate = true;
+        saveAIUserSession(chatId, session);
+        askExchangeRate(chatId, session);
+    } else {
+        // التحقق من الخطوات التالية
+        continueValidation(chatId, session);
+    }
+}
+
+/**
+ * ⭐ السؤال عن سعر الصرف
+ */
+function askExchangeRate(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EXCHANGE_RATE;
+    saveAIUserSession(chatId, session);
+
+    const currency = session.transaction.currency || session.validation.enriched.currency;
+    const currencyNames = { 'TRY': 'الليرة التركية', 'EGP': 'الجنيه المصري' };
+    const currencyName = currencyNames[currency] || currency;
+
+    const message = AI_CONFIG.AI_MESSAGES.ASK_EXCHANGE_RATE.replace('{currency}', currencyName);
+    sendAIMessage(chatId, message, { parse_mode: 'Markdown' });
+}
+
+/**
+ * ⭐ معالجة إدخال سعر الصرف
+ */
+function handleExchangeRateInput(chatId, text, session) {
+    // استخراج الرقم من النص
+    const rate = parseFloat(text.replace(/[^0-9.]/g, ''));
+
+    if (isNaN(rate) || rate <= 0) {
+        sendAIMessage(chatId, '❌ سعر الصرف غير صحيح. يرجى إدخال رقم صحيح (مثال: 32.5):');
+        return;
+    }
+
+    session.transaction.exchangeRate = rate;
+    session.transaction.exchange_rate = rate;
+    session.validation.enriched.exchangeRate = rate;
+    session.validation.needsExchangeRate = false;
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, `✅ تم تحديد سعر الصرف: *${rate}*`, { parse_mode: 'Markdown' });
+
+    // التحقق من الخطوات التالية
+    continueValidation(chatId, session);
+}
+
+/**
+ * ⭐ متابعة التحقق من البيانات بعد إكمال حقل
+ */
+function continueValidation(chatId, session) {
+    // التحقق من طريقة الدفع
+    if (session.validation.needsPaymentMethod) {
+        askPaymentMethod(chatId, session);
+        return;
+    }
+
+    // التحقق من العملة
+    if (session.validation.needsCurrency) {
+        askCurrency(chatId, session);
+        return;
+    }
+
+    // التحقق من سعر الصرف
+    if (session.validation.needsExchangeRate) {
+        askExchangeRate(chatId, session);
+        return;
+    }
+
+    // التحقق من الطرف الجديد
+    if (session.validation.needsPartyConfirmation) {
+        askNewPartyConfirmation(chatId, session);
+        return;
+    }
+
+    // كل شيء تمام - عرض التأكيد
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
+    saveAIUserSession(chatId, session);
+    showTransactionConfirmation(chatId, session);
+}
+
+/**
  * إضافة طرف جديد لقاعدة البيانات
  */
 function addNewParty(name, type) {
@@ -638,6 +798,14 @@ function handleAICallback(callbackQuery) {
         // ⭐ معالجة اختيار طرف من القائمة
         const index = parseInt(data.replace('ai_select_party_', ''));
         handleSelectPartyFromSuggestions(chatId, index, session);
+    } else if (data.startsWith('ai_payment_')) {
+        // ⭐ معالجة اختيار طريقة الدفع
+        const method = data.replace('ai_payment_', '');
+        handlePaymentMethodSelection(chatId, method, session);
+    } else if (data.startsWith('ai_currency_')) {
+        // ⭐ معالجة اختيار العملة
+        const currency = data.replace('ai_currency_', '');
+        handleCurrencySelection(chatId, currency, session);
     } else if (data.startsWith('ai_add_party_')) {
         // معالجة تأكيد إضافة طرف جديد
         handleNewPartyConfirmation(chatId, data, session);

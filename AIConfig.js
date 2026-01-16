@@ -109,6 +109,9 @@ const AI_CONFIG = {
         WAITING_PROJECT_SELECTION: 'ai_waiting_project',
         WAITING_PARTY_SELECTION: 'ai_waiting_party',
         WAITING_NEW_PARTY_CONFIRM: 'ai_waiting_new_party_confirm',
+        WAITING_PAYMENT_METHOD: 'ai_waiting_payment_method',      // ⭐ انتظار طريقة الدفع
+        WAITING_CURRENCY: 'ai_waiting_currency',                  // ⭐ انتظار العملة
+        WAITING_EXCHANGE_RATE: 'ai_waiting_exchange_rate',        // ⭐ انتظار سعر الصرف
         WAITING_CONFIRMATION: 'ai_waiting_confirmation',
         WAITING_EDIT: 'ai_waiting_edit',
         CONFIRM_WAIT: 'ai_confirm_wait'
@@ -134,6 +137,9 @@ const AI_CONFIG = {
         ASK_PROJECT: '🎬 *ما هو المشروع؟*\n\nاختر من القائمة أو اكتب اسم المشروع:',
         ASK_PARTY: '👤 *من هو الطرف (المورد/العميل)؟*\n\nاختر من القائمة أو اكتب الاسم:',
         ASK_AMOUNT: '💰 *ما هو المبلغ؟*\n\nاكتب المبلغ (مثال: 500 دولار)',
+        ASK_PAYMENT_METHOD: '🏦 *ما هي طريقة الدفع؟*\n\nاختر من القائمة:',
+        ASK_CURRENCY: '💱 *ما هي العملة؟*\n\nاختر من القائمة:',
+        ASK_EXCHANGE_RATE: '📊 *ما هو سعر الصرف؟*\n\nاكتب سعر صرف {currency} مقابل الدولار:',
 
         PARTY_NOT_FOUND: `
 ⚠️ *لم أجد "{party_name}"*
@@ -246,6 +252,35 @@ const AI_CONFIG = {
                 ],
                 [
                     { text: '✅ تم التعديل', callback_data: 'ai_edit_done' },
+                    { text: '❌ إلغاء', callback_data: 'ai_cancel' }
+                ]
+            ]
+        },
+
+        // ⭐ اختيار طريقة الدفع
+        PAYMENT_METHOD: {
+            inline_keyboard: [
+                [
+                    { text: '🏦 بنك', callback_data: 'ai_payment_بنك' },
+                    { text: '💵 خزنة', callback_data: 'ai_payment_خزنة' }
+                ],
+                [
+                    { text: '❌ إلغاء', callback_data: 'ai_cancel' }
+                ]
+            ]
+        },
+
+        // ⭐ اختيار العملة
+        CURRENCY: {
+            inline_keyboard: [
+                [
+                    { text: '🇺🇸 دولار (USD)', callback_data: 'ai_currency_USD' },
+                    { text: '🇹🇷 ليرة (TRY)', callback_data: 'ai_currency_TRY' }
+                ],
+                [
+                    { text: '🇪🇬 جنيه (EGP)', callback_data: 'ai_currency_EGP' }
+                ],
+                [
                     { text: '❌ إلغاء', callback_data: 'ai_cancel' }
                 ]
             ]
