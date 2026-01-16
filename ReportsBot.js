@@ -112,7 +112,15 @@ function handleReportCallback(chatId, data, session) {
             session.reportState = REPORTS_CONFIG.STATES.WAITING_PARTY_NAME;
             saveAIUserSession(chatId, session);
 
-            sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.ENTER_PARTY_NAME, {
+            // ⭐ رسالة ديناميكية حسب نوع الطرف
+            const partyTypeLabels = {
+                'عميل': 'العميل',
+                'مورد': 'المورد',
+                'ممول': 'الممول'
+            };
+            const label = partyTypeLabels[partyType] || 'الطرف';
+
+            sendAIMessage(chatId, `✍️ *اكتب اسم ${label} أو جزء منه:*\n\nمثال: أحمد أو الشركة`, {
                 parse_mode: 'Markdown'
             });
 

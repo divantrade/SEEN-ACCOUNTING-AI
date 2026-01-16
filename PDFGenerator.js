@@ -373,12 +373,8 @@ function generateStatementPDF(chatId, partyName, partyType) {
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-        // استخدام الدالة الموجودة لتوليد كشف الحساب
-        generateUnifiedStatement_(ss, partyName, partyType);
-
-        // البحث عن الشيت المُنشأ
-        const sheetName = 'كشف حساب - ' + partyName;
-        const sheet = ss.getSheetByName(sheetName);
+        // ⭐ استخدام الدالة الخاصة بالبوت (بدون UI)
+        const sheet = generateStatementForBot_(ss, partyName, partyType);
 
         if (!sheet) {
             throw new Error('لم يتم إنشاء شيت كشف الحساب');
@@ -398,6 +394,157 @@ function generateStatementPDF(chatId, partyName, partyType) {
         Logger.log('❌ Error generating statement PDF: ' + error.message);
         return { success: false, error: error.message };
     }
+}
+
+/**
+ * ⭐ إنشاء كشف حساب للبوت (بدون UI)
+ * نسخة مبسطة من generateUnifiedStatement_ تعمل بدون SpreadsheetApp.getUi()
+ */
+function generateStatementForBot_(ss, partyName, partyType) {
+    const transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+
+    if (!transSheet) {
+        throw new Error('شيت دفتر الحركات المالية غير موجود!');
+    }
+
+    // تحديد عنوان الكشف ولون التبويب
+    let titlePrefix = 'كشف حساب';
+    let tabColor = '#4a86e8';
+
+    if (partyType === 'مورد') {
+        titlePrefix = 'كشف مورد';
+        tabColor = '#e91e63';
+    } else if (partyType === 'عميل') {
+        titlePrefix = 'كشف عميل';
+        tabColor = '#4caf50';
+    } else if (partyType === 'ممول') {
+        titlePrefix = 'كشف ممول';
+        tabColor = '#ff9800';
+    }
+
+    // إنشاء شيت جديد (حذف القديم إن وجد)
+    const sheetName = titlePrefix + ' - ' + partyName;
+    let sheet = ss.getSheetByName(sheetName);
+
+    if (sheet) {
+        ss.deleteSheet(sheet);
+    }
+
+    sheet = ss.insertSheet(sheetName);
+    sheet.setTabColor(tabColor);
+    sheet.setRightToLeft(true);
+
+    // عرض الأعمدة
+    sheet.setColumnWidth(1, 110);  // التاريخ
+    sheet.setColumnWidth(2, 160);  // المشروع
+    sheet.setColumnWidth(3, 250);  // التفاصيل
+    sheet.setColumnWidth(4, 130);  // مدين
+    sheet.setColumnWidth(5, 130);  // دائن
+    sheet.setColumnWidth(6, 130);  // الرصيد
+
+    // العنوان الرئيسي
+    sheet.getRange('A1:F1').merge()
+        .setValue('📊 ' + titlePrefix + ' - ' + partyName)
+        .setBackground('#1565c0')
+        .setFontColor('#ffffff')
+        .setFontWeight('bold')
+        .setFontSize(14)
+        .setHorizontalAlignment('center');
+
+    // تاريخ التقرير
+    sheet.getRange('A2:F2').merge()
+        .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm'))
+        .setHorizontalAlignment('center')
+        .setFontSize(10);
+
+    // عناوين الجدول
+    const headers = ['التاريخ', 'المشروع', 'التفاصيل', 'مدين (استحقاق)', 'دائن (دفعة)', 'الرصيد'];
+    sheet.getRange('A4:F4').setValues([headers])
+        .setBackground('#37474f')
+        .setFontColor('#ffffff')
+        .setFontWeight('bold')
+        .setHorizontalAlignment('center');
+
+    // جلب الحركات
+    const transData = transSheet.getDataRange().getValues();
+    const transHeaders = transData[0];
+
+    // البحث عن فهارس الأعمدة
+    const dateCol = transHeaders.indexOf('التاريخ');
+    const projectCol = transHeaders.indexOf('المشروع');
+    const detailsCol = transHeaders.indexOf('التفاصيل');
+    const partyCol = transHeaders.indexOf('الطرف');
+    const amountCol = transHeaders.indexOf('المبلغ بالدولار');
+    const natureCol = transHeaders.indexOf('طبيعة الحركة');
+
+    // تجميع الحركات للطرف
+    let rows = [];
+    let balance = 0;
+
+    for (let i = 1; i < transData.length; i++) {
+        const row = transData[i];
+        const rowParty = String(row[partyCol] || '').trim();
+
+        if (rowParty === partyName) {
+            const nature = String(row[natureCol] || '');
+            const amount = parseFloat(row[amountCol]) || 0;
+
+            let debit = 0;
+            let credit = 0;
+
+            // استحقاق = مدين، دفعة = دائن
+            if (nature.includes('استحقاق')) {
+                debit = amount;
+                balance += amount;
+            } else if (nature.includes('دفعة') || nature.includes('إيراد') || nature.includes('تمويل')) {
+                credit = amount;
+                balance -= amount;
+            }
+
+            const dateValue = row[dateCol];
+            const dateStr = dateValue instanceof Date
+                ? Utilities.formatDate(dateValue, 'Asia/Istanbul', 'dd/MM/yyyy')
+                : String(dateValue);
+
+            rows.push([
+                dateStr,
+                row[projectCol] || '',
+                row[detailsCol] || '',
+                debit || '',
+                credit || '',
+                balance.toFixed(2)
+            ]);
+        }
+    }
+
+    // كتابة البيانات
+    if (rows.length > 0) {
+        sheet.getRange(5, 1, rows.length, 6).setValues(rows);
+
+        // تنسيق الأرقام
+        sheet.getRange(5, 4, rows.length, 3).setNumberFormat('#,##0.00');
+
+        // صف الإجمالي
+        const totalRow = rows.length + 5;
+        sheet.getRange(totalRow, 1, 1, 3).merge()
+            .setValue('الرصيد النهائي')
+            .setFontWeight('bold')
+            .setHorizontalAlignment('center')
+            .setBackground('#e3f2fd');
+
+        sheet.getRange(totalRow, 6)
+            .setValue(balance.toFixed(2))
+            .setFontWeight('bold')
+            .setBackground(balance > 0 ? '#ffcdd2' : '#c8e6c9')
+            .setNumberFormat('#,##0.00');
+    } else {
+        sheet.getRange('A5:F5').merge()
+            .setValue('لا توجد حركات لهذا الطرف')
+            .setHorizontalAlignment('center');
+    }
+
+    Logger.log('✅ Statement sheet created for: ' + partyName);
+    return sheet;
 }
 
 /**
