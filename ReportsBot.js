@@ -244,31 +244,55 @@ function handleReportPartySearch(chatId, text, session) {
 function searchPartiesByName(searchText, partyType) {
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const partiesSheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
-
-        if (!partiesSheet) {
-            return [];
-        }
-
-        const data = partiesSheet.getDataRange().getValues();
         const results = [];
+        const addedNames = new Set();
 
-        // البحث في الأطراف
-        for (let i = 1; i < data.length; i++) {
-            const row = data[i];
-            const name = String(row[1] || '').trim(); // العمود B - الاسم
-            const type = String(row[2] || '').trim(); // العمود C - النوع
-            const code = String(row[0] || '').trim(); // العمود A - الكود
+        // ⭐ 1. البحث في شيت الأطراف الرئيسي
+        const mainSheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
+        if (mainSheet) {
+            const data = mainSheet.getDataRange().getValues();
+            for (let i = 1; i < data.length; i++) {
+                const row = data[i];
+                const name = String(row[0] || '').trim(); // العمود A - الاسم
+                const type = String(row[1] || '').trim(); // العمود B - النوع
 
-            // التحقق من النوع والاسم
-            if (type === partyType && name.toLowerCase().includes(searchText.toLowerCase())) {
-                results.push({
-                    code: code,
-                    name: name,
-                    type: type
-                });
+                // التحقق من النوع والاسم
+                if (type === partyType && name && name.toLowerCase().includes(searchText.toLowerCase())) {
+                    if (!addedNames.has(name.toLowerCase())) {
+                        results.push({
+                            name: name,
+                            type: type,
+                            code: '' // لا يوجد كود في الشيت الرئيسي
+                        });
+                        addedNames.add(name.toLowerCase());
+                    }
+                }
             }
         }
+
+        // ⭐ 2. البحث في شيت أطراف البوت
+        const botSheet = ss.getSheetByName(CONFIG.SHEETS.BOT_PARTIES);
+        if (botSheet) {
+            const data = botSheet.getDataRange().getValues();
+            for (let i = 1; i < data.length; i++) {
+                const row = data[i];
+                const name = String(row[0] || '').trim(); // العمود A - الاسم
+                const type = String(row[1] || '').trim(); // العمود B - النوع
+
+                if (type === partyType && name && name.toLowerCase().includes(searchText.toLowerCase())) {
+                    if (!addedNames.has(name.toLowerCase())) {
+                        results.push({
+                            name: name,
+                            type: type,
+                            code: ''
+                        });
+                        addedNames.add(name.toLowerCase());
+                    }
+                }
+            }
+        }
+
+        Logger.log('🔍 Found ' + results.length + ' parties matching "' + searchText + '" of type ' + partyType);
 
         // ترتيب النتائج حسب التطابق
         results.sort((a, b) => {
@@ -561,4 +585,50 @@ function isInReportMode(session) {
  */
 function isReportCallback(data) {
     return data && data.startsWith('report_');
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *                    إعداد قائمة أوامر البوت
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * إعداد قائمة الأوامر في تليجرام (تظهر بجوار حقل الكتابة)
+ * يجب تشغيل هذه الدالة مرة واحدة فقط لإعداد القائمة
+ */
+function setupBotCommands() {
+    try {
+        const token = CONFIG.TELEGRAM_BOT.AI_BOT_TOKEN;
+        const url = 'https://api.telegram.org/bot' + token + '/setMyCommands';
+
+        const commands = [
+            { command: 'start', description: '🚀 بدء استخدام البوت' },
+            { command: 'help', description: '❓ المساعدة والدليل' },
+            { command: 'reports', description: '📊 التقارير وكشوف الحساب' },
+            { command: 'status', description: '📋 حالة حركاتي' },
+            { command: 'cancel', description: '❌ إلغاء العملية الحالية' }
+        ];
+
+        const response = UrlFetchApp.fetch(url, {
+            method: 'post',
+            contentType: 'application/json',
+            payload: JSON.stringify({ commands: commands }),
+            muteHttpExceptions: true
+        });
+
+        const result = JSON.parse(response.getContentText());
+
+        if (result.ok) {
+            Logger.log('✅ Bot commands menu set up successfully');
+            return { success: true };
+        } else {
+            Logger.log('❌ Failed to set up bot commands: ' + result.description);
+            return { success: false, error: result.description };
+        }
+
+    } catch (error) {
+        Logger.log('❌ Error setting up bot commands: ' + error.message);
+        return { success: false, error: error.message };
+    }
 }
