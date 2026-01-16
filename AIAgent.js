@@ -816,17 +816,22 @@ function validateTransaction(transaction, context) {
     }
 
     // ⭐ التحقق من طريقة الدفع (يجب أن تكون محددة)
+    // القيم المسموحة: نقدي، تحويل بنكي، شيك، بطاقة، أخرى
     if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
         // إذا لم تحدد أو كانت القيمة الافتراضية، نحتاج تأكيد من المستخدم
         validation.needsPaymentMethod = true;
         validation.enriched.payment_method = transaction.payment_method || null;
     } else {
-        // تحويل القيم المختلفة لـ "بنك" أو "خزنة"
+        // تحويل القيم المختلفة للقيم الصحيحة
         const method = transaction.payment_method.toLowerCase();
-        if (method.includes('نقد') || method.includes('كاش') || method.includes('خزن') || method.includes('يد')) {
-            validation.enriched.payment_method = 'خزنة';
+        if (method.includes('نقد') || method.includes('كاش') || method.includes('يد')) {
+            validation.enriched.payment_method = 'نقدي';
         } else if (method.includes('بنك') || method.includes('تحويل') || method.includes('حوال')) {
-            validation.enriched.payment_method = 'بنك';
+            validation.enriched.payment_method = 'تحويل بنكي';
+        } else if (method.includes('شيك') || method.includes('check')) {
+            validation.enriched.payment_method = 'شيك';
+        } else if (method.includes('بطاق') || method.includes('كارت') || method.includes('فيزا') || method.includes('card')) {
+            validation.enriched.payment_method = 'بطاقة';
         } else {
             // قيمة غير معروفة - نسأل المستخدم
             validation.needsPaymentMethod = true;
