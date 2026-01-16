@@ -185,42 +185,130 @@ function savePDFToArchive(pdfBlob, reportType, partyName) {
  */
 function sendPDFToTelegram(chatId, pdfBlob, caption) {
     try {
-        // ⭐ الحصول على التوكن من PropertiesService
-        const token = PropertiesService.getScriptProperties().getProperty('AI_BOT_TOKEN');
+        // ⭐ الحصول على التوكن باستخدام نفس الدالة المستخدمة في sendAIMessage
+        const token = getAIBotToken();
 
-        if (!token) {
-            Logger.log('❌ AI_BOT_TOKEN not found');
-            return false;
-        }
+        // ⭐ التأكد من أن الـ Blob له نوع محتوى صحيح واسم ملف
+        pdfBlob.setContentType('application/pdf');
+        const fileName = pdfBlob.getName() || 'report.pdf';
+        pdfBlob.setName(fileName);
+
+        Logger.log('📤 Sending PDF to chat_id: ' + chatId);
+        Logger.log('📄 PDF: ' + fileName + ', size: ' + pdfBlob.getBytes().length + ' bytes');
 
         const url = 'https://api.telegram.org/bot' + token + '/sendDocument';
 
-        // إعداد البيانات للإرسال
+        // ⭐ استخدام contentType: 'multipart/form-data' صراحةً
+        // لا نحدده لأن UrlFetchApp يحدده تلقائياً عند وجود Blob
         const formData = {
-            'method': 'post',
-            'payload': {
-                'chat_id': chatId,
-                'document': pdfBlob,
-                'caption': caption || '',
-                'parse_mode': 'Markdown'
+            method: 'post',
+            payload: {
+                chat_id: String(chatId),
+                document: pdfBlob,
+                caption: caption || '',
+                parse_mode: 'Markdown'
             },
-            'muteHttpExceptions': true
+            muteHttpExceptions: true
         };
 
         const response = UrlFetchApp.fetch(url, formData);
-        const result = JSON.parse(response.getContentText());
+        const responseText = response.getContentText();
+
+        Logger.log('📥 Telegram response: ' + responseText);
+
+        const result = JSON.parse(responseText);
 
         if (result.ok) {
             Logger.log('✅ PDF sent to Telegram successfully');
             return true;
         } else {
             Logger.log('❌ Telegram API error: ' + result.description);
-            return false;
+            Logger.log('❌ Error code: ' + result.error_code);
+
+            // محاولة بديلة إذا فشلت الطريقة الأولى
+            Logger.log('⚠️ Trying Drive URL method...');
+            return sendPDFViaURL(chatId, pdfBlob, caption, token);
         }
 
     } catch (error) {
         Logger.log('❌ Error sending PDF to Telegram: ' + error.message);
+        Logger.log('❌ Stack: ' + error.stack);
         return false;
+    }
+}
+
+/**
+ * طريقة بديلة لإرسال PDF - تحميل للـ Drive ثم إرسال الرابط العام
+ * هذه الطريقة تعمل عندما تفشل الطريقة الأولى
+ */
+function sendPDFViaURL(chatId, pdfBlob, caption, token) {
+    try {
+        Logger.log('📤 Alternative: Uploading to Drive and sending URL...');
+
+        // حفظ الملف مؤقتاً في Drive
+        const tempFile = DriveApp.createFile(pdfBlob);
+        tempFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        // الحصول على رابط التحميل المباشر
+        const fileId = tempFile.getId();
+        const directUrl = 'https://drive.google.com/uc?export=download&id=' + fileId;
+        Logger.log('📁 Direct download URL: ' + directUrl);
+
+        // إرسال عبر URL - Telegram يدعم إرسال ملفات عبر URL
+        const url = 'https://api.telegram.org/bot' + token + '/sendDocument';
+
+        const response = UrlFetchApp.fetch(url, {
+            method: 'post',
+            contentType: 'application/json',
+            payload: JSON.stringify({
+                chat_id: String(chatId),
+                document: directUrl,
+                caption: caption || '',
+                parse_mode: 'Markdown'
+            }),
+            muteHttpExceptions: true
+        });
+
+        const responseText = response.getContentText();
+        Logger.log('📥 Drive URL response: ' + responseText);
+
+        const result = JSON.parse(responseText);
+
+        if (result.ok) {
+            Logger.log('✅ PDF sent via Drive URL method');
+            // حذف الملف المؤقت بعد النجاح
+            Utilities.sleep(3000);
+            tempFile.setTrashed(true);
+            Logger.log('🗑️ Temp file deleted');
+            return true;
+        } else {
+            Logger.log('❌ Drive URL method failed: ' + result.description);
+
+            // إذا فشل أيضاً، نرسل رسالة للمستخدم مع رابط التحميل
+            // لا نحذف الملف حتى يتمكن المستخدم من تحميله
+            sendPDFDownloadLink(chatId, tempFile, caption);
+            return true;
+        }
+
+    } catch (error) {
+        Logger.log('❌ Drive URL method error: ' + error.message);
+        return false;
+    }
+}
+
+/**
+ * إرسال رابط تحميل الملف كرسالة نصية (خطة أخيرة)
+ */
+function sendPDFDownloadLink(chatId, driveFile, caption) {
+    try {
+        const fileUrl = driveFile.getUrl();
+        const message = (caption || '📄 *التقرير جاهز*') +
+            '\n\n📥 لم نتمكن من إرسال الملف مباشرة.\nيمكنك تحميله من هنا:\n' + fileUrl;
+
+        sendAIMessage(chatId, message, { parse_mode: 'Markdown' });
+
+    } catch (error) {
+        Logger.log('❌ Error sending download link: ' + error.message);
     }
 }
 
