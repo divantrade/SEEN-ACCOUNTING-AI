@@ -522,18 +522,19 @@ function matchProject(projectName, projectsList) {
 
 /**
  * مطابقة اسم الطرف مع الأطراف الموجودة
- * يبحث عن تطابق تام فقط - لا يختار أسماء مختلفة
+ * يبحث عن تطابق تام أو جزئي ويُرجع الاقتراحات
  */
 function matchParty(partyName, partiesList) {
     if (!partyName || !partiesList || partiesList.length === 0) {
         return { found: false, matches: [] };
     }
 
+    const normalizedInput = normalizeArabicText(partyName);
     const partyNames = partiesList.map(p => p.name);
 
-    // بحث مطابق تماماً
+    // 1. بحث مطابق تماماً
     const exactIndex = partyNames.findIndex(p =>
-        normalizeArabicText(p) === normalizeArabicText(partyName)
+        normalizeArabicText(p) === normalizedInput
     );
 
     if (exactIndex !== -1) {
@@ -544,33 +545,62 @@ function matchParty(partyName, partiesList) {
         };
     }
 
-    // بحث ذكي بحد مرتفع جداً (0.85) - فقط للأسماء المتشابهة جداً
-    const results = fuzzySearchInArray(partyName, partyNames, 0.85);
+    // 2. بحث جزئي (contains) - للأسماء التي تحتوي على النص المدخل
+    const containsMatches = partiesList.filter(p => {
+        const normalizedName = normalizeArabicText(p.name);
+        return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
+    });
 
-    if (results.length > 0) {
-        const matchedParties = results.map(r => {
-            const party = partiesList.find(p => p.name === r.item);
-            return { ...party, score: r.score };
-        });
+    // 3. بحث ضبابي بعتبة منخفضة لإيجاد المتشابهين
+    const fuzzyResults = fuzzySearchInArray(partyName, partyNames, 0.4);
+    const fuzzyMatches = fuzzyResults.map(r => {
+        const party = partiesList.find(p => p.name === r.item);
+        return { ...party, score: r.score };
+    });
 
-        // فقط إذا كان التطابق عالي جداً (> 0.9) نعتبره نفس الشخص
-        if (matchedParties[0].score > 0.9) {
+    // 4. دمج النتائج وإزالة التكرارات
+    const allSuggestions = [];
+    const addedNames = new Set();
+
+    // أضف نتائج البحث الجزئي أولاً (الأكثر صلة)
+    containsMatches.forEach(p => {
+        if (!addedNames.has(p.name)) {
+            allSuggestions.push({ ...p, score: 0.95 });
+            addedNames.add(p.name);
+        }
+    });
+
+    // أضف نتائج البحث الضبابي
+    fuzzyMatches.forEach(p => {
+        if (!addedNames.has(p.name)) {
+            allSuggestions.push(p);
+            addedNames.add(p.name);
+        }
+    });
+
+    // 5. إذا وجدنا اقتراحات
+    if (allSuggestions.length > 0) {
+        // ترتيب حسب الدرجة
+        allSuggestions.sort((a, b) => b.score - a.score);
+
+        // إذا كان التطابق عالي جداً (> 0.95) نعتبره نفس الشخص
+        if (allSuggestions[0].score > 0.95) {
             return {
                 found: true,
-                match: matchedParties[0],
-                score: matchedParties[0].score,
-                alternatives: matchedParties.slice(1, 4)
+                match: allSuggestions[0],
+                score: allSuggestions[0].score,
+                alternatives: allSuggestions.slice(1, 5)
             };
         }
 
-        // تطابق متوسط - نقترح فقط ولا نختار
+        // تطابق متوسط أو جزئي - نقترح ونترك للمستخدم الاختيار
         return {
             found: false,
-            suggestions: matchedParties.slice(0, 3)
+            suggestions: allSuggestions.slice(0, 5) // أعلى 5 اقتراحات
         };
     }
 
-    return { found: false, matches: [] };
+    return { found: false, matches: [], suggestions: [] };
 }
 
 /**

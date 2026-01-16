@@ -376,10 +376,11 @@ function handleMissingFieldInput(chatId, text, session) {
 }
 
 /**
- * طلب تأكيد إضافة طرف جديد
+ * طلب تأكيد إضافة طرف جديد أو اختيار من المتشابهين
  */
 function askNewPartyConfirmation(chatId, session) {
     const partyName = session.validation.enriched.newPartyName || session.transaction.party;
+    const suggestions = session.validation.warnings?.find(w => w.field === 'party')?.suggestions || [];
 
     // تحديد نوع الطرف بناءً على نوع الحركة
     let partyType = 'مورد';
@@ -392,33 +393,66 @@ function askNewPartyConfirmation(chatId, session) {
 
     session.newPartyName = partyName;
     session.newPartyType = partyType;
+    session.partySuggestions = suggestions; // حفظ الاقتراحات
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_NEW_PARTY_CONFIRM;
     saveAIUserSession(chatId, session);
 
-    const message = `⚠️ *الطرف غير موجود في قاعدة البيانات*
+    // إذا وجدت أطراف متشابهة، اعرضها للاختيار
+    if (suggestions && suggestions.length > 0) {
+        let message = `🔍 *وجدت أطراف متشابهة لـ "${partyName}"*\n\n`;
+        message += `اختر أحد الأطراف التالية أو أضف طرف جديد:\n\n`;
+
+        const keyboard = { inline_keyboard: [] };
+
+        // إضافة زر لكل طرف مقترح (أقصى 5)
+        suggestions.slice(0, 5).forEach((s, index) => {
+            const name = s.name || s;
+            const type = s.type || '';
+            keyboard.inline_keyboard.push([
+                { text: `👤 ${name}${type ? ' (' + type + ')' : ''}`, callback_data: `ai_select_party_${index}` }
+            ]);
+        });
+
+        // إضافة خيارات إضافية
+        keyboard.inline_keyboard.push([
+            { text: '➕ إضافة كطرف جديد', callback_data: 'ai_add_party_yes' }
+        ]);
+        keyboard.inline_keyboard.push([
+            { text: '✏️ تعديل الاسم', callback_data: 'ai_add_party_edit' },
+            { text: '❌ إلغاء', callback_data: 'ai_add_party_no' }
+        ]);
+
+        sendAIMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(keyboard)
+        });
+    } else {
+        // لا توجد اقتراحات - اعرض خيار الإضافة فقط
+        const message = `⚠️ *الطرف غير موجود في قاعدة البيانات*
 
 👤 الاسم: *${partyName}*
 📋 النوع المقترح: ${partyType}
 
 هل تريد إضافة هذا الطرف الجديد؟`;
 
-    const keyboard = {
-        inline_keyboard: [
-            [
-                { text: '✅ نعم، أضف الطرف', callback_data: 'ai_add_party_yes' },
-                { text: '❌ لا، إلغاء', callback_data: 'ai_add_party_no' }
-            ],
-            [
-                { text: '✏️ تعديل الاسم', callback_data: 'ai_add_party_edit' },
-                { text: '🔄 تغيير النوع', callback_data: 'ai_add_party_type' }
+        const keyboard = {
+            inline_keyboard: [
+                [
+                    { text: '✅ نعم، أضف الطرف', callback_data: 'ai_add_party_yes' },
+                    { text: '❌ لا، إلغاء', callback_data: 'ai_add_party_no' }
+                ],
+                [
+                    { text: '✏️ تعديل الاسم', callback_data: 'ai_add_party_edit' },
+                    { text: '🔄 تغيير النوع', callback_data: 'ai_add_party_type' }
+                ]
             ]
-        ]
-    };
+        };
 
-    sendAIMessage(chatId, message, {
-        parse_mode: 'Markdown',
-        reply_markup: JSON.stringify(keyboard)
-    });
+        sendAIMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(keyboard)
+        });
+    }
 }
 
 /**
@@ -484,6 +518,35 @@ function showPartyTypeSelection(chatId, session) {
         parse_mode: 'Markdown',
         reply_markup: JSON.stringify(keyboard)
     });
+}
+
+/**
+ * ⭐ معالجة اختيار طرف من قائمة الاقتراحات
+ */
+function handleSelectPartyFromSuggestions(chatId, index, session) {
+    const suggestions = session.partySuggestions || [];
+
+    if (index >= 0 && index < suggestions.length) {
+        const selectedParty = suggestions[index];
+        const partyName = selectedParty.name || selectedParty;
+        const partyType = selectedParty.type || 'مورد';
+
+        // تحديث الجلسة بالطرف المختار
+        session.transaction.party = partyName;
+        session.validation.enriched.party = partyName;
+        session.validation.enriched.partyType = partyType;
+        session.validation.needsPartyConfirmation = false;
+        session.validation.enriched.isNewParty = false;
+        session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
+        saveAIUserSession(chatId, session);
+
+        sendAIMessage(chatId, `✅ تم اختيار الطرف: *${partyName}* (${partyType})`, { parse_mode: 'Markdown' });
+
+        // عرض تأكيد الحركة
+        showTransactionConfirmation(chatId, session);
+    } else {
+        sendAIMessage(chatId, '❌ حدث خطأ في اختيار الطرف. يرجى المحاولة مرة أخرى.');
+    }
 }
 
 /**
@@ -571,6 +634,10 @@ function handleAICallback(callbackQuery) {
     } else if (data.startsWith('ai_project_')) {
         const project = data.replace('ai_project_', '');
         handleProjectCallback(chatId, project, session);
+    } else if (data.startsWith('ai_select_party_')) {
+        // ⭐ معالجة اختيار طرف من القائمة
+        const index = parseInt(data.replace('ai_select_party_', ''));
+        handleSelectPartyFromSuggestions(chatId, index, session);
     } else if (data.startsWith('ai_add_party_')) {
         // معالجة تأكيد إضافة طرف جديد
         handleNewPartyConfirmation(chatId, data, session);
