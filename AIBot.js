@@ -1733,12 +1733,29 @@ function findClosestProjects(searchText, projectsList, limit) {
 function handleProjectCallback(chatId, project, session) {
     session.transaction.project = project;
 
+    // ⭐ جلب كود المشروع من قاعدة البيانات
+    const context = loadAIContext();
+    const projectData = context.projects.find(p => {
+        const name = typeof p === 'object' ? p.name : p;
+        return name === project;
+    });
+
+    if (projectData && typeof projectData === 'object' && projectData.code) {
+        session.transaction.project_code = projectData.code;
+        Logger.log('✅ Project code found: ' + projectData.code);
+    } else {
+        session.transaction.project_code = '';
+        Logger.log('⚠️ No project code found for: ' + project);
+    }
+
     // ⭐ إذا كنا في وضع اختيار المشروع الاختياري
     if (session.validation && session.validation.needsProjectSelection) {
         session.validation.needsProjectSelection = false;
         saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, `✅ تم اختيار: ${project}` + (session.transaction.project_code ? ` (${session.transaction.project_code})` : ''));
         continueValidation(chatId, session);
     } else {
+        saveAIUserSession(chatId, session);
         moveToNextMissingField(chatId, session);
     }
 }
