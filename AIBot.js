@@ -268,6 +268,13 @@ function handleAIMessage(message) {
             break;
 
         default:
+            // ⭐ التحقق من وضع التقارير أولاً
+            if (isInReportMode(session)) {
+                if (session.reportState === REPORTS_CONFIG.STATES.WAITING_PARTY_NAME) {
+                    handleReportPartySearch(chatId, text, session);
+                    return;
+                }
+            }
             // تحليل النص كحركة مالية جديدة
             Logger.log('⚠️ DEFAULT CASE - Processing as new transaction');
             Logger.log('⚠️ Session state was: "' + session.state + '"');
@@ -301,6 +308,20 @@ function handleAICommand(chatId, command, user) {
         case '/status':
         case '/حالة':
             showUserTransactionStatus(chatId, user);
+            break;
+
+        case '/reports':
+        case '/تقارير':
+        case '/report':
+        case '/تقرير':
+            // ⭐ أمر التقارير وكشوف الحساب
+            handleReportsCommand(chatId);
+            break;
+
+        case '/statement':
+        case '/كشف':
+            // ⭐ كشف حساب مباشر
+            handleReportsCommand(chatId);
             break;
 
         default:
@@ -1166,6 +1187,13 @@ function handleAICallback(callbackQuery) {
         Logger.log('📥 Cancel callback - processing immediately');
         sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.CANCELLED);
         resetAIUserSession(chatId);
+        return;
+    }
+
+    // ⭐ معالجة callbacks التقارير (لا تحتاج validation أو transaction)
+    if (isReportCallback(data)) {
+        Logger.log('📊 Report callback detected: ' + data);
+        handleReportCallback(chatId, data, session);
         return;
     }
 
