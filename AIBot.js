@@ -369,6 +369,14 @@ function processNewTransaction(chatId, text, user) {
             return;
         }
 
+        // ⭐ التحقق من المشروع (اختياري - يمكن التخطي)
+        Logger.log('📊 Checking needsProjectSelection: ' + (result.validation ? result.validation.needsProjectSelection : 'no validation'));
+        if (result.validation && result.validation.needsProjectSelection) {
+            Logger.log('✅ Needs project selection (optional)');
+            askProjectSelection(chatId, session);
+            return;
+        }
+
         // ⭐ التحقق من طريقة الدفع
         Logger.log('📊 Checking needsPaymentMethod: ' + (result.validation ? result.validation.needsPaymentMethod : 'no validation'));
         if (result.validation && result.validation.needsPaymentMethod) {
@@ -678,6 +686,21 @@ function handleSelectPartyFromSuggestions(chatId, index, session) {
 }
 
 /**
+ * ⭐ السؤال عن المشروع (اختياري - يمكن التخطي)
+ */
+function askProjectSelection(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PROJECT_SELECTION;
+    saveAIUserSession(chatId, session);
+
+    const keyboard = buildProjectsKeyboard(true); // true = include skip option
+
+    sendAIMessage(chatId, '🎬 *اختر المشروع:*\n\n_(يمكنك التخطي إذا لم تكن الحركة مرتبطة بمشروع محدد)_', {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(keyboard)
+    });
+}
+
+/**
  * ⭐ السؤال عن طريقة الدفع
  */
 function askPaymentMethod(chatId, session) {
@@ -981,6 +1004,12 @@ function handlePaymentTermInput(chatId, text, session) {
  * ⭐ متابعة التحقق من البيانات بعد إكمال حقل
  */
 function continueValidation(chatId, session) {
+    // ⭐ التحقق من المشروع (اختياري)
+    if (session.validation.needsProjectSelection) {
+        askProjectSelection(chatId, session);
+        return;
+    }
+
     // التحقق من طريقة الدفع
     if (session.validation.needsPaymentMethod) {
         askPaymentMethod(chatId, session);
@@ -1168,6 +1197,10 @@ function handleAICallback(callbackQuery) {
         handleAIConfirmation(chatId, session, user);
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
+    } else if (data === 'ai_skip_project') {
+        // ⭐ تخطي اختيار المشروع (بدون مشروع)
+        Logger.log('📥 Skip project callback - continuing without project');
+        handleSkipProject(chatId, session);
     } else if (data.startsWith('ai_project_')) {
         const project = data.replace('ai_project_', '');
         handleProjectCallback(chatId, project, session);
@@ -1577,7 +1610,38 @@ function handleAIProjectSelection(chatId, text, session) {
  */
 function handleProjectCallback(chatId, project, session) {
     session.transaction.project = project;
-    moveToNextMissingField(chatId, session);
+
+    // ⭐ إذا كنا في وضع اختيار المشروع الاختياري
+    if (session.validation && session.validation.needsProjectSelection) {
+        session.validation.needsProjectSelection = false;
+        saveAIUserSession(chatId, session);
+        continueValidation(chatId, session);
+    } else {
+        moveToNextMissingField(chatId, session);
+    }
+}
+
+/**
+ * ⭐ تخطي اختيار المشروع (بدون مشروع)
+ */
+function handleSkipProject(chatId, session) {
+    Logger.log('📋 handleSkipProject called');
+
+    // لا نحدد مشروع
+    session.transaction.project = null;
+    session.transaction.project_code = null;
+
+    // إلغاء الحاجة لاختيار المشروع
+    if (session.validation) {
+        session.validation.needsProjectSelection = false;
+    }
+
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, '✅ تم - بدون مشروع');
+
+    // الانتقال للخطوة التالية
+    continueValidation(chatId, session);
 }
 
 /**
@@ -1670,9 +1734,9 @@ function moveToNextMissingField(chatId, session) {
 // ==================== بناء لوحات المفاتيح ====================
 
 /**
- * بناء لوحة المشاريع
+ * بناء لوحة المشاريع مع خيار التخطي
  */
-function buildProjectsKeyboard() {
+function buildProjectsKeyboard(includeSkip = false) {
     const context = loadAIContext();
     const projects = context.projects.slice(0, 10); // أول 10 مشاريع
 
@@ -1683,11 +1747,22 @@ function buildProjectsKeyboard() {
     // صفين في كل سطر
     for (let i = 0; i < projects.length; i += 2) {
         const row = [];
-        row.push({ text: projects[i], callback_data: `ai_project_${projects[i]}` });
+        // التعامل مع المشاريع ككائنات {code, name} أو نصوص
+        const p1 = projects[i];
+        const name1 = typeof p1 === 'object' ? p1.name : p1;
+        row.push({ text: name1, callback_data: `ai_project_${name1}` });
+
         if (projects[i + 1]) {
-            row.push({ text: projects[i + 1], callback_data: `ai_project_${projects[i + 1]}` });
+            const p2 = projects[i + 1];
+            const name2 = typeof p2 === 'object' ? p2.name : p2;
+            row.push({ text: name2, callback_data: `ai_project_${name2}` });
         }
         keyboard.inline_keyboard.push(row);
+    }
+
+    // ⭐ زر التخطي (بدون مشروع)
+    if (includeSkip) {
+        keyboard.inline_keyboard.push([{ text: '⏭️ تخطي - بدون مشروع', callback_data: 'ai_skip_project' }]);
     }
 
     keyboard.inline_keyboard.push([{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]);
