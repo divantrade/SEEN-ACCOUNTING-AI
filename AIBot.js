@@ -1169,8 +1169,11 @@ function handleAICallback(callbackQuery) {
         return;
     }
 
+    // ⭐ العمليات التي لا تحتاج session (تعمل مباشرة من الشيت)
+    const noSessionRequired = ['edit_resend', 'delete_rejected'];
+
     // ⭐ فحص وجود الـ validation للعمليات الأخرى
-    if (!session.validation) {
+    if (!session.validation && !noSessionRequired.includes(data)) {
         Logger.log('⚠️ Validation missing for callback: ' + data);
         sendAIMessage(chatId, '⚠️ انتهت الجلسة. يرجى إعادة إرسال الحركة.');
         resetAIUserSession(chatId);
@@ -1178,7 +1181,7 @@ function handleAICallback(callbackQuery) {
     }
 
     // ⭐ فحص وجود transaction (للعمليات التي تحتاجه)
-    if (!session.transaction && !data.startsWith('ai_cancel')) {
+    if (!session.transaction && !data.startsWith('ai_cancel') && !noSessionRequired.includes(data)) {
         Logger.log('⚠️ Transaction missing for callback: ' + data);
         sendAIMessage(chatId, '⚠️ لا توجد حركة للمعالجة. يرجى إعادة إرسال الحركة.');
         resetAIUserSession(chatId);
@@ -1251,6 +1254,146 @@ function handleAICallback(callbackQuery) {
         showNewPartyTypeSelection(chatId, session);
     } else if (data === 'ai_edit_done') {
         showTransactionConfirmation(chatId, session);
+    } else if (data === 'edit_resend') {
+        // ⭐ تعديل وإعادة إرسال حركة مرفوضة
+        handleEditRejectedTransaction(chatId, session, callbackQuery.from);
+    } else if (data === 'delete_rejected') {
+        // ⭐ حذف حركة مرفوضة
+        handleDeleteRejectedTransaction(chatId);
+    }
+}
+
+/**
+ * ⭐ معالجة تعديل حركة مرفوضة
+ */
+function handleEditRejectedTransaction(chatId, session, user) {
+    try {
+        Logger.log('📝 handleEditRejectedTransaction called for chatId: ' + chatId);
+
+        // البحث عن آخر حركة مرفوضة لهذا المستخدم
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
+
+        if (!sheet) {
+            sendAIMessage(chatId, '❌ لم يتم العثور على شيت الحركات');
+            return;
+        }
+
+        const data = sheet.getDataRange().getValues();
+        const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
+
+        let rejectedTransaction = null;
+        let rejectedRowIndex = -1;
+
+        // البحث من الأحدث للأقدم عن حركة مرفوضة
+        for (let i = data.length - 1; i >= 1; i--) {
+            const row = data[i];
+            const rowChatId = String(row[columns.TELEGRAM_CHAT_ID.index - 1] || '');
+            const status = row[columns.REVIEW_STATUS.index - 1];
+
+            if (rowChatId === String(chatId) && status === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED) {
+                rejectedTransaction = row;
+                rejectedRowIndex = i + 1;
+                break;
+            }
+        }
+
+        if (!rejectedTransaction) {
+            sendAIMessage(chatId, '❌ لم يتم العثور على حركة مرفوضة للتعديل.\n\nيرجى إرسال الحركة من جديد.');
+            return;
+        }
+
+        // استخراج بيانات الحركة المرفوضة
+        const transactionData = {
+            nature: rejectedTransaction[columns.NATURE.index - 1] || '',
+            classification: rejectedTransaction[columns.CLASSIFICATION.index - 1] || '',
+            project_code: rejectedTransaction[columns.PROJECT_CODE.index - 1] || '',
+            project: rejectedTransaction[columns.PROJECT_NAME.index - 1] || '',
+            item: rejectedTransaction[columns.ITEM.index - 1] || '',
+            details: rejectedTransaction[columns.DETAILS.index - 1] || '',
+            party: rejectedTransaction[columns.PARTY_NAME.index - 1] || '',
+            amount: rejectedTransaction[columns.AMOUNT.index - 1] || 0,
+            currency: rejectedTransaction[columns.CURRENCY.index - 1] || 'USD',
+            exchangeRate: rejectedTransaction[columns.EXCHANGE_RATE.index - 1] || 1,
+            payment_method: rejectedTransaction[columns.PAYMENT_METHOD.index - 1] || '',
+            payment_term: rejectedTransaction[columns.PAYMENT_TERM_TYPE.index - 1] || '',
+            due_date: rejectedTransaction[columns.DUE_DATE.index - 1] || '',
+            originalText: rejectedTransaction[columns.NOTES.index - 1] || ''
+        };
+
+        const rejectionReason = rejectedTransaction[columns.REVIEW_NOTES.index - 1] || 'غير محدد';
+
+        // حفظ في الجلسة
+        session.transaction = transactionData;
+        session.validation = { enriched: transactionData };
+        session.rejectedRowIndex = rejectedRowIndex;
+        session.isEditingRejected = true;
+        session.state = AI_CONFIG.AI_CONVERSATION_STATES.IDLE;
+        saveAIUserSession(chatId, session);
+
+        // عرض ملخص الحركة المرفوضة مع خيارات التعديل
+        let message = '✏️ *تعديل الحركة المرفوضة*\n';
+        message += '━━━━━━━━━━━━━━━━━━━━\n\n';
+        message += `❌ *سبب الرفض:* ${rejectionReason}\n\n`;
+        message += '📋 *بيانات الحركة:*\n';
+        message += `• الطبيعة: ${transactionData.nature}\n`;
+        message += `• التصنيف: ${transactionData.classification}\n`;
+        message += `• المشروع: ${transactionData.project || 'غير محدد'}\n`;
+        message += `• الطرف: ${transactionData.party}\n`;
+        message += `• المبلغ: ${transactionData.amount} ${transactionData.currency}\n`;
+        message += `• طريقة الدفع: ${transactionData.payment_method}\n\n`;
+        message += '━━━━━━━━━━━━━━━━━━━━\n';
+        message += '💡 *أرسل الحركة المعدلة كنص جديد*\n';
+        message += 'مثال: "دفعت لأحمد 500 دولار"';
+
+        sendAIMessage(chatId, message, { parse_mode: 'Markdown' });
+
+        Logger.log('✅ Rejected transaction loaded for editing');
+
+    } catch (error) {
+        Logger.log('❌ Error in handleEditRejectedTransaction: ' + error.message);
+        sendAIMessage(chatId, '❌ حدث خطأ أثناء تحميل الحركة. يرجى إرسالها من جديد.');
+    }
+}
+
+/**
+ * ⭐ حذف حركة مرفوضة
+ */
+function handleDeleteRejectedTransaction(chatId) {
+    try {
+        Logger.log('🗑️ handleDeleteRejectedTransaction called for chatId: ' + chatId);
+
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
+
+        if (!sheet) {
+            sendAIMessage(chatId, '❌ لم يتم العثور على شيت الحركات');
+            return;
+        }
+
+        const data = sheet.getDataRange().getValues();
+        const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
+
+        // البحث عن آخر حركة مرفوضة
+        for (let i = data.length - 1; i >= 1; i--) {
+            const row = data[i];
+            const rowChatId = String(row[columns.TELEGRAM_CHAT_ID.index - 1] || '');
+            const status = row[columns.REVIEW_STATUS.index - 1];
+
+            if (rowChatId === String(chatId) && status === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED) {
+                // حذف الصف
+                sheet.deleteRow(i + 1);
+                sendAIMessage(chatId, '🗑️ تم حذف الحركة المرفوضة بنجاح.\n\nيمكنك إرسال حركة جديدة الآن.');
+                Logger.log('✅ Rejected transaction deleted at row: ' + (i + 1));
+                return;
+            }
+        }
+
+        sendAIMessage(chatId, '❌ لم يتم العثور على حركة مرفوضة للحذف.');
+
+    } catch (error) {
+        Logger.log('❌ Error in handleDeleteRejectedTransaction: ' + error.message);
+        sendAIMessage(chatId, '❌ حدث خطأ أثناء حذف الحركة.');
     }
 }
 
