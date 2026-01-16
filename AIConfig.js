@@ -261,12 +261,16 @@ const AI_CONFIG = {
             ]
         },
 
-        // ⭐ اختيار طريقة الدفع
+        // ⭐ اختيار طريقة الدفع (القيم المطابقة للشيت)
         PAYMENT_METHOD: {
             inline_keyboard: [
                 [
-                    { text: '🏦 تحويل بنكي', callback_data: 'ai_payment_تحويل بنكي' },
-                    { text: '💵 نقدي', callback_data: 'ai_payment_نقدي' }
+                    { text: '💵 نقدي', callback_data: 'ai_payment_نقدي' },
+                    { text: '🏦 تحويل بنكي', callback_data: 'ai_payment_تحويل بنكي' }
+                ],
+                [
+                    { text: '📝 شيك', callback_data: 'ai_payment_شيك' },
+                    { text: '💳 بطاقة', callback_data: 'ai_payment_بطاقة' }
                 ],
                 [
                     { text: '❌ إلغاء', callback_data: 'ai_cancel' }
