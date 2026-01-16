@@ -642,6 +642,12 @@ function matchItem(itemName, itemsList) {
  * التحقق من اكتمال الحركة وتحديد الحقول الناقصة
  */
 function validateTransaction(transaction, context) {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('🔍 validateTransaction STARTED');
+    Logger.log('🔍 Transaction input: ' + JSON.stringify(transaction).substring(0, 500));
+    Logger.log('🔍 classification: "' + transaction.classification + '"');
+    Logger.log('🔍 project: "' + transaction.project + '"');
+
     const validation = {
         isValid: true,
         missingRequired: [],
@@ -668,7 +674,14 @@ function validateTransaction(transaction, context) {
 
     // التحقق من المشروع للمصروفات المباشرة والإيرادات
     const needsProject = ['مصروفات مباشرة', 'ايراد'].includes(transaction.classification);
+    Logger.log('🔍 needsProject check:');
+    Logger.log('   - classification: "' + transaction.classification + '"');
+    Logger.log('   - needsProject: ' + needsProject);
+    Logger.log('   - project value: ' + transaction.project);
+    Logger.log('   - !transaction.project: ' + !transaction.project);
+
     if (needsProject && !transaction.project) {
+        Logger.log('✅ Adding project to missingRequired');
         validation.missingRequired.push({
             field: 'project',
             label: 'المشروع',
@@ -814,6 +827,16 @@ function validateTransaction(transaction, context) {
 
     validation.isValid = validation.missingRequired.length === 0;
 
+    Logger.log('🔍 validateTransaction FINISHED');
+    Logger.log('🔍 isValid: ' + validation.isValid);
+    Logger.log('🔍 missingRequired.length: ' + validation.missingRequired.length);
+    Logger.log('🔍 missingRequired: ' + JSON.stringify(validation.missingRequired));
+    Logger.log('🔍 needsPaymentMethod: ' + validation.needsPaymentMethod);
+    Logger.log('🔍 needsCurrency: ' + validation.needsCurrency);
+    Logger.log('🔍 needsExchangeRate: ' + validation.needsExchangeRate);
+    Logger.log('🔍 needsPartyConfirmation: ' + validation.needsPartyConfirmation);
+    Logger.log('═══════════════════════════════════════');
+
     return validation;
 }
 
@@ -826,14 +849,25 @@ function validateTransaction(transaction, context) {
  * @returns {Object} - نتيجة التحليل مع الحركة
  */
 function analyzeTransaction(userMessage) {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('🤖 analyzeTransaction STARTED');
+    Logger.log('🤖 userMessage: ' + userMessage);
+
     try {
         // تحميل السياق
+        Logger.log('🤖 Loading AI context...');
         const context = loadAIContext();
 
         // استدعاء Gemini
+        Logger.log('🤖 Calling Gemini...');
         const aiResult = callGemini(userMessage, context);
+        Logger.log('🤖 Gemini returned');
+        Logger.log('🤖 aiResult.success: ' + aiResult.success);
+        Logger.log('🤖 aiResult keys: ' + Object.keys(aiResult).join(', '));
 
         if (!aiResult.success) {
+            Logger.log('❌ aiResult.success is false or undefined, returning error');
+            Logger.log('❌ aiResult.error: ' + aiResult.error);
             return {
                 success: false,
                 error: aiResult.error || AI_CONFIG.AI_MESSAGES.ERROR_PARSE,
@@ -842,9 +876,11 @@ function analyzeTransaction(userMessage) {
         }
 
         // التحقق من الحركة وإثرائها
+        Logger.log('🤖 Calling validateTransaction...');
         const validation = validateTransaction(aiResult, context);
+        Logger.log('🤖 validateTransaction returned');
 
-        return {
+        const result = {
             success: true,
             transaction: validation.enriched,
             validation: validation,
@@ -853,8 +889,18 @@ function analyzeTransaction(userMessage) {
             warnings: validation.warnings,
             confidence: aiResult.confidence || 0.8
         };
+
+        Logger.log('🤖 analyzeTransaction result:');
+        Logger.log('🤖 - success: ' + result.success);
+        Logger.log('🤖 - needsInput: ' + result.needsInput);
+        Logger.log('🤖 - missingFields.length: ' + result.missingFields.length);
+        Logger.log('🤖 analyzeTransaction FINISHED');
+        Logger.log('═══════════════════════════════════════');
+
+        return result;
     } catch (error) {
-        Logger.log('Analyze Transaction Error: ' + error.message);
+        Logger.log('❌ Analyze Transaction Error: ' + error.message);
+        Logger.log('❌ Stack: ' + error.stack);
         return {
             success: false,
             error: 'خطأ في تحليل البيانات الداخلية: ' + error.message
