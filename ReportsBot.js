@@ -639,3 +639,43 @@ function setupBotCommands() {
         return { success: false, error: error.message };
     }
 }
+
+/**
+ * ⭐ دالة اختبار - لعرض ترتيب أعمدة شيت الأطراف
+ * شغّل هذه الدالة لمعرفة ترتيب الأعمدة الفعلي
+ */
+function debugPartiesSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
+
+    if (!sheet) {
+        Logger.log('❌ Sheet not found: ' + CONFIG.SHEETS.PARTIES);
+        return;
+    }
+
+    // عرض أول 5 صفوف
+    const data = sheet.getRange(1, 1, 6, 10).getValues();
+
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📋 PARTIES SHEET DEBUG - ' + CONFIG.SHEETS.PARTIES);
+    Logger.log('═══════════════════════════════════════');
+
+    for (let i = 0; i < data.length; i++) {
+        Logger.log('Row ' + i + ': ' + JSON.stringify(data[i]));
+    }
+
+    // البحث عن "محمد" في كل الأعمدة
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('🔍 Searching for "محمد" in all data...');
+
+    const allData = sheet.getDataRange().getValues();
+    for (let i = 1; i < allData.length && i < 20; i++) {
+        const row = allData[i];
+        for (let j = 0; j < row.length; j++) {
+            if (String(row[j]).includes('محمد')) {
+                Logger.log('Found "محمد" at row ' + i + ', col ' + j + ': ' + row[j] + ' | Full row: ' + JSON.stringify(row.slice(0, 5)));
+                break;
+            }
+        }
+    }
+}
