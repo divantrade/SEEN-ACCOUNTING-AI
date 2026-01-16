@@ -185,7 +185,14 @@ function savePDFToArchive(pdfBlob, reportType, partyName) {
  */
 function sendPDFToTelegram(chatId, pdfBlob, caption) {
     try {
-        const token = CONFIG.TELEGRAM_BOT.AI_BOT_TOKEN;
+        // ⭐ الحصول على التوكن من PropertiesService
+        const token = PropertiesService.getScriptProperties().getProperty('AI_BOT_TOKEN');
+
+        if (!token) {
+            Logger.log('❌ AI_BOT_TOKEN not found');
+            return false;
+        }
+
         const url = 'https://api.telegram.org/bot' + token + '/sendDocument';
 
         // إعداد البيانات للإرسال
@@ -458,92 +465,122 @@ function generateStatementForBot_(ss, partyName, partyType) {
         .setFontSize(10);
 
     // عناوين الجدول
-    const headers = ['التاريخ', 'المشروع', 'التفاصيل', 'مدين (استحقاق)', 'دائن (دفعة)', 'الرصيد'];
+    const headers = ['التاريخ', 'المشروع', 'التفاصيل', 'مدين (USD)', 'دائن (USD)', 'الرصيد (USD)'];
     sheet.getRange('A4:F4').setValues([headers])
         .setBackground('#37474f')
         .setFontColor('#ffffff')
         .setFontWeight('bold')
         .setHorizontalAlignment('center');
 
-    // جلب الحركات
+    // جلب الحركات - استخدام نفس منطق الدالة الأصلية
     const transData = transSheet.getDataRange().getValues();
-    const transHeaders = transData[0];
 
-    // البحث عن فهارس الأعمدة
-    const dateCol = transHeaders.indexOf('التاريخ');
-    const projectCol = transHeaders.indexOf('المشروع');
-    const detailsCol = transHeaders.indexOf('التفاصيل');
-    const partyCol = transHeaders.indexOf('الطرف');
-    const amountCol = transHeaders.indexOf('المبلغ بالدولار');
-    const natureCol = transHeaders.indexOf('طبيعة الحركة');
+    // ⭐ فهارس الأعمدة الثابتة (نفس الدالة الأصلية)
+    // row[1] = التاريخ (B)
+    // row[5] = اسم المشروع (F)
+    // row[7] = التفاصيل (H)
+    // row[8] = اسم المورد/الجهة (I)
+    // row[12] = القيمة بالدولار (M)
+    // row[13] = نوع الحركة (N)
 
-    // تجميع الحركات للطرف
     let rows = [];
-    let balance = 0;
+    let totalDebit = 0, totalCredit = 0, balance = 0;
 
     for (let i = 1; i < transData.length; i++) {
         const row = transData[i];
-        const rowParty = String(row[partyCol] || '').trim();
 
-        if (rowParty === partyName) {
-            const nature = String(row[natureCol] || '');
-            const amount = parseFloat(row[amountCol]) || 0;
+        // الفلتر: اسم الطرف (العمود I - فهرس 8)
+        if (row[8] !== partyName) continue;
 
-            let debit = 0;
-            let credit = 0;
+        const movementKind = String(row[13] || '');  // N: نوع الحركة
+        const amountUsd = Number(row[12]) || 0;      // M: القيمة بالدولار
 
-            // استحقاق = مدين، دفعة = دائن
-            if (nature.includes('استحقاق')) {
-                debit = amount;
-                balance += amount;
-            } else if (nature.includes('دفعة') || nature.includes('إيراد') || nature.includes('تمويل')) {
-                credit = amount;
-                balance -= amount;
-            }
+        // تجاهل الحركات بدون مبلغ
+        if (!amountUsd) continue;
 
-            const dateValue = row[dateCol];
-            const dateStr = dateValue instanceof Date
-                ? Utilities.formatDate(dateValue, 'Asia/Istanbul', 'dd/MM/yyyy')
-                : String(dateValue);
+        const date = row[1];       // B: التاريخ
+        const project = row[5];    // F: اسم المشروع
+        const details = row[7];    // H: التفاصيل
 
-            rows.push([
-                dateStr,
-                row[projectCol] || '',
-                row[detailsCol] || '',
-                debit || '',
-                credit || '',
-                balance.toFixed(2)
-            ]);
+        let debit = 0, credit = 0;
+
+        // التحقق من نوع الحركة (مدين/دائن)
+        if (movementKind.includes('مدين') || movementKind.includes('📤')) {
+            debit = amountUsd;
+            balance += debit;
+            totalDebit += debit;
+        } else if (movementKind.includes('دائن') || movementKind.includes('📥')) {
+            credit = amountUsd;
+            balance -= credit;
+            totalCredit += credit;
         }
+
+        rows.push([
+            date,
+            project || '',
+            details || '',
+            debit || '',
+            credit || '',
+            Math.round(balance * 100) / 100
+        ]);
     }
+
+    // ترتيب زمني
+    rows.sort((a, b) => {
+        const dateA = a[0] instanceof Date ? a[0].getTime() : new Date(a[0]).getTime();
+        const dateB = b[0] instanceof Date ? b[0].getTime() : new Date(b[0]).getTime();
+        return dateA - dateB;
+    });
+
+    // إعادة حساب الرصيد بعد الترتيب
+    balance = 0;
+    for (let i = 0; i < rows.length; i++) {
+        const debit = rows[i][3] || 0;
+        const credit = rows[i][4] || 0;
+        balance += debit - credit;
+        rows[i][5] = Math.round(balance * 100) / 100;
+    }
+
+    Logger.log('📊 Found ' + rows.length + ' transactions for ' + partyName);
 
     // كتابة البيانات
     if (rows.length > 0) {
         sheet.getRange(5, 1, rows.length, 6).setValues(rows);
 
+        // تنسيق التاريخ
+        sheet.getRange(5, 1, rows.length, 1).setNumberFormat('dd/MM/yyyy');
+
         // تنسيق الأرقام
         sheet.getRange(5, 4, rows.length, 3).setNumberFormat('#,##0.00');
 
-        // صف الإجمالي
-        const totalRow = rows.length + 5;
-        sheet.getRange(totalRow, 1, 1, 3).merge()
-            .setValue('الرصيد النهائي')
+        // الملخص المالي
+        const summaryRow = rows.length + 6;
+        sheet.getRange(summaryRow, 1, 1, 3).merge()
+            .setValue('الملخص المالي')
             .setFontWeight('bold')
-            .setHorizontalAlignment('center')
-            .setBackground('#e3f2fd');
+            .setBackground('#e3f2fd')
+            .setHorizontalAlignment('center');
 
-        sheet.getRange(totalRow, 6)
+        sheet.getRange(summaryRow + 1, 1).setValue('إجمالي المدين:');
+        sheet.getRange(summaryRow + 1, 2).setValue(totalDebit.toFixed(2)).setNumberFormat('#,##0.00');
+
+        sheet.getRange(summaryRow + 2, 1).setValue('إجمالي الدائن:');
+        sheet.getRange(summaryRow + 2, 2).setValue(totalCredit.toFixed(2)).setNumberFormat('#,##0.00');
+
+        sheet.getRange(summaryRow + 3, 1).setValue('الرصيد النهائي:');
+        sheet.getRange(summaryRow + 3, 2)
             .setValue(balance.toFixed(2))
             .setFontWeight('bold')
             .setBackground(balance > 0 ? '#ffcdd2' : '#c8e6c9')
             .setNumberFormat('#,##0.00');
+
     } else {
         sheet.getRange('A5:F5').merge()
             .setValue('لا توجد حركات لهذا الطرف')
             .setHorizontalAlignment('center');
     }
 
-    Logger.log('✅ Statement sheet created for: ' + partyName);
+    Logger.log('✅ Statement sheet created for: ' + partyName + ' with ' + rows.length + ' rows');
     return sheet;
 }
 
