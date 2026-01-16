@@ -611,13 +611,31 @@ function askPaymentMethod(chatId, session) {
  * ⭐ معالجة اختيار طريقة الدفع
  */
 function handlePaymentMethodSelection(chatId, method, session) {
+    Logger.log('🔧 handlePaymentMethodSelection called with method: ' + method);
+
+    // ⭐ الفحوصات الرئيسية موجودة في handleAICallback، هذه فقط للأمان
+    if (!session || !session.transaction || !session.validation) {
+        Logger.log('❌ Session data incomplete in handlePaymentMethodSelection');
+        sendAIMessage(chatId, '⚠️ حدث خطأ. يرجى إعادة إرسال الحركة.');
+        resetAIUserSession(chatId);
+        return;
+    }
+
+    // ⭐ إنشاء enriched إذا لم يكن موجوداً
+    if (!session.validation.enriched) {
+        session.validation.enriched = {};
+    }
+
+    // ⭐ حفظ طريقة الدفع (القيم الآن تأتي مطابقة للشيت مباشرة)
     session.transaction.payment_method = method;
     session.validation.enriched.payment_method = method;
     session.validation.needsPaymentMethod = false;
     saveAIUserSession(chatId, session);
 
-    sendAIMessage(chatId, `✅ تم تحديد طريقة الدفع: *${method}*`, { parse_mode: 'Markdown' });
+    const emoji = method === 'نقدي' ? '💵' : '🏦';
+    sendAIMessage(chatId, `✅ تم تحديد طريقة الدفع: *${emoji} ${method}*`, { parse_mode: 'Markdown' });
 
+    Logger.log('✅ Payment method saved: ' + method + ', calling continueValidation');
     // التحقق من الخطوات التالية
     continueValidation(chatId, session);
 }
@@ -947,12 +965,43 @@ function handleAICallback(callbackQuery) {
 
     const session = getAIUserSession(chatId);
 
-    // ⭐ فحص وجود الجلسة والـ validation
-    if (!session || !session.validation) {
-        Logger.log('⚠️ Session or validation missing for callback: ' + data);
+    // ⭐ فحص وجود الجلسة والبيانات المطلوبة
+    if (!session) {
+        Logger.log('⚠️ Session missing for callback: ' + data);
         sendAIMessage(chatId, '⚠️ انتهت الجلسة. يرجى إعادة إرسال الحركة.');
         resetAIUserSession(chatId);
         return;
+    }
+
+    // ⭐ السماح بـ cancel حتى بدون بيانات كاملة
+    if (data === 'ai_cancel') {
+        Logger.log('📥 Cancel callback - processing immediately');
+        sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.CANCELLED);
+        resetAIUserSession(chatId);
+        return;
+    }
+
+    // ⭐ فحص وجود الـ validation للعمليات الأخرى
+    if (!session.validation) {
+        Logger.log('⚠️ Validation missing for callback: ' + data);
+        sendAIMessage(chatId, '⚠️ انتهت الجلسة. يرجى إعادة إرسال الحركة.');
+        resetAIUserSession(chatId);
+        return;
+    }
+
+    // ⭐ فحص وجود transaction (للعمليات التي تحتاجه)
+    if (!session.transaction && !data.startsWith('ai_cancel')) {
+        Logger.log('⚠️ Transaction missing for callback: ' + data);
+        sendAIMessage(chatId, '⚠️ لا توجد حركة للمعالجة. يرجى إعادة إرسال الحركة.');
+        resetAIUserSession(chatId);
+        return;
+    }
+
+    // ⭐ إنشاء enriched إذا لم يكن موجوداً
+    if (session.validation && !session.validation.enriched) {
+        Logger.log('⚠️ Creating session.validation.enriched in callback handler');
+        session.validation.enriched = {};
+        saveAIUserSession(chatId, session);
     }
 
     // معالجة حسب نوع الـ callback
@@ -960,9 +1009,6 @@ function handleAICallback(callbackQuery) {
         handleAIConfirmation(chatId, session, user);
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
-    } else if (data.startsWith('ai_cancel')) {
-        sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.CANCELLED);
-        resetAIUserSession(chatId);
     } else if (data.startsWith('ai_project_')) {
         const project = data.replace('ai_project_', '');
         handleProjectCallback(chatId, project, session);
@@ -972,11 +1018,18 @@ function handleAICallback(callbackQuery) {
         handleSelectPartyFromSuggestions(chatId, index, session);
     } else if (data.startsWith('ai_payment_')) {
         // ⭐ معالجة اختيار طريقة الدفع
-        Logger.log('📥 Payment method callback received: ' + data);
+        Logger.log('═══════════════════════════════════════');
+        Logger.log('📥 PAYMENT METHOD CALLBACK');
+        Logger.log('📥 Full callback_data: ' + data);
+        Logger.log('📥 chatId: ' + chatId);
         const method = data.replace('ai_payment_', '');
-        Logger.log('📥 Method extracted: ' + method);
+        Logger.log('📥 Extracted method: "' + method + '"');
+        Logger.log('📥 Session state: ' + (session ? session.state : 'null'));
+        Logger.log('📥 Has transaction: ' + (session && session.transaction ? 'yes' : 'no'));
+        Logger.log('📥 Has validation: ' + (session && session.validation ? 'yes' : 'no'));
+        Logger.log('═══════════════════════════════════════');
         handlePaymentMethodSelection(chatId, method, session);
-        Logger.log('✅ Payment method processed');
+        Logger.log('✅ Payment method handler completed');
     } else if (data.startsWith('ai_currency_')) {
         // ⭐ معالجة اختيار العملة
         const currency = data.replace('ai_currency_', '');
