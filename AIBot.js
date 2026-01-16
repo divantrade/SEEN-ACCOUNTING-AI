@@ -316,19 +316,31 @@ function handleAICommand(chatId, command, user) {
  * تحليل ومعالجة حركة جديدة
  */
 function processNewTransaction(chatId, text, user) {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📊 processNewTransaction STARTED');
+    Logger.log('📊 chatId: ' + chatId);
+    Logger.log('📊 text: ' + text);
+
     // إرسال رسالة "جاري التحليل"
     const loadingMsg = sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.ANALYZING, { parse_mode: 'Markdown' });
 
     try {
         // تحليل النص
+        Logger.log('📊 Calling analyzeTransaction...');
         const result = analyzeTransaction(text);
+        Logger.log('📊 analyzeTransaction returned');
+        Logger.log('📊 result.success: ' + result.success);
+        Logger.log('📊 result.needsInput: ' + result.needsInput);
+        Logger.log('📊 result.missingFields: ' + JSON.stringify(result.missingFields));
 
         if (!result.success) {
+            Logger.log('❌ result.success is false, sending error');
             sendAIMessage(chatId, result.error || AI_CONFIG.AI_MESSAGES.ERROR_PARSE, { parse_mode: 'Markdown' });
             return;
         }
 
         // حفظ الحركة في الجلسة
+        Logger.log('📊 Getting session...');
         const session = getAIUserSession(chatId);
         session.transaction = result.transaction;
         session.validation = result.validation;
@@ -336,63 +348,87 @@ function processNewTransaction(chatId, text, user) {
 
         // حفظ التغييرات في الكاش
         saveAIUserSession(chatId, session);
+        Logger.log('📊 Session saved');
 
         // التحقق من الحقول الناقصة
+        Logger.log('📊 Checking missing fields...');
+        Logger.log('📊 result.needsInput: ' + result.needsInput);
+        Logger.log('📊 result.missingFields?.length: ' + (result.missingFields ? result.missingFields.length : 'undefined'));
+
         if (result.needsInput && result.missingFields.length > 0) {
+            Logger.log('✅ Has missing fields, calling handleMissingFields');
             handleMissingFields(chatId, result.missingFields, session);
             return;
         }
 
         // التحقق من طرف جديد يحتاج تأكيد
+        Logger.log('📊 Checking needsPartyConfirmation: ' + (result.validation ? result.validation.needsPartyConfirmation : 'no validation'));
         if (result.validation && result.validation.needsPartyConfirmation) {
+            Logger.log('✅ Needs party confirmation');
             askNewPartyConfirmation(chatId, session);
             return;
         }
 
         // ⭐ التحقق من طريقة الدفع
+        Logger.log('📊 Checking needsPaymentMethod: ' + (result.validation ? result.validation.needsPaymentMethod : 'no validation'));
         if (result.validation && result.validation.needsPaymentMethod) {
+            Logger.log('✅ Needs payment method');
             askPaymentMethod(chatId, session);
             return;
         }
 
         // ⭐ التحقق من العملة
+        Logger.log('📊 Checking needsCurrency: ' + (result.validation ? result.validation.needsCurrency : 'no validation'));
         if (result.validation && result.validation.needsCurrency) {
+            Logger.log('✅ Needs currency');
             askCurrency(chatId, session);
             return;
         }
 
         // ⭐ التحقق من سعر الصرف (إذا العملة غير دولار)
+        Logger.log('📊 Checking needsExchangeRate: ' + (result.validation ? result.validation.needsExchangeRate : 'no validation'));
         if (result.validation && result.validation.needsExchangeRate) {
+            Logger.log('✅ Needs exchange rate');
             askExchangeRate(chatId, session);
             return;
         }
 
         // ⭐ التحقق من شرط الدفع (للاستحقاقات فقط)
+        Logger.log('📊 Checking needsPaymentTerm: ' + (result.validation ? result.validation.needsPaymentTerm : 'no validation'));
         if (result.validation && result.validation.needsPaymentTerm) {
+            Logger.log('✅ Needs payment term');
             askPaymentTerm(chatId, session);
             return;
         }
 
         // ⭐ التحقق من عدد الأسابيع (لشرط بعد التسليم)
+        Logger.log('📊 Checking needsPaymentTermWeeks: ' + (result.validation ? result.validation.needsPaymentTermWeeks : 'no validation'));
         if (result.validation && result.validation.needsPaymentTermWeeks) {
+            Logger.log('✅ Needs payment term weeks');
             askPaymentTermWeeks(chatId, session);
             return;
         }
 
         // ⭐ التحقق من تاريخ الدفع المخصص
+        Logger.log('📊 Checking needsPaymentTermDate: ' + (result.validation ? result.validation.needsPaymentTermDate : 'no validation'));
         if (result.validation && result.validation.needsPaymentTermDate) {
+            Logger.log('✅ Needs payment term date');
             askPaymentTermDate(chatId, session);
             return;
         }
 
         // عرض ملخص للتأكيد
+        Logger.log('📊 All checks passed, showing confirmation');
         showTransactionConfirmation(chatId, session);
 
     } catch (error) {
-        Logger.log('Process Transaction Error: ' + error.message);
+        Logger.log('❌ Process Transaction Error: ' + error.message);
         Logger.log('Stack: ' + error.stack);
         sendAIMessage(chatId, `❌ *حدث خطأ غير متوقع:*\n${error.message}\n\nيرجى إعادة المحاولة أو التواصل مع الدعم التقني.`);
     }
+
+    Logger.log('📊 processNewTransaction ENDED');
+    Logger.log('═══════════════════════════════════════');
 }
 
 /**
