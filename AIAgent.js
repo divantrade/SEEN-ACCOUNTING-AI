@@ -673,6 +673,7 @@ function validateTransaction(transaction, context) {
     }
 
     // التحقق من المشروع للمصروفات المباشرة والإيرادات
+    // ⭐ المشروع اختياري - نسأل عنه لكن يمكن التخطي
     const needsProject = ['مصروفات مباشرة', 'ايراد'].includes(transaction.classification);
     Logger.log('🔍 needsProject check:');
     Logger.log('   - classification: "' + transaction.classification + '"');
@@ -681,12 +682,9 @@ function validateTransaction(transaction, context) {
     Logger.log('   - !transaction.project: ' + !transaction.project);
 
     if (needsProject && !transaction.project) {
-        Logger.log('✅ Adding project to missingRequired');
-        validation.missingRequired.push({
-            field: 'project',
-            label: 'المشروع',
-            message: 'يرجى تحديد المشروع'
-        });
+        // ⭐ لا نضيفه كحقل إلزامي، بل كسؤال اختياري
+        Logger.log('📋 Project is optional - will ask with skip option');
+        validation.needsProjectSelection = true;
     }
 
     // مطابقة المشروع
@@ -831,6 +829,7 @@ function validateTransaction(transaction, context) {
     Logger.log('🔍 isValid: ' + validation.isValid);
     Logger.log('🔍 missingRequired.length: ' + validation.missingRequired.length);
     Logger.log('🔍 missingRequired: ' + JSON.stringify(validation.missingRequired));
+    Logger.log('🔍 needsProjectSelection: ' + validation.needsProjectSelection);
     Logger.log('🔍 needsPaymentMethod: ' + validation.needsPaymentMethod);
     Logger.log('🔍 needsCurrency: ' + validation.needsCurrency);
     Logger.log('🔍 needsExchangeRate: ' + validation.needsExchangeRate);
