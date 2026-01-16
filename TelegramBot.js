@@ -2946,5 +2946,13 @@ function notifyUserRejection(chatId, transactionData, reason) {
         .replace('{party}', transactionData.partyName)
         .replace('{reason}', reason);
 
-    sendMessage(chatId, message, BOT_CONFIG.KEYBOARDS.EDIT_AFTER_REJECT, 'Markdown');
+    // ⭐ إنشاء لوحة مفاتيح ديناميكية تحتوي على رقم الحركة
+    const dynamicKeyboard = {
+        inline_keyboard: [
+            [{ text: '✏️ تعديل وإعادة إرسال', callback_data: 'edit_resend_' + transactionData.transactionId }],
+            [{ text: '🗑️ حذف نهائي', callback_data: 'delete_rejected_' + transactionData.transactionId }]
+        ]
+    };
+
+    sendMessage(chatId, message, dynamicKeyboard, 'Markdown');
 }

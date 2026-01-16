@@ -268,6 +268,13 @@ function handleAIMessage(message) {
             break;
 
         default:
+            // ⭐ التحقق من وضع التقارير أولاً
+            if (isInReportMode(session)) {
+                if (session.reportState === REPORTS_CONFIG.STATES.WAITING_PARTY_NAME) {
+                    handleReportPartySearch(chatId, text, session);
+                    return;
+                }
+            }
             // تحليل النص كحركة مالية جديدة
             Logger.log('⚠️ DEFAULT CASE - Processing as new transaction');
             Logger.log('⚠️ Session state was: "' + session.state + '"');
@@ -301,6 +308,20 @@ function handleAICommand(chatId, command, user) {
         case '/status':
         case '/حالة':
             showUserTransactionStatus(chatId, user);
+            break;
+
+        case '/reports':
+        case '/تقارير':
+        case '/report':
+        case '/تقرير':
+            // ⭐ أمر التقارير وكشوف الحساب
+            handleReportsCommand(chatId);
+            break;
+
+        case '/statement':
+        case '/كشف':
+            // ⭐ كشف حساب مباشر
+            handleReportsCommand(chatId);
             break;
 
         default:
@@ -1169,11 +1190,20 @@ function handleAICallback(callbackQuery) {
         return;
     }
 
+    // ⭐ معالجة callbacks التقارير (لا تحتاج validation أو transaction)
+    if (isReportCallback(data)) {
+        Logger.log('📊 Report callback detected: ' + data);
+        handleReportCallback(chatId, data, session);
+        return;
+    }
+
     // ⭐ العمليات التي لا تحتاج session (تعمل مباشرة من الشيت)
-    const noSessionRequired = ['edit_resend', 'delete_rejected'];
+    const isEditResend = data === 'edit_resend' || data.startsWith('edit_resend_');
+    const isDeleteRejected = data === 'delete_rejected' || data.startsWith('delete_rejected_');
+    const noSessionRequired = isEditResend || isDeleteRejected;
 
     // ⭐ فحص وجود الـ validation للعمليات الأخرى
-    if (!session.validation && !noSessionRequired.includes(data)) {
+    if (!session.validation && !noSessionRequired) {
         Logger.log('⚠️ Validation missing for callback: ' + data);
         sendAIMessage(chatId, '⚠️ انتهت الجلسة. يرجى إعادة إرسال الحركة.');
         resetAIUserSession(chatId);
@@ -1181,7 +1211,7 @@ function handleAICallback(callbackQuery) {
     }
 
     // ⭐ فحص وجود transaction (للعمليات التي تحتاجه)
-    if (!session.transaction && !data.startsWith('ai_cancel') && !noSessionRequired.includes(data)) {
+    if (!session.transaction && !data.startsWith('ai_cancel') && !noSessionRequired) {
         Logger.log('⚠️ Transaction missing for callback: ' + data);
         sendAIMessage(chatId, '⚠️ لا توجد حركة للمعالجة. يرجى إعادة إرسال الحركة.');
         resetAIUserSession(chatId);
@@ -1254,23 +1284,25 @@ function handleAICallback(callbackQuery) {
         showNewPartyTypeSelection(chatId, session);
     } else if (data === 'ai_edit_done') {
         showTransactionConfirmation(chatId, session);
-    } else if (data === 'edit_resend') {
+    } else if (isEditResend) {
         // ⭐ تعديل وإعادة إرسال حركة مرفوضة
-        handleEditRejectedTransaction(chatId, session, callbackQuery.from);
-    } else if (data === 'delete_rejected') {
+        const transactionId = data.startsWith('edit_resend_') ? data.replace('edit_resend_', '') : null;
+        handleEditRejectedTransaction(chatId, session, callbackQuery.from, transactionId);
+    } else if (isDeleteRejected) {
         // ⭐ حذف حركة مرفوضة
-        handleDeleteRejectedTransaction(chatId);
+        const transactionId = data.startsWith('delete_rejected_') ? data.replace('delete_rejected_', '') : null;
+        handleDeleteRejectedTransaction(chatId, transactionId);
     }
 }
 
 /**
  * ⭐ معالجة تعديل حركة مرفوضة
+ * @param {string} transactionId - رقم الحركة المحددة (اختياري - إذا لم يتم تحديده يبحث عن آخر حركة مرفوضة)
  */
-function handleEditRejectedTransaction(chatId, session, user) {
+function handleEditRejectedTransaction(chatId, session, user, transactionId) {
     try {
-        Logger.log('📝 handleEditRejectedTransaction called for chatId: ' + chatId);
+        Logger.log('📝 handleEditRejectedTransaction called for chatId: ' + chatId + ', transactionId: ' + transactionId);
 
-        // البحث عن آخر حركة مرفوضة لهذا المستخدم
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
 
@@ -1285,16 +1317,29 @@ function handleEditRejectedTransaction(chatId, session, user) {
         let rejectedTransaction = null;
         let rejectedRowIndex = -1;
 
-        // البحث من الأحدث للأقدم عن حركة مرفوضة
+        // ⭐ البحث بطريقتين:
+        // 1. إذا تم تحديد رقم الحركة، نبحث عنه مباشرة
+        // 2. إذا لم يتم تحديده، نبحث عن آخر حركة مرفوضة للمستخدم (للتوافق مع الإصدارات القديمة)
         for (let i = data.length - 1; i >= 1; i--) {
             const row = data[i];
+            const rowTransactionId = String(row[columns.TRANSACTION_ID.index - 1] || '');
             const rowChatId = String(row[columns.TELEGRAM_CHAT_ID.index - 1] || '');
             const status = row[columns.REVIEW_STATUS.index - 1];
 
-            if (rowChatId === String(chatId) && status === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED) {
-                rejectedTransaction = row;
-                rejectedRowIndex = i + 1;
-                break;
+            // إذا تم تحديد رقم الحركة
+            if (transactionId) {
+                if (rowTransactionId === transactionId && status === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED) {
+                    rejectedTransaction = row;
+                    rejectedRowIndex = i + 1;
+                    break;
+                }
+            } else {
+                // البحث عن آخر حركة مرفوضة للمستخدم
+                if (rowChatId === String(chatId) && status === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED) {
+                    rejectedTransaction = row;
+                    rejectedRowIndex = i + 1;
+                    break;
+                }
             }
         }
 
@@ -1351,7 +1396,12 @@ function handleEditRejectedTransaction(chatId, session, user) {
         message += `• طريقة الدفع: ${transactionData.payment_method}\n\n`;
         message += '━━━━━━━━━━━━━━━━━━━━\n';
         message += '💡 *أرسل الحركة المعدلة كنص جديد*\n';
-        message += 'مثال: "دفعت لأحمد 500 دولار"';
+
+        // ⭐ مثال ديناميكي بناءً على بيانات الحركة الفعلية
+        const exampleParty = transactionData.party || 'الطرف';
+        const exampleAmount = transactionData.amount || '500';
+        const exampleCurrency = transactionData.currency || 'دولار';
+        message += `مثال: "دفعت لـ${exampleParty} ${exampleAmount} ${exampleCurrency}"`;
 
         sendAIMessage(chatId, message, { parse_mode: 'Markdown' });
 
@@ -1365,10 +1415,11 @@ function handleEditRejectedTransaction(chatId, session, user) {
 
 /**
  * ⭐ حذف حركة مرفوضة
+ * @param {string} transactionId - رقم الحركة المحددة (اختياري)
  */
-function handleDeleteRejectedTransaction(chatId) {
+function handleDeleteRejectedTransaction(chatId, transactionId) {
     try {
-        Logger.log('🗑️ handleDeleteRejectedTransaction called for chatId: ' + chatId);
+        Logger.log('🗑️ handleDeleteRejectedTransaction called for chatId: ' + chatId + ', transactionId: ' + transactionId);
 
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
@@ -1381,13 +1432,23 @@ function handleDeleteRejectedTransaction(chatId) {
         const data = sheet.getDataRange().getValues();
         const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
 
-        // البحث عن آخر حركة مرفوضة
+        // البحث عن الحركة المرفوضة
         for (let i = data.length - 1; i >= 1; i--) {
             const row = data[i];
+            const rowTransactionId = String(row[columns.TRANSACTION_ID.index - 1] || '');
             const rowChatId = String(row[columns.TELEGRAM_CHAT_ID.index - 1] || '');
             const status = row[columns.REVIEW_STATUS.index - 1];
 
-            if (rowChatId === String(chatId) && status === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED) {
+            let isMatch = false;
+            if (transactionId) {
+                // البحث برقم الحركة المحدد
+                isMatch = rowTransactionId === transactionId && status === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED;
+            } else {
+                // البحث عن آخر حركة مرفوضة للمستخدم (للتوافق مع الإصدارات القديمة)
+                isMatch = rowChatId === String(chatId) && status === CONFIG.TELEGRAM_BOT.REVIEW_STATUS.REJECTED;
+            }
+
+            if (isMatch) {
                 // حذف الصف
                 sheet.deleteRow(i + 1);
                 sendAIMessage(chatId, '🗑️ تم حذف الحركة المرفوضة بنجاح.\n\nيمكنك إرسال حركة جديدة الآن.');
