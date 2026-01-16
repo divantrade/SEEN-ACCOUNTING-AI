@@ -865,8 +865,16 @@ function analyzeTransaction(userMessage) {
         Logger.log('🤖 aiResult.success: ' + aiResult.success);
         Logger.log('🤖 aiResult keys: ' + Object.keys(aiResult).join(', '));
 
-        if (!aiResult.success) {
-            Logger.log('❌ aiResult.success is false or undefined, returning error');
+        // ⭐ تحقق أكثر ذكاءً - إذا كان الرد يحتوي على بيانات الحركة فهو ناجح
+        // حتى لو لم يحتوي على success: true صراحة
+        const hasTransactionData = aiResult.nature || aiResult.classification || aiResult.amount || aiResult.party;
+        const isExplicitFailure = aiResult.success === false;
+
+        Logger.log('🤖 hasTransactionData: ' + hasTransactionData);
+        Logger.log('🤖 isExplicitFailure: ' + isExplicitFailure);
+
+        if (isExplicitFailure || (!hasTransactionData && !aiResult.success)) {
+            Logger.log('❌ AI result indicates failure or no transaction data');
             Logger.log('❌ aiResult.error: ' + aiResult.error);
             return {
                 success: false,
