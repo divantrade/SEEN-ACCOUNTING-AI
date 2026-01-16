@@ -921,8 +921,23 @@ function handleAICallback(callbackQuery) {
     const data = callbackQuery.data;
     const user = callbackQuery.from;
 
-    // الرد على الـ callback
-    answerAICallback(callbackQuery.id);
+    // ⭐ منع الضغط المتكرر (قفل لمدة 3 ثواني)
+    const cache = CacheService.getScriptCache();
+    const lockKey = `CALLBACK_LOCK_${chatId}_${data}`;
+    const isLocked = cache.get(lockKey);
+
+    if (isLocked) {
+        // الرد على الـ callback برسالة "جاري المعالجة"
+        answerAICallback(callbackQuery.id, '⏳ جاري المعالجة...');
+        Logger.log('⚠️ Duplicate callback ignored: ' + data);
+        return;
+    }
+
+    // تفعيل القفل لمدة 3 ثواني
+    cache.put(lockKey, 'locked', 3);
+
+    // الرد على الـ callback فوراً
+    answerAICallback(callbackQuery.id, '✅');
 
     // التحقق من الصلاحيات
     const permission = checkAIUserPermission(chatId, user);
@@ -994,14 +1009,22 @@ function handleAICallback(callbackQuery) {
 /**
  * الرد على الـ callback query
  */
-function answerAICallback(callbackQueryId) {
+function answerAICallback(callbackQueryId, text) {
     const token = getAIBotToken();
     const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
+
+    const payload = { callback_query_id: callbackQueryId };
+
+    // ⭐ إضافة رسالة toast إذا وُجدت
+    if (text) {
+        payload.text = text;
+        payload.show_alert = false; // رسالة صغيرة في الأعلى
+    }
 
     UrlFetchApp.fetch(url, {
         method: 'post',
         contentType: 'application/json',
-        payload: JSON.stringify({ callback_query_id: callbackQueryId }),
+        payload: JSON.stringify(payload),
         muteHttpExceptions: true
     });
 }
