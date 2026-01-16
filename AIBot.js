@@ -219,11 +219,11 @@ function handleAIMessage(message) {
             break;
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PROJECT_SELECTION:
-            handleProjectSelection(chatId, text, session);
+            handleAIProjectSelection(chatId, text, session);
             break;
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PARTY_SELECTION:
-            handlePartySelection(chatId, text, session);
+            handleAIPartySelection(chatId, text, session);
             break;
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT:
@@ -232,7 +232,7 @@ function handleAIMessage(message) {
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EXCHANGE_RATE:
             // ⭐ معالجة إدخال سعر الصرف
-            handleExchangeRateInput(chatId, text, session);
+            handleAIExchangeRateInput(chatId, text, session);
             break;
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_TERM:
@@ -657,12 +657,12 @@ function askPaymentMethod(chatId, session) {
 /**
  * ⭐ معالجة اختيار طريقة الدفع
  */
-function handlePaymentMethodSelection(chatId, method, session) {
-    Logger.log('🔧 handlePaymentMethodSelection called with method: ' + method);
+function handleAIPaymentMethodSelection(chatId, method, session) {
+    Logger.log('🔧 handleAIPaymentMethodSelection called with method: ' + method);
 
     // ⭐ الفحوصات الرئيسية موجودة في handleAICallback، هذه فقط للأمان
     if (!session || !session.transaction || !session.validation) {
-        Logger.log('❌ Session data incomplete in handlePaymentMethodSelection');
+        Logger.log('❌ Session data incomplete in handleAIPaymentMethodSelection');
         sendAIMessage(chatId, '⚠️ حدث خطأ. يرجى إعادة إرسال الحركة.');
         resetAIUserSession(chatId);
         return;
@@ -703,7 +703,7 @@ function askCurrency(chatId, session) {
 /**
  * ⭐ معالجة اختيار العملة
  */
-function handleCurrencySelection(chatId, currency, session) {
+function handleAICurrencySelection(chatId, currency, session) {
     session.transaction.currency = currency;
     session.validation.enriched.currency = currency;
     session.validation.needsCurrency = false;
@@ -748,11 +748,11 @@ function askExchangeRate(chatId, session) {
 }
 
 /**
- * ⭐ معالجة إدخال سعر الصرف
+ * ⭐ معالجة إدخال سعر الصرف للبوت الذكي
  */
-function handleExchangeRateInput(chatId, text, session) {
+function handleAIExchangeRateInput(chatId, text, session) {
     Logger.log('═══════════════════════════════════════');
-    Logger.log('📥 handleExchangeRateInput CALLED');
+    Logger.log('📥 handleAIExchangeRateInput CALLED');
     Logger.log('📥 Input text: "' + text + '"');
     Logger.log('📥 Session exists: ' + (session ? 'yes' : 'no'));
     Logger.log('📥 Session.transaction: ' + (session && session.transaction ? 'exists' : 'UNDEFINED'));
@@ -829,7 +829,7 @@ function askPaymentTerm(chatId, session) {
 /**
  * ⭐ معالجة اختيار شرط الدفع
  */
-function handlePaymentTermSelection(chatId, term, session) {
+function handleAIPaymentTermSelection(chatId, term, session) {
     session.transaction.payment_term = term;
     session.validation.enriched.payment_term = term;
     session.validation.needsPaymentTerm = false;
@@ -1151,16 +1151,16 @@ function handleAICallback(callbackQuery) {
         Logger.log('📥 Has transaction: ' + (session && session.transaction ? 'yes' : 'no'));
         Logger.log('📥 Has validation: ' + (session && session.validation ? 'yes' : 'no'));
         Logger.log('═══════════════════════════════════════');
-        handlePaymentMethodSelection(chatId, method, session);
+        handleAIPaymentMethodSelection(chatId, method, session);
         Logger.log('✅ Payment method handler completed');
     } else if (data.startsWith('ai_currency_')) {
         // ⭐ معالجة اختيار العملة
         const currency = data.replace('ai_currency_', '');
-        handleCurrencySelection(chatId, currency, session);
+        handleAICurrencySelection(chatId, currency, session);
     } else if (data.startsWith('ai_term_')) {
         // ⭐ معالجة اختيار شرط الدفع
         const term = data.replace('ai_term_', '');
-        handlePaymentTermSelection(chatId, term, session);
+        handleAIPaymentTermSelection(chatId, term, session);
     } else if (data.startsWith('ai_add_party_')) {
         // معالجة تأكيد إضافة طرف جديد
         handleNewPartyConfirmation(chatId, data, session);
@@ -1177,7 +1177,7 @@ function handleAICallback(callbackQuery) {
         handlePartyCallback(chatId, party, session);
     } else if (data.startsWith('ai_partytype_')) {
         const partyType = data.replace('ai_partytype_', '');
-        handleNewPartyType(chatId, partyType, session);
+        handleAINewPartyType(chatId, partyType, session);
     } else if (data === 'ai_add_party') {
         showNewPartyTypeSelection(chatId, session);
     } else if (data === 'ai_edit_done') {
@@ -1516,7 +1516,7 @@ function handleEditInput(chatId, text, session) {
 /**
  * معالجة اختيار المشروع
  */
-function handleProjectSelection(chatId, text, session) {
+function handleAIProjectSelection(chatId, text, session) {
     // البحث عن المشروع
     const context = loadAIContext();
     const match = matchProject(text, context.projects);
@@ -1547,7 +1547,7 @@ function handleProjectCallback(chatId, project, session) {
 /**
  * معالجة اختيار الطرف
  */
-function handlePartySelection(chatId, text, session) {
+function handleAIPartySelection(chatId, text, session) {
     const context = loadAIContext();
     const match = matchParty(text, context.parties);
 
@@ -1608,7 +1608,7 @@ function showNewPartyTypeSelection(chatId, session) {
 /**
  * معالجة اختيار نوع الطرف الجديد
  */
-function handleNewPartyType(chatId, partyType, session) {
+function handleAINewPartyType(chatId, partyType, session) {
     session.transaction.partyType = partyType;
     session.transaction.isNewParty = true;
     moveToNextMissingField(chatId, session);
