@@ -599,7 +599,14 @@ function isReportCallback(data) {
  */
 function setupBotCommands() {
     try {
-        const token = CONFIG.TELEGRAM_BOT.AI_BOT_TOKEN;
+        // ⭐ الحصول على التوكن من PropertiesService
+        const token = PropertiesService.getScriptProperties().getProperty('AI_BOT_TOKEN');
+
+        if (!token) {
+            Logger.log('❌ AI_BOT_TOKEN not found in Script Properties');
+            return { success: false, error: 'التوكن غير موجود. استخدم setAIBotToken() أولاً' };
+        }
+
         const url = 'https://api.telegram.org/bot' + token + '/setMyCommands';
 
         const commands = [
