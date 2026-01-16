@@ -972,8 +972,11 @@ function handleAICallback(callbackQuery) {
         handleSelectPartyFromSuggestions(chatId, index, session);
     } else if (data.startsWith('ai_payment_')) {
         // ⭐ معالجة اختيار طريقة الدفع
+        Logger.log('📥 Payment method callback received: ' + data);
         const method = data.replace('ai_payment_', '');
+        Logger.log('📥 Method extracted: ' + method);
         handlePaymentMethodSelection(chatId, method, session);
+        Logger.log('✅ Payment method processed');
     } else if (data.startsWith('ai_currency_')) {
         // ⭐ معالجة اختيار العملة
         const currency = data.replace('ai_currency_', '');
