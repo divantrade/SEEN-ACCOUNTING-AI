@@ -750,7 +750,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // ═══════════════════════════════════════════════════════════
     const footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
     sheet.getRange('A' + footerRow + ':F' + footerRow).merge()
-        .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm') + ' | حقوق النظام محفوظة لـ جيوان للحسابات')
+        .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm') + ' | حقوق النظام محفوظة لـ ديوان للحسابات aldewan.net')
         .setHorizontalAlignment('center')
         .setFontSize(9)
         .setFontColor('#757575');
