@@ -26,14 +26,14 @@ function exportSheetAsPDF(sheet, fileName, options) {
         // الخيارات الافتراضية
         const defaultOptions = {
             size: 'A4',           // حجم الورقة
-            portrait: false,      // أفقي
+            portrait: true,       // طولي (Portrait)
             fitWidth: true,       // ملائمة العرض
             gridlines: false,     // بدون خطوط الشبكة
-            printtitle: true,     // طباعة العنوان
+            printtitle: false,    // بدون العنوان في الأعلى
             sheetnames: false,    // بدون اسم الشيت
-            pagenumbers: true,    // أرقام الصفحات
-            fzr: true,            // تكرار الصفوف المجمدة
-            fzc: true             // تكرار الأعمدة المجمدة
+            pagenumbers: false,   // بدون أرقام الصفحات
+            fzr: false,           // بدون تكرار الصفوف المجمدة
+            fzc: false            // بدون تكرار الأعمدة المجمدة
         };
 
         const opts = { ...defaultOptions, ...options };
@@ -334,7 +334,7 @@ function generateAndSendReport(chatId, reportType, sheet, partyName, saveToArchi
         // 1. تصدير الشيت كـ PDF
         const fileName = buildReportFileName(reportType, partyName);
         const pdfBlob = exportSheetAsPDF(sheet, fileName, {
-            portrait: false,
+            portrait: true,
             fitWidth: true
         });
 
@@ -741,9 +741,6 @@ function generateStatementForBot_(ss, partyName, partyType) {
     } else {
         sheet.getRange(dataStartRow, 1).setValue('لا توجد حركات').setFontStyle('italic');
     }
-
-    // تجميد الصفوف حتى رأس الجدول
-    sheet.setFrozenRows(tableHeaderRow);
 
     // ═══════════════════════════════════════════════════════════
     // تذييل التقرير
