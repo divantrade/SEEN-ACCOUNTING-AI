@@ -4947,18 +4947,29 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
   // ═══════════════════════════════════════════════════════════
   // جلب لوجو الشركة من قاعدة بيانات البنود (D2)
-  // يجب أن يكون رابط صورة مباشر وليس رابط مجلد
+  // يدعم روابط Google Drive العادية ويحولها لروابط مباشرة
   // ═══════════════════════════════════════════════════════════
   let companyLogo = '';
   try {
     const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
     if (itemsSheet) {
-      const logoUrl = itemsSheet.getRange('D2').getValue() || '';
-      // التحقق من أن الرابط هو رابط صورة مباشر وليس مجلد
-      if (logoUrl && !logoUrl.includes('/folders/') && (logoUrl.includes('.png') || logoUrl.includes('.jpg') || logoUrl.includes('.jpeg') || logoUrl.includes('.gif') || logoUrl.includes('googleusercontent.com') || logoUrl.includes('uc?id='))) {
+      let logoUrl = itemsSheet.getRange('D2').getValue() || '';
+
+      // تحويل رابط Google Drive العادي إلى رابط مباشر
+      // مثال: https://drive.google.com/file/d/FILE_ID/view?usp=drive_link
+      // يتحول إلى: https://drive.google.com/uc?id=FILE_ID
+      if (logoUrl && logoUrl.includes('drive.google.com/file/d/')) {
+        const match = logoUrl.match(/\/file\/d\/([^\/\?]+)/);
+        if (match && match[1]) {
+          logoUrl = 'https://drive.google.com/uc?id=' + match[1];
+        }
+      }
+
+      // التحقق من أن الرابط صالح (ليس مجلد)
+      if (logoUrl && !logoUrl.includes('/folders/')) {
         companyLogo = logoUrl;
       }
-      Logger.log('🖼️ Company logo URL: ' + (companyLogo ? 'Valid image URL found' : 'Not found or invalid'));
+      Logger.log('🖼️ Company logo URL: ' + (companyLogo ? companyLogo : 'Not found'));
     }
   } catch (e) {
     Logger.log('⚠️ Could not get company logo: ' + e.message);
