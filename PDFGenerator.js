@@ -834,7 +834,7 @@ function generateBalancesPDF(chatId) {
         rebuildVendorSummaryReport(true);
 
         // البحث عن شيت تقرير الموردين
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.VENDOR_REPORT);
+        const sheet = ss.getSheetByName(CONFIG.SHEETS.VENDORS_REPORT);
 
         if (!sheet) {
             throw new Error('لم يتم العثور على شيت تقرير الأرصدة');
@@ -894,7 +894,7 @@ function generateExpensesPDF(chatId) {
         rebuildExpenseSummaryReport(true);
 
         // البحث عن الشيت
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.EXPENSE_REPORT);
+        const sheet = ss.getSheetByName(CONFIG.SHEETS.EXPENSES_REPORT);
 
         if (!sheet) {
             throw new Error('لم يتم العثور على تقرير المصروفات');

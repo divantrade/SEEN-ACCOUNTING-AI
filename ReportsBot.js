@@ -355,10 +355,9 @@ function handleGenerateStatementReport(chatId, session) {
         const partyName = session.reportData.partyName;
         const partyType = session.reportData.partyType;
 
-        // إرسال رسالة الانتظار
-        sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.GENERATING_REPORT, {
-            parse_mode: 'Markdown'
-        });
+        // إرسال رسالة الانتظار مع اسم الطرف
+        const message = `⏳ *جاري إعداد كشف حساب ${partyName}...*\n\nقد يستغرق هذا بضع ثوان.`;
+        sendAIMessage(chatId, message, { parse_mode: 'Markdown' });
 
         // توليد وإرسال التقرير
         const result = generateStatementPDF(chatId, partyName, partyType);
@@ -379,14 +378,21 @@ function handleGenerateStatementReport(chatId, session) {
 }
 
 /**
+ * دالة مساعدة لإرسال رسالة "جاري إعداد التقرير" مع اسم التقرير
+ */
+function sendGeneratingMessage(chatId, reportType) {
+    const reportName = REPORTS_CONFIG.MESSAGES.REPORT_NAMES[reportType] || 'التقرير';
+    const message = `⏳ *جاري إعداد ${reportName}...*\n\nقد يستغرق هذا بضع ثوان.`;
+    sendAIMessage(chatId, message, { parse_mode: 'Markdown' });
+}
+
+/**
  * توليد تقرير التنبيهات
  */
 function handleGenerateAlertsReport(chatId, session, daysAhead) {
     try {
-        // إرسال رسالة الانتظار
-        sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.GENERATING_REPORT, {
-            parse_mode: 'Markdown'
-        });
+        // إرسال رسالة الانتظار مع اسم التقرير
+        sendGeneratingMessage(chatId, 'alerts');
 
         // أولاً: إرسال ملخص نصي سريع
         sendAlertsTextSummary(chatId, daysAhead);
@@ -425,12 +431,13 @@ function sendAlertsTextSummary(chatId, daysAhead) {
         let importantAlerts = [];
 
         // تحليل التنبيهات
+        // الأعمدة: 0:نوع التنبيه, 1:الأولوية, 2:المشروع, 3:الطرف, 4:المبلغ, 5:تاريخ الاستحقاق, 6:الأيام المتبقية, 7:الحالة
         for (let i = 1; i < data.length; i++) {
             const row = data[i];
-            const priority = row[1]; // الأولوية
-            const party = row[4];    // الطرف
-            const amount = row[5];   // المبلغ
-            const dueDate = row[7];  // تاريخ الاستحقاق
+            const priority = row[1];  // الأولوية
+            const party = row[3];     // الطرف
+            const amount = row[4];    // المبلغ
+            const dueDate = row[5];   // تاريخ الاستحقاق
 
             if (priority === '🔴 عاجل') {
                 urgentAlerts.push({ party, amount, dueDate });
@@ -442,13 +449,31 @@ function sendAlertsTextSummary(chatId, daysAhead) {
         // بناء الرسالة
         let message = REPORTS_CONFIG.MESSAGES.ALERTS_HEADER;
 
+        // دالة مساعدة لتنسيق التاريخ
+        const formatDate = (date) => {
+            if (!date) return '-';
+            try {
+                const d = new Date(date);
+                if (isNaN(d.getTime())) return '-';
+                return Utilities.formatDate(d, 'Asia/Istanbul', 'dd/MM/yyyy');
+            } catch (e) {
+                return '-';
+            }
+        };
+
+        // دالة مساعدة لتنسيق المبلغ
+        const formatAmount = (amount) => {
+            const num = Number(amount) || 0;
+            return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        };
+
         if (urgentAlerts.length === 0 && importantAlerts.length === 0) {
             message += REPORTS_CONFIG.MESSAGES.NO_ALERTS;
         } else {
             if (urgentAlerts.length > 0) {
                 message += '🔴 *عاجل (' + urgentAlerts.length + '):*\n';
                 urgentAlerts.slice(0, 5).forEach(alert => {
-                    message += `• ${alert.party}: ${alert.amount} USD\n`;
+                    message += `• ${alert.party}: ${formatAmount(alert.amount)} (${formatDate(alert.dueDate)})\n`;
                 });
                 message += '\n';
             }
@@ -456,7 +481,7 @@ function sendAlertsTextSummary(chatId, daysAhead) {
             if (importantAlerts.length > 0) {
                 message += '🟠 *مهم (' + importantAlerts.length + '):*\n';
                 importantAlerts.slice(0, 5).forEach(alert => {
-                    message += `• ${alert.party}: ${alert.amount} USD\n`;
+                    message += `• ${alert.party}: ${formatAmount(alert.amount)} (${formatDate(alert.dueDate)})\n`;
                 });
             }
 
@@ -475,9 +500,7 @@ function sendAlertsTextSummary(chatId, daysAhead) {
  */
 function handleGenerateBalancesReport(chatId, session) {
     try {
-        sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.GENERATING_REPORT, {
-            parse_mode: 'Markdown'
-        });
+        sendGeneratingMessage(chatId, 'balances');
 
         const result = generateBalancesPDF(chatId);
 
@@ -500,9 +523,7 @@ function handleGenerateBalancesReport(chatId, session) {
  */
 function handleGenerateProfitabilityReport(chatId, session) {
     try {
-        sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.GENERATING_REPORT, {
-            parse_mode: 'Markdown'
-        });
+        sendGeneratingMessage(chatId, 'profitability');
 
         const result = generateProfitabilityPDF(chatId);
 
@@ -525,9 +546,7 @@ function handleGenerateProfitabilityReport(chatId, session) {
  */
 function handleGenerateExpensesReport(chatId, session) {
     try {
-        sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.GENERATING_REPORT, {
-            parse_mode: 'Markdown'
-        });
+        sendGeneratingMessage(chatId, 'expenses');
 
         const result = generateExpensesPDF(chatId);
 
@@ -550,9 +569,7 @@ function handleGenerateExpensesReport(chatId, session) {
  */
 function handleGenerateRevenuesReport(chatId, session) {
     try {
-        sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.GENERATING_REPORT, {
-            parse_mode: 'Markdown'
-        });
+        sendGeneratingMessage(chatId, 'revenues');
 
         const result = generateRevenuesPDF(chatId);
 
