@@ -3642,7 +3642,7 @@ function generateAllProjectsProfitabilityReport(silent) {
       }
     }
 
-    // جمع المصروفات الفعلية للمشروع
+    // جمع المصروفات الفعلية للمشروع (استحقاق مصروف فقط - استبعاد الإيرادات)
     const actualExpenses = {};
     let totalActual = 0;
     for (let t = 1; t < transData.length; t++) {
@@ -3651,9 +3651,10 @@ function generateAllProjectsProfitabilityReport(silent) {
 
       const item = String(transData[t][6] || '').trim();
       const amountUsd = Number(transData[t][12]) || 0;
-      const movementKind = String(transData[t][13] || '');
+      const natureType = String(transData[t][2] || ''); // طبيعة الحركة (column C)
 
-      if (movementKind.includes('مدين') && amountUsd > 0) {
+      // فقط استحقاق مصروف - استبعاد الإيرادات والدفعات
+      if (natureType.includes('استحقاق مصروف') && amountUsd > 0) {
         if (!item) continue;
         actualExpenses[item] = (actualExpenses[item] || 0) + amountUsd;
         totalActual += amountUsd;
