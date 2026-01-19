@@ -800,8 +800,8 @@ function generateAlertsPDF(chatId, daysAhead) {
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-        // تحديث شيت التنبيهات
-        updateAlerts();
+        // تحديث شيت التنبيهات (وضع صامت للبوت)
+        updateAlerts(true);
 
         // البحث عن شيت التنبيهات
         const sheet = ss.getSheetByName(CONFIG.SHEETS.ALERTS);
@@ -860,11 +860,11 @@ function generateProfitabilityPDF(chatId) {
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-        // توليد تقرير الربحية
-        generateAllProjectsProfitabilityReport();
+        // توليد تقرير الربحية (وضع صامت للبوت)
+        generateAllProjectsProfitabilityReport(true);
 
         // البحث عن الشيت
-        const sheet = ss.getSheetByName('تقرير ربحية المشاريع');
+        const sheet = ss.getSheetByName('تقارير ربحية المشاريع');
 
         if (!sheet) {
             throw new Error('لم يتم إنشاء تقرير الربحية');
