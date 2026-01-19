@@ -551,10 +551,41 @@ function generateStatementForBot_(ss, partyName, partyType) {
     sheet.setColumnWidth(6, 130);  // الرصيد
 
     // ═══════════════════════════════════════════════════════════
-    // العنوان الرئيسي (بدون إيموجي)
+    // Header الشركة في أعلى التقرير
     // ═══════════════════════════════════════════════════════════
+    // صف 1: اسم الشركة (بولد، خط كبير)
     sheet.getRange('A1:F1').merge();
     sheet.getRange('A1')
+        .setValue('START SCENE MEDIA PRODUKSIYON LIMITED')
+        .setFontWeight('bold')
+        .setFontSize(14)
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle');
+
+    // صف 2: العنوان
+    sheet.getRange('A2:F2').merge();
+    sheet.getRange('A2')
+        .setValue('212 My Office - Office No177 - Istanbul - Bagcilar')
+        .setFontSize(10)
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle');
+
+    // صف 3: البريد والموقع
+    sheet.getRange('A3:F3').merge();
+    sheet.getRange('A3')
+        .setValue('Finance@seenfilm.net  |  www.seenfilm.net')
+        .setFontSize(10)
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle');
+
+    // صف 4: فاصل
+    sheet.setRowHeight(4, 10);
+
+    // ═══════════════════════════════════════════════════════════
+    // العنوان الرئيسي (كشف مورد/عميل/ممول)
+    // ═══════════════════════════════════════════════════════════
+    sheet.getRange('A5:F5').merge();
+    sheet.getRange('A5')
         .setValue(titlePrefix)
         .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
         .setFontColor(CONFIG.COLORS.TEXT.WHITE)
@@ -566,7 +597,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // ═══════════════════════════════════════════════════════════
     // كارت بيانات الطرف
     // ═══════════════════════════════════════════════════════════
-    const cardHeaderRow = 3;
+    const cardHeaderRow = 7;
     const cardDataStartRow = cardHeaderRow + 1;
 
     sheet.getRange('A' + cardHeaderRow + ':F' + cardHeaderRow).merge()
