@@ -5042,18 +5042,36 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setVerticalAlignment('middle');
 
   // ═══════════════════════════════════════════════════════════
-  // إضافة اللوجو إذا وجد (رابط صورة مباشر)
+  // إضافة اللوجو من Google Drive (باستخدام insertImage)
   // ═══════════════════════════════════════════════════════════
   let logoRowOffset = 0;
   if (companyLogo) {
     try {
-      sheet.getRange('A2:F2').merge()
-        .setFormula('=IMAGE("' + companyLogo + '", 4, 80, 80)')
-        .setHorizontalAlignment('center')
-        .setVerticalAlignment('middle');
-      sheet.setRowHeight(2, 90);
-      logoRowOffset = 1;
-      Logger.log('✅ Logo inserted successfully');
+      // استخراج File ID من الرابط
+      let fileId = '';
+      if (companyLogo.includes('uc?id=')) {
+        fileId = companyLogo.split('uc?id=')[1].split('&')[0];
+      } else if (companyLogo.includes('/file/d/')) {
+        const match = companyLogo.match(/\/file\/d\/([^\/\?]+)/);
+        if (match) fileId = match[1];
+      }
+
+      if (fileId) {
+        // جلب الصورة من Drive وإدراجها
+        const file = DriveApp.getFileById(fileId);
+        const blob = file.getBlob();
+
+        // إدراج الصورة في الصف 2
+        sheet.setRowHeight(2, 80);
+        const image = sheet.insertImage(blob, 3, 2); // العمود C، الصف 2
+        image.setWidth(70);
+        image.setHeight(70);
+
+        logoRowOffset = 1;
+        Logger.log('✅ Logo inserted from Drive: ' + fileId);
+      } else {
+        Logger.log('⚠️ Could not extract file ID from logo URL');
+      }
     } catch (e) {
       Logger.log('⚠️ Could not insert logo: ' + e.message);
       logoRowOffset = 0;
