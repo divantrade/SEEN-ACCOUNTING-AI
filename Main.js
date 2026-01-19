@@ -2538,14 +2538,16 @@ function compareBudget() {
 
 
 // ==================== التنبيهات والاستحقاقات (محدث: مدين + دائن + أرصدة) ====================
-function updateAlerts() {
+function updateAlerts(silent) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
   const alertSheet = ss.getSheetByName(CONFIG.SHEETS.ALERTS);
 
   if (!transSheet || !alertSheet) {
-    SpreadsheetApp.getUi().alert('⚠️ شيت الحركات أو التنبيهات غير موجود!');
-    return;
+    if (!silent) {
+      try { SpreadsheetApp.getUi().alert('⚠️ شيت الحركات أو التنبيهات غير موجود!'); } catch(e) {}
+    }
+    return { success: false, error: 'الشيتات غير موجودة' };
   }
 
   alertSheet.clear();
@@ -3543,25 +3545,32 @@ function createProfitabilityReportSheet_(ss, projectInfo, directExpenses, revenu
 /**
  * إنشاء تقرير ربحية شامل لكل المشاريع
  * يعرض كل مشروع مع بنوده وهامش الربح والمصروفات العمومية وصافي الربح
+ * @param {boolean} silent - إذا كان true لن يظهر رسائل للمستخدم (للاستخدام من البوت)
  */
-function generateAllProjectsProfitabilityReport() {
+function generateAllProjectsProfitabilityReport(silent) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
+
+  // دالة مساعدة لعرض الرسائل (تتجاهل في الوضع الصامت)
+  const showAlert = (msg) => {
+    if (!silent) {
+      try { SpreadsheetApp.getUi().alert(msg); } catch(e) {}
+    }
+  };
 
   const projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
   const transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
   const budgetSheet = ss.getSheetByName(CONFIG.SHEETS.BUDGETS);
 
   if (!projectsSheet || !transSheet) {
-    ui.alert('⚠️ الشيتات المطلوبة غير موجودة!');
-    return;
+    showAlert('⚠️ الشيتات المطلوبة غير موجودة!');
+    return { success: false, error: 'الشيتات غير موجودة' };
   }
 
   // قراءة بيانات المشاريع
   const projectsData = projectsSheet.getDataRange().getValues();
   if (projectsData.length < 2) {
-    ui.alert('⚠️ لا توجد مشاريع في قاعدة البيانات');
-    return;
+    showAlert('⚠️ لا توجد مشاريع في قاعدة البيانات');
+    return { success: false, error: 'لا توجد مشاريع' };
   }
 
   // قراءة الميزانيات المخططة
@@ -3815,19 +3824,21 @@ function generateAllProjectsProfitabilityReport() {
   reportSheet.setColumnWidth(7, 80);
   reportSheet.setFrozenRows(2);
 
-  ss.setActiveSheet(reportSheet);
+  if (!silent) {
+    ss.setActiveSheet(reportSheet);
+  }
 
-  ui.alert(
-    '✅ تم إنشاء تقرير ربحية كل المشاريع',
-    'الملخص:\n\n' +
+  showAlert(
+    '✅ تم إنشاء تقرير ربحية كل المشاريع\n\n' +
     '📁 عدد المشاريع: ' + projectCount + '\n' +
     '💵 إجمالي العقود: $' + totalContracts.toLocaleString() + '\n' +
     '💰 إجمالي المصروفات: $' + totalDirectExpenses.toLocaleString() + '\n\n' +
     '✅ إجمالي هامش الربح: $' + totalProfitMargin.toLocaleString() + '\n' +
     '🏢 إجمالي المصروفات العمومية: $' + totalOverhead.toLocaleString() + '\n' +
-    '💰 إجمالي صافي الربح: $' + totalNetProfit.toLocaleString(),
-    ui.ButtonSet.OK
+    '💰 إجمالي صافي الربح: $' + totalNetProfit.toLocaleString()
   );
+
+  return { success: true, projectCount: projectCount };
 }
 
 // ==================== دليل الاستخدام (محدث لنظام العملات + نوع الحركة) ====================
