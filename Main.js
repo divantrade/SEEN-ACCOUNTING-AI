@@ -9734,11 +9734,11 @@ function generateProjectBudgetReport() {
   const transHeaders = transData[0];
 
   // تحديد أعمدة دفتر الحركات
+  const colC = transHeaders.indexOf('طبيعة الحركة') !== -1 ? transHeaders.indexOf('طبيعة الحركة') : 2;
   const colE = transHeaders.indexOf('كود المشروع') !== -1 ? transHeaders.indexOf('كود المشروع') : 4;
   const colG = transHeaders.indexOf('البند') !== -1 ? transHeaders.indexOf('البند') : 6;
   const colI = transHeaders.indexOf('اسم المورد/الجهة') !== -1 ? transHeaders.indexOf('اسم المورد/الجهة') : 8;
   const colM = transHeaders.indexOf('القيمة بالدولار') !== -1 ? transHeaders.indexOf('القيمة بالدولار') : 12;
-  const colN = transHeaders.indexOf('نوع الحركة') !== -1 ? transHeaders.indexOf('نوع الحركة') : 13;
 
   const actualExpenses = {}; // { البند: { total: المبلغ, details: [{vendor, amount}] } }
   let totalActual = 0;
@@ -9751,10 +9751,10 @@ function generateProjectBudgetReport() {
     const item = String(transData[i][colG] || '').trim();
     const vendor = String(transData[i][colI] || '').trim();
     const amountUsd = Number(transData[i][colM]) || 0;
-    const movementType = String(transData[i][colN] || '').trim();
+    const natureType = String(transData[i][colC] || '').trim();
 
-    // فقط المصروفات (مدين استحقاق)
-    if (movementType.indexOf('مدين') === -1) continue;
+    // فقط المصروفات (استحقاق مصروف) - استبعاد الإيرادات
+    if (natureType.indexOf('استحقاق مصروف') === -1) continue;
     if (!item || amountUsd <= 0) continue;
 
     // تجميع حسب البند
@@ -9894,6 +9894,35 @@ function generateProjectBudgetReport() {
       }
     }
     currentRow += budgetRows.length;
+
+    // صف المجموع
+    const totalDiff = totalPlanned - totalActual;
+    const totalPercentage = totalPlanned > 0 ? Math.round((totalActual / totalPlanned) * 100) : (totalActual > 0 ? '∞' : 0);
+    let totalStatus = '';
+    if (totalPercentage === '∞' || totalPercentage > 120) {
+      totalStatus = '🔴 تجاوز';
+    } else if (totalPercentage > 100) {
+      totalStatus = '🟡 تجاوز طفيف';
+    } else if (totalPercentage >= 80) {
+      totalStatus = '🟢 ضمن الميزانية';
+    } else {
+      totalStatus = '🔵 وفر';
+    }
+
+    const totalRow = ['📊 المجموع', totalPlanned, totalActual, totalDiff, totalPercentage === '∞' ? '∞' : totalPercentage + '%', totalStatus];
+    reportSheet.getRange(currentRow, 1, 1, 6).setValues([totalRow])
+      .setBackground('#e8eaf6')
+      .setFontWeight('bold');
+    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+
+    // تلوين فرق المجموع
+    const totalDiffCell = reportSheet.getRange(currentRow, 4);
+    if (totalDiff < 0) {
+      totalDiffCell.setFontColor('#c62828'); // أحمر للتجاوز
+    } else if (totalDiff > 0) {
+      totalDiffCell.setFontColor('#2e7d32'); // أخضر للوفر
+    }
+    currentRow++;
   } else {
     reportSheet.getRange(currentRow, 1, 1, 6).merge()
       .setValue('لا توجد بنود مسجلة')
