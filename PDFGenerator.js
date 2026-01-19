@@ -492,10 +492,9 @@ function generateStatementPDF(chatId, partyName, partyType) {
 }
 
 /**
- * ⭐ إنشاء كشف حساب للبوت (بدون UI) - بتنسيق مطابق للأصلي تماماً
- * نسخة كاملة من generateUnifiedStatement_ تعمل بدون SpreadsheetApp.getUi()
+ * ⭐ إنشاء كشف حساب للبوت (بدون UI) - نسخة نظيفة للـ PDF
  * ═══════════════════════════════════════════════════════════════════════════
- * تم توحيد الألوان والتنسيق مع الدالة الأصلية في Main.js
+ * بدون إيموجي أو لوجو لضمان التوافق مع PDF export
  * ═══════════════════════════════════════════════════════════════════════════
  */
 function generateStatementForBot_(ss, partyName, partyType) {
@@ -506,43 +505,12 @@ function generateStatementForBot_(ss, partyName, partyType) {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // جلب لوجو الشركة من قاعدة بيانات البنود (D2)
-    // يدعم روابط Google Drive العادية ويحولها لروابط مباشرة
-    // ═══════════════════════════════════════════════════════════
-    let companyLogo = '';
-    try {
-        const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
-        if (itemsSheet) {
-            let logoUrl = itemsSheet.getRange('D2').getValue() || '';
-
-            // تحويل رابط Google Drive العادي إلى رابط مباشر
-            // مثال: https://drive.google.com/file/d/FILE_ID/view?usp=drive_link
-            // يتحول إلى: https://drive.google.com/uc?id=FILE_ID
-            if (logoUrl && logoUrl.includes('drive.google.com/file/d/')) {
-                const match = logoUrl.match(/\/file\/d\/([^\/\?]+)/);
-                if (match && match[1]) {
-                    logoUrl = 'https://drive.google.com/uc?id=' + match[1];
-                }
-            }
-
-            // التحقق من أن الرابط صالح (ليس مجلد)
-            if (logoUrl && !logoUrl.includes('/folders/')) {
-                companyLogo = logoUrl;
-            }
-            Logger.log('🖼️ Company logo URL: ' + (companyLogo ? companyLogo : 'Not found'));
-        }
-    } catch (e) {
-        Logger.log('⚠️ Could not get company logo: ' + e.message);
-    }
-
-    // ═══════════════════════════════════════════════════════════
     // جلب بيانات الطرف
     // ═══════════════════════════════════════════════════════════
     const partyData = getPartyData_(ss, partyName, partyType);
 
     // ═══════════════════════════════════════════════════════════
     // تحديد عنوان الكشف ولون التبويب حسب نوع الطرف
-    // ⭐ استخدام ألوان CONFIG الموحدة
     // ═══════════════════════════════════════════════════════════
     let titlePrefix = 'كشف حساب';
     let tabColor = '#4a86e8';
@@ -573,7 +541,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     sheet.setRightToLeft(true);
 
     // ═══════════════════════════════════════════════════════════
-    // عرض الأعمدة (6 أعمدة بدون طبيعة الحركة والبند)
+    // عرض الأعمدة (6 أعمدة)
     // ═══════════════════════════════════════════════════════════
     sheet.setColumnWidth(1, 110);  // التاريخ
     sheet.setColumnWidth(2, 160);  // المشروع
@@ -583,11 +551,11 @@ function generateStatementForBot_(ss, partyName, partyType) {
     sheet.setColumnWidth(6, 130);  // الرصيد
 
     // ═══════════════════════════════════════════════════════════
-    // العنوان الرئيسي - ⭐ استخدام ألوان CONFIG الموحدة
+    // العنوان الرئيسي (بدون إيموجي)
     // ═══════════════════════════════════════════════════════════
     sheet.getRange('A1:F1').merge();
     sheet.getRange('A1')
-        .setValue('📊 ' + titlePrefix)
+        .setValue(titlePrefix)
         .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
         .setFontColor(CONFIG.COLORS.TEXT.WHITE)
         .setFontWeight('bold')
@@ -596,46 +564,9 @@ function generateStatementForBot_(ss, partyName, partyType) {
         .setVerticalAlignment('middle');
 
     // ═══════════════════════════════════════════════════════════
-    // إضافة اللوجو من Google Drive (باستخدام insertImage)
+    // كارت بيانات الطرف
     // ═══════════════════════════════════════════════════════════
-    let logoRowOffset = 0;
-    if (companyLogo) {
-        try {
-            // استخراج File ID من الرابط
-            let fileId = '';
-            if (companyLogo.includes('uc?id=')) {
-                fileId = companyLogo.split('uc?id=')[1].split('&')[0];
-            } else if (companyLogo.includes('/file/d/')) {
-                const match = companyLogo.match(/\/file\/d\/([^\/\?]+)/);
-                if (match) fileId = match[1];
-            }
-
-            if (fileId) {
-                // جلب الصورة من Drive وإدراجها
-                const file = DriveApp.getFileById(fileId);
-                const blob = file.getBlob();
-
-                // إدراج الصورة في الصف 2
-                sheet.setRowHeight(2, 80);
-                const image = sheet.insertImage(blob, 3, 2); // العمود C، الصف 2
-                image.setWidth(70);
-                image.setHeight(70);
-
-                logoRowOffset = 1;
-                Logger.log('✅ Logo inserted from Drive: ' + fileId);
-            } else {
-                Logger.log('⚠️ Could not extract file ID from logo URL');
-            }
-        } catch (e) {
-            Logger.log('⚠️ Could not insert logo: ' + e.message);
-            logoRowOffset = 0;
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // كارت بيانات الطرف - ⭐ استخدام ألوان CONFIG الموحدة
-    // ═══════════════════════════════════════════════════════════
-    const cardHeaderRow = 3 + logoRowOffset;
+    const cardHeaderRow = 3;
     const cardDataStartRow = cardHeaderRow + 1;
 
     sheet.getRange('A' + cardHeaderRow + ':F' + cardHeaderRow).merge()
@@ -768,16 +699,16 @@ function generateStatementForBot_(ss, partyName, partyType) {
     );
 
     // ═══════════════════════════════════════════════════════════
-    // رأس جدول الحركات - ⭐ نفس الإيموجي والألوان
+    // رأس جدول الحركات (بدون إيموجي للتوافق مع PDF)
     // ═══════════════════════════════════════════════════════════
     const tableHeaderRow = summaryDataStartRow + 3;
     const headers = [
-        '📅 التاريخ',
-        '🎬 المشروع',
-        '📝 التفاصيل',
-        '💰 مدين (USD)',
-        '💸 دائن (USD)',
-        '📊 الرصيد (USD)'
+        'التاريخ',
+        'المشروع',
+        'التفاصيل',
+        'مدين (USD)',
+        'دائن (USD)',
+        'الرصيد (USD)'
     ];
 
     sheet.getRange(tableHeaderRow, 1, 1, headers.length)
@@ -819,7 +750,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // ═══════════════════════════════════════════════════════════
     const footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
     sheet.getRange('A' + footerRow + ':F' + footerRow).merge()
-        .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm') + ' | تم إنشاؤه بواسطة AI Bot')
+        .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm') + ' | حقوق النظام محفوظة لـ ديوان للحسابات aldewan.net')
         .setHorizontalAlignment('center')
         .setFontSize(9)
         .setFontColor('#757575');
