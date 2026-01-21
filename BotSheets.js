@@ -649,6 +649,11 @@ function addBotTransaction(transactionData) {
     rowData[columns.ATTACHMENT_URL.index - 1] = transactionData.attachmentUrl || '';
     rowData[columns.IS_NEW_PARTY.index - 1] = transactionData.isNewParty ? 'نعم' : 'لا';
 
+    // ✅ عدد الوحدات (جديد)
+    if (transactionData.unitCount && Number(transactionData.unitCount) > 0) {
+        rowData[columns.UNIT_COUNT.index - 1] = Number(transactionData.unitCount);
+    }
+
     // إضافة الصف
     sheet.getRange(newRow, 1, 1, rowData.length).setValues([rowData]);
 
