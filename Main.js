@@ -1035,7 +1035,8 @@ function createTransactionsSheet(ss) {
     'الشهر',               // 23 - W
     'ملاحظات',             // 24 - X
     '📄 كشف',              // 25 - Y (عمود روابط كشف الحساب)
-    'رقم الأوردر'          // 26 - Z (لربط الحركات المشتركة)
+    'رقم الأوردر',         // 26 - Z (لربط الحركات المشتركة)
+    'عدد الوحدات'          // 27 - AA (لحساب تكلفة الوحدة)
   ];
 
   sheet.getRange(1, 1, 1, headers.length)
@@ -1073,7 +1074,8 @@ function createTransactionsSheet(ss) {
     90,   // W
     250,  // X
     60,   // Y (كشف)
-    120   // Z (رقم الأوردر)
+    120,  // Z (رقم الأوردر)
+    100   // AA (عدد الوحدات)
   ];
   widths.forEach((width, i) => sheet.setColumnWidth(i + 1, width));
 
@@ -12453,6 +12455,13 @@ function saveTransactionData(formData) {
 
   // Y: كشف (رابط) - نتركه فارغاً
 
+  // Z: رقم الأوردر - نتركه فارغاً (يُستخدم فقط في الأوردر المشترك)
+
+  // AA: عدد الوحدات (اختياري - لحساب تكلفة الوحدة)
+  if (formData.unitCount && Number(formData.unitCount) > 0) {
+    sheet.getRange(newRow, 27).setValue(Number(formData.unitCount));
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // تأكيد الكتابة
   // ═══════════════════════════════════════════════════════════════
@@ -12715,10 +12724,16 @@ function showSharedOrderForm() {
 
         <div class="form-group">
           <label>📁 البند</label>
-          <select id="item">
+          <select id="item" onchange="onItemChange()">
             <option value="">اختر البند...</option>
             ${items.map(i => '<option value="' + i + '">' + i + '</option>').join('')}
           </select>
+        </div>
+
+        <div class="form-group" id="unitCountSection" style="display:none; background: #e8f5e9; padding: 10px; border-radius: 5px; border: 1px solid #a5d6a7;">
+          <label>📊 عدد الوحدات الإجمالي <span id="unitTypeLabel" style="color: #2e7d32;"></span></label>
+          <input type="number" id="totalUnitCount" min="0" step="1" placeholder="اختياري - سيتم توزيعه على المشاريع">
+          <small style="color: #666; font-size: 11px;">💡 سيتم توزيع الوحدات على المشاريع بنفس نسبة الضيوف</small>
         </div>
 
         <div class="form-group">
@@ -12802,6 +12817,36 @@ function showSharedOrderForm() {
       <script>
         const projects = ${JSON.stringify(projects)};
         let projectIndex = 1;
+
+        // جدول ربط البنود بأنواع الوحدات
+        const unitTypes = {
+          'تصوير': 'مقابلة',
+          'مونتاج': 'دقيقة',
+          'مكساج': 'دقيقة',
+          'دوبلاج': 'دقيقة',
+          'تلوين': 'دقيقة',
+          'جرافيك - رسم': 'رسمة',
+          'فيكسر': 'مشهد',
+          'تعليق صوتي': 'دقيقة',
+          'اقتباسات': 'اقتباس'
+        };
+
+        // عند تغيير البند - إظهار/إخفاء حقل الوحدات
+        function onItemChange() {
+          const item = document.getElementById('item').value;
+          const unitSection = document.getElementById('unitCountSection');
+          const unitTypeLabel = document.getElementById('unitTypeLabel');
+          const unitType = unitTypes[item];
+
+          if (unitType) {
+            unitSection.style.display = 'block';
+            unitTypeLabel.textContent = '(' + unitType + ')';
+          } else {
+            unitSection.style.display = 'none';
+            unitTypeLabel.textContent = '';
+            document.getElementById('totalUnitCount').value = '';
+          }
+        }
 
         function togglePaymentFields() {
           const termType = document.getElementById('paymentTermType').value;
@@ -12957,6 +13002,9 @@ function showSharedOrderForm() {
           document.getElementById('formContent').style.display = 'none';
           document.getElementById('loading').style.display = 'block';
 
+          // عدد الوحدات الإجمالي (اختياري)
+          const totalUnitCount = parseInt(document.getElementById('totalUnitCount').value) || 0;
+
           // إرسال البيانات
           const orderData = {
             orderNumber: '${suggestedOrderNumber}',
@@ -12964,6 +13012,7 @@ function showSharedOrderForm() {
             vendor: vendor,
             item: item,
             totalAmount: totalAmount,
+            totalUnitCount: totalUnitCount,  // عدد الوحدات الإجمالي (سيتم توزيعه على المشاريع)
             orderDescription: orderDescription,  // وصف عام للأوردر
             projects: projectsData,  // كل مشروع له تفاصيله الخاصة
             totalGuests: totalGuests,
@@ -13065,11 +13114,14 @@ function saveSharedOrder(orderData) {
 
     const savedRows = [];
     const totalGuests = orderData.totalGuests;
+    const totalUnitCount = orderData.totalUnitCount || 0; // عدد الوحدات الإجمالي (اختياري)
 
     // حفظ حركة لكل مشروع
     for (const project of orderData.projects) {
       // حساب حصة المشروع بناءً على عدد الضيوف
       const share = (project.guests / totalGuests) * orderData.totalAmount;
+      // حساب حصة المشروع من الوحدات (بنفس نسبة الضيوف)
+      const unitShare = totalUnitCount > 0 ? Math.round((project.guests / totalGuests) * totalUnitCount) : 0;
       const projectName = projectsData[project.code] || '';
 
       // حساب رقم الحركة الجديد
@@ -13165,13 +13217,19 @@ function saveSharedOrder(orderData) {
       // Z: رقم الأوردر (عمود 26)
       sheet.getRange(newRow, 26).setValue(orderData.orderNumber);
 
+      // AA: عدد الوحدات (عمود 27) - حصة المشروع من الوحدات
+      if (unitShare > 0) {
+        sheet.getRange(newRow, 27).setValue(unitShare);
+      }
+
       savedRows.push({
         row: newRow,
         transNum: newTransNum,
         project: project.code,
         amount: share,
         details: project.details || '',
-        guests: project.guests
+        guests: project.guests,
+        units: unitShare  // إضافة الوحدات للملخص
       });
     }
 
@@ -13205,20 +13263,29 @@ function saveSharedOrder(orderData) {
       }
     );
 
-    // رسالة النجاح مع تفاصيل الضيوف
+    // رسالة النجاح مع تفاصيل الضيوف والوحدات
     const projectsList = savedRows.map(r => {
       let line = `• ${r.project}: $${r.amount.toFixed(2)} (${r.guests} ضيوف)`;
+      if (r.units > 0) {
+        line += ` [${r.units} وحدات]`;
+      }
       if (r.details) {
         line += `\\n  ↳ ${r.details}`;
       }
       return line;
     }).join('\\n');
 
+    // إضافة معلومات الوحدات للرسالة إذا كانت موجودة
+    let unitsInfo = '';
+    if (totalUnitCount > 0) {
+      unitsInfo = `\\nإجمالي الوحدات: ${totalUnitCount}`;
+    }
+
     return {
       success: true,
       message: `رقم الأوردر: ${orderData.orderNumber}\\n` +
                `المورد: ${orderData.vendor}\\n` +
-               `الإجمالي: $${orderData.totalAmount.toFixed(2)}\\n` +
+               `الإجمالي: $${orderData.totalAmount.toFixed(2)}${unitsInfo}\\n` +
                `عدد الحركات: ${savedRows.length}\\n\\n` +
                `التوزيع:\\n${projectsList}`
     };

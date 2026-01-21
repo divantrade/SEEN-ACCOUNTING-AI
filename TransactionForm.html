@@ -423,7 +423,7 @@
         <div class="form-row">
           <div class="form-group half">
             <label><span class="icon">📄</span> البند <span class="required">*</span></label>
-            <select id="item" required>
+            <select id="item" required onchange="onItemChange()">
               <option value="">-- اختر --</option>
             </select>
           </div>
@@ -433,6 +433,15 @@
               <option value="">-- اختر --</option>
             </select>
           </div>
+        </div>
+
+        <!-- عدد الوحدات (يظهر فقط للبنود التي تحتاج وحدات) -->
+        <div id="unitCountSection" class="form-group" style="display: none; background: #e8f5e9; padding: 12px; border-radius: 10px; border: 1px solid #a5d6a7;">
+          <label><span class="icon">📊</span> عدد الوحدات <span id="unitTypeLabel" style="color: #2e7d32; font-weight: normal;"></span></label>
+          <input type="number" id="unitCount" min="0" step="1" placeholder="اختياري - مثال: 5" />
+          <small style="color: #666; font-size: 11px; margin-top: 4px; display: block;">
+            💡 هذا الحقل اختياري - يُستخدم لحساب تكلفة الوحدة في التقارير
+          </small>
         </div>
 
         <!-- التفاصيل -->
@@ -723,6 +732,39 @@
       }
     }
 
+    // عند تغيير البند - للتحكم في ظهور حقل عدد الوحدات
+    function onItemChange() {
+      const item = document.getElementById('item').value;
+      const unitSection = document.getElementById('unitCountSection');
+      const unitTypeLabel = document.getElementById('unitTypeLabel');
+      const unitCountInput = document.getElementById('unitCount');
+
+      // جدول ربط البنود بأنواع الوحدات
+      const unitTypes = dropdownData.unitTypes || {
+        'تصوير': 'مقابلة',
+        'مونتاج': 'دقيقة',
+        'مكساج': 'دقيقة',
+        'دوبلاج': 'دقيقة',
+        'تلوين': 'دقيقة',
+        'جرافيك - رسم': 'رسمة',
+        'فيكسر': 'مشهد',
+        'تعليق صوتي': 'دقيقة',
+        'اقتباسات': 'اقتباس'
+      };
+
+      const unitType = unitTypes[item];
+
+      if (unitType) {
+        unitSection.style.display = 'block';
+        unitTypeLabel.textContent = '(' + unitType + ')';
+        unitCountInput.placeholder = 'مثال: 5 ' + unitType;
+      } else {
+        unitSection.style.display = 'none';
+        unitTypeLabel.textContent = '';
+        unitCountInput.value = '';
+      }
+    }
+
     // عند تغيير العملة
     function onCurrencyChange() {
       const currency = document.getElementById('currency').value;
@@ -791,6 +833,7 @@
         item: document.getElementById('item').value,
         partyName: document.getElementById('partyName').value,
         details: document.getElementById('details').value,
+        unitCount: document.getElementById('unitCount').value || '',  // عدد الوحدات (اختياري)
         amount: document.getElementById('amount').value,
         currency: document.getElementById('currency').value,
         exchangeRate: document.getElementById('exchangeRate').value || '1',
@@ -905,6 +948,10 @@
       document.getElementById('paymentSection').classList.add('hidden');
       document.getElementById('weeksField').classList.remove('show');
       document.getElementById('customDueDateField').classList.remove('show');
+      // إعادة إخفاء قسم عدد الوحدات
+      document.getElementById('unitCountSection').style.display = 'none';
+      document.getElementById('unitCount').value = '';
+      document.getElementById('unitTypeLabel').textContent = '';
       // إعادة إخفاء قسم JSON وزر الحفظ
       document.getElementById('btnSavePending').style.display = 'none';
       document.getElementById('jsonSection').style.display = 'none';
