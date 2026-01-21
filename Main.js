@@ -13245,6 +13245,18 @@ function showCombinedBudgetReportForm() {
     return;
   }
 
+  // بناء HTML قائمة المشاريع
+  let projectsHtml = '';
+  for (let i = 0; i < projects.length; i++) {
+    const p = projects[i];
+    projectsHtml += '<label class="project-item">' +
+      '<input type="checkbox" name="project" value="' + p.code + '" onchange="updateCount()">' +
+      '<div class="project-info">' +
+      '<div class="project-code">' + p.code + '</div>' +
+      '<div class="project-name">' + p.name + '</div>' +
+      '</div></label>';
+  }
+
   const html = HtmlService.createHtmlOutput(`
     <!DOCTYPE html>
     <html dir="rtl">
@@ -13354,15 +13366,7 @@ function showCombinedBudgetReportForm() {
         </div>
 
         <div class="projects-list">
-          ${projects.map((p, i) => \`
-            <label class="project-item">
-              <input type="checkbox" name="project" value="\${p.code}" onchange="updateCount()">
-              <div class="project-info">
-                <div class="project-code">\${p.code}</div>
-                <div class="project-name">\${p.name}</div>
-              </div>
-            </label>
-          \`).join('')}
+          ${projectsHtml}
         </div>
 
         <div class="selected-count" id="selectedCount">
