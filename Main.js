@@ -24,6 +24,7 @@ function onOpen() {
     // ═══════════════════════════════════════════════════════════
     .addItem('➕ إضافة حركة جديدة (نموذج)', 'showTransactionForm')
     .addItem('⚡ إضافة حركة سريعة', 'quickTransactionEntry')
+    .addItem('📦 أوردر مشترك (تقسيم بين مشاريع)', 'showSharedOrderForm')
     .addItem('🧾 إنشاء فاتورة قناة', 'generateChannelInvoice')
     .addItem('🔄 إعادة طباعة فاتورة', 'regenerateChannelInvoice')
     .addSeparator()
@@ -1032,7 +1033,8 @@ function createTransactionsSheet(ss) {
     'حالة السداد',         // 22 - V
     'الشهر',               // 23 - W
     'ملاحظات',             // 24 - X
-    '📄 كشف'               // 25 - Y (عمود روابط كشف الحساب)
+    '📄 كشف',              // 25 - Y (عمود روابط كشف الحساب)
+    'رقم الأوردر'          // 26 - Z (لربط الحركات المشتركة)
   ];
 
   sheet.getRange(1, 1, 1, headers.length)
@@ -1069,7 +1071,8 @@ function createTransactionsSheet(ss) {
     130,  // V
     90,   // W
     250,  // X
-    60    // Y (كشف)
+    60,   // Y (كشف)
+    120   // Z (رقم الأوردر)
   ];
   widths.forEach((width, i) => sheet.setColumnWidth(i + 1, width));
 
@@ -5026,14 +5029,15 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   sheet.setRightToLeft(true);
 
   // ═══════════════════════════════════════════════════════════
-  // عرض الأعمدة (6 أعمدة بدون طبيعة الحركة والبند)
+  // عرض الأعمدة (7 أعمدة مع رقم الأوردر)
   // ═══════════════════════════════════════════════════════════
   sheet.setColumnWidth(1, 110);  // التاريخ
   sheet.setColumnWidth(2, 160);  // المشروع
-  sheet.setColumnWidth(3, 250);  // التفاصيل
-  sheet.setColumnWidth(4, 130);  // مدين
-  sheet.setColumnWidth(5, 130);  // دائن
-  sheet.setColumnWidth(6, 130);  // الرصيد
+  sheet.setColumnWidth(3, 130);  // رقم الأوردر
+  sheet.setColumnWidth(4, 220);  // التفاصيل
+  sheet.setColumnWidth(5, 120);  // مدين
+  sheet.setColumnWidth(6, 120);  // دائن
+  sheet.setColumnWidth(7, 120);  // الرصيد
 
   // ═══════════════════════════════════════════════════════════
   // بيانات الطرف من القاعدة
@@ -5043,7 +5047,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   // ═══════════════════════════════════════════════════════════
   // العنوان الرئيسي
   // ═══════════════════════════════════════════════════════════
-  sheet.getRange('A1:F1').merge();
+  sheet.getRange('A1:G1').merge();
   sheet.getRange('A1')
     .setValue('📊 ' + titlePrefix)
     .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
@@ -5096,34 +5100,34 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const cardHeaderRow = 3 + logoRowOffset;
   const cardDataStartRow = cardHeaderRow + 1;
 
-  sheet.getRange('A' + cardHeaderRow + ':F' + cardHeaderRow).merge()
+  sheet.getRange('A' + cardHeaderRow + ':G' + cardHeaderRow).merge()
     .setValue('بيانات ' + partyType)
     .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  sheet.getRange('A' + cardDataStartRow + ':F' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+  sheet.getRange('A' + cardDataStartRow + ':G' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
   sheet.getRange('A' + cardDataStartRow).setValue('الاسم:').setFontWeight('bold');
-  sheet.getRange('B' + cardDataStartRow + ':C' + cardDataStartRow).merge().setValue(partyName);
+  sheet.getRange('B' + cardDataStartRow + ':D' + cardDataStartRow).merge().setValue(partyName);
 
-  sheet.getRange('D' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
-  sheet.getRange('E' + cardDataStartRow + ':F' + cardDataStartRow).merge().setValue(partyData.specialization || '');
+  sheet.getRange('E' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
+  sheet.getRange('F' + cardDataStartRow + ':G' + cardDataStartRow).merge().setValue(partyData.specialization || '');
 
   sheet.getRange('A' + (cardDataStartRow + 1)).setValue('الهاتف:').setFontWeight('bold');
-  sheet.getRange('B' + (cardDataStartRow + 1) + ':C' + (cardDataStartRow + 1)).merge().setValue(partyData.phone || '');
+  sheet.getRange('B' + (cardDataStartRow + 1) + ':D' + (cardDataStartRow + 1)).merge().setValue(partyData.phone || '');
 
-  sheet.getRange('D' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
-  sheet.getRange('E' + (cardDataStartRow + 1) + ':F' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
+  sheet.getRange('E' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
+  sheet.getRange('F' + (cardDataStartRow + 1) + ':G' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
 
   sheet.getRange('A' + (cardDataStartRow + 2)).setValue('البنك:').setFontWeight('bold');
-  sheet.getRange('B' + (cardDataStartRow + 2) + ':F' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
+  sheet.getRange('B' + (cardDataStartRow + 2) + ':G' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
 
   sheet.getRange('A' + (cardDataStartRow + 3)).setValue('ملاحظات:').setFontWeight('bold');
-  sheet.getRange('B' + (cardDataStartRow + 3) + ':F' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
+  sheet.getRange('B' + (cardDataStartRow + 3) + ':G' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
 
-  sheet.getRange('A' + cardDataStartRow + ':F' + (cardDataStartRow + 3)).setBorder(
+  sheet.getRange('A' + cardDataStartRow + ':G' + (cardDataStartRow + 3)).setBorder(
     true, true, true, true, true, true,
     '#1565c0', SpreadsheetApp.BorderStyle.SOLID
   );
@@ -5151,6 +5155,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     const date = row[1];       // B: التاريخ
     const project = row[5];    // F: اسم المشروع
     const details = row[7];    // H: التفاصيل
+    const orderNumber = row[25] || '';  // Z: رقم الأوردر
 
     let debit = 0, credit = 0;
 
@@ -5168,6 +5173,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     rows.push([
       date,
       project || '',
+      orderNumber,
       details || '',
       debit || '',
       credit || '',
@@ -5185,10 +5191,10 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   // إعادة حساب الرصيد بعد الترتيب
   balance = 0;
   for (let i = 0; i < rows.length; i++) {
-    const debit = rows[i][3] || 0;
-    const credit = rows[i][4] || 0;
+    const debit = rows[i][4] || 0;
+    const credit = rows[i][5] || 0;
     balance += debit - credit;
-    rows[i][5] = Math.round(balance * 100) / 100;
+    rows[i][6] = Math.round(balance * 100) / 100;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -5197,14 +5203,14 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const summaryHeaderRow = cardDataStartRow + 5;
   const summaryDataStartRow = summaryHeaderRow + 1;
 
-  sheet.getRange('A' + summaryHeaderRow + ':F' + summaryHeaderRow).merge()
+  sheet.getRange('A' + summaryHeaderRow + ':G' + summaryHeaderRow).merge()
     .setValue('الملخص المالي')
     .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  sheet.getRange('A' + summaryDataStartRow + ':F' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+  sheet.getRange('A' + summaryDataStartRow + ':G' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
   sheet.getRange('A' + summaryDataStartRow).setValue('إجمالي المدين:').setFontWeight('bold');
   sheet.getRange('B' + summaryDataStartRow).setValue(totalDebit).setNumberFormat('$#,##0.00');
@@ -5217,10 +5223,10 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setFontWeight('bold')
     .setBackground(balance > 0 ? '#ffcdd2' : '#c8e6c9');
 
-  sheet.getRange('D' + (summaryDataStartRow + 1)).setValue('عدد الحركات:').setFontWeight('bold');
-  sheet.getRange('E' + (summaryDataStartRow + 1)).setValue(rows.length);
+  sheet.getRange('E' + (summaryDataStartRow + 1)).setValue('عدد الحركات:').setFontWeight('bold');
+  sheet.getRange('F' + (summaryDataStartRow + 1)).setValue(rows.length);
 
-  sheet.getRange('A' + summaryDataStartRow + ':F' + (summaryDataStartRow + 1)).setBorder(
+  sheet.getRange('A' + summaryDataStartRow + ':G' + (summaryDataStartRow + 1)).setBorder(
     true, true, true, true, true, true,
     '#1565c0', SpreadsheetApp.BorderStyle.SOLID
   );
@@ -5232,6 +5238,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const headers = [
     '📅 التاريخ',
     '🎬 المشروع',
+    '📦 رقم الأوردر',
     '📝 التفاصيل',
     '💰 مدين (USD)',
     '💸 دائن (USD)',
@@ -5253,7 +5260,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   if (rows.length > 0) {
     sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
     sheet.getRange(dataStartRow, 1, rows.length, 1).setNumberFormat('dd/mm/yyyy');
-    sheet.getRange(dataStartRow, 4, rows.length, 3).setNumberFormat('$#,##0.00');
+    sheet.getRange(dataStartRow, 5, rows.length, 3).setNumberFormat('$#,##0.00');
 
     // تلوين متناوب للصفوف
     for (let i = 0; i < rows.length; i++) {
@@ -5276,10 +5283,10 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   // ═══════════════════════════════════════════════════════════
   const footerStart = dataStartRow + Math.max(rows.length, 1) + 3;
 
-  sheet.getRange(footerStart, 1, 1, 6).merge()
+  sheet.getRange(footerStart, 1, 1, 7).merge()
     .setBackground(CONFIG.COLORS.HEADER.DASHBOARD);
 
-  sheet.getRange(footerStart + 1, 1, 3, 6).merge()
+  sheet.getRange(footerStart + 1, 1, 3, 7).merge()
     .setValue(
       "Seen Film\n" +
       "info@seenfilm.net | www.seenfilm.net\n" +
@@ -12484,4 +12491,610 @@ function saveTransactionData(formData) {
     transNum: newTransNum,
     summary: summaryText
   };
+}
+
+// ==================== نظام الأوردر المشترك ====================
+/**
+ * إنشاء رقم أوردر فريد
+ * الصيغة: ORD-YYMMDD-NNN
+ * مثال: ORD-250121-001
+ */
+function generateOrderNumber() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+
+  if (!sheet) {
+    throw new Error('شيت دفتر الحركات المالية غير موجود');
+  }
+
+  const today = new Date();
+  const dateStr = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyMMdd');
+  const prefix = `ORD-${dateStr}-`;
+
+  // البحث عن آخر رقم أوردر لنفس اليوم
+  const lastRow = sheet.getLastRow();
+  let maxSeq = 0;
+
+  if (lastRow > 1) {
+    // عمود Z (26) = رقم الأوردر
+    const orderNumbers = sheet.getRange(2, 26, lastRow - 1, 1).getValues();
+
+    for (const row of orderNumbers) {
+      const orderNum = String(row[0] || '').trim();
+      if (orderNum.startsWith(prefix)) {
+        const seqPart = orderNum.substring(prefix.length);
+        const seq = parseInt(seqPart, 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    }
+  }
+
+  // الرقم التسلسلي الجديد
+  const newSeq = String(maxSeq + 1).padStart(3, '0');
+  return prefix + newSeq;
+}
+
+/**
+ * عرض نموذج الأوردر المشترك
+ */
+function showSharedOrderForm() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+
+  // جلب قوائم البيانات
+  const vendors = getVendorsList_();
+  const items = getItemsList_();
+  const projects = getProjectsList_();
+
+  // إنشاء رقم الأوردر المقترح
+  const suggestedOrderNumber = generateOrderNumber();
+
+  const html = HtmlService.createHtmlOutput(`
+    <!DOCTYPE html>
+    <html dir="rtl">
+    <head>
+      <base target="_top">
+      <style>
+        * { box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { padding: 20px; background: #f5f5f5; margin: 0; }
+        h2 { color: #1a73e8; margin-bottom: 20px; text-align: center; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        input, select, textarea {
+          width: 100%;
+          padding: 10px;
+          border: 1px solid #ddd;
+          border-radius: 5px;
+          font-size: 14px;
+        }
+        input:focus, select:focus { border-color: #1a73e8; outline: none; }
+        .order-info {
+          background: #e8f5e9;
+          padding: 15px;
+          border-radius: 8px;
+          margin-bottom: 20px;
+          border: 1px solid #4caf50;
+        }
+        .order-number {
+          font-size: 18px;
+          font-weight: bold;
+          color: #2e7d32;
+          text-align: center;
+        }
+        .projects-section {
+          background: #fff;
+          padding: 15px;
+          border-radius: 8px;
+          border: 1px solid #ddd;
+          margin-bottom: 15px;
+        }
+        .projects-section h3 { margin-top: 0; color: #555; }
+        .project-row {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          margin-bottom: 10px;
+          padding: 10px;
+          background: #f9f9f9;
+          border-radius: 5px;
+        }
+        .project-row select { flex: 2; }
+        .project-row input { flex: 1; width: 80px; }
+        .project-row .remove-btn {
+          background: #f44336;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 5px;
+          cursor: pointer;
+        }
+        .add-project-btn {
+          background: #4caf50;
+          color: white;
+          border: none;
+          padding: 10px 20px;
+          border-radius: 5px;
+          cursor: pointer;
+          width: 100%;
+        }
+        .summary-section {
+          background: #fff3e0;
+          padding: 15px;
+          border-radius: 8px;
+          margin-bottom: 15px;
+          border: 1px solid #ff9800;
+        }
+        .summary-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+        .summary-row.total {
+          font-weight: bold;
+          font-size: 16px;
+          border-top: 2px solid #ff9800;
+          padding-top: 10px;
+        }
+        .btn-primary {
+          background: #1a73e8;
+          color: white;
+          border: none;
+          padding: 12px 30px;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 16px;
+          width: 100%;
+        }
+        .btn-primary:hover { background: #1557b0; }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+        .error { color: #f44336; font-size: 12px; }
+        .loading { text-align: center; padding: 20px; display: none; }
+        .spinner {
+          border: 3px solid #f3f3f3;
+          border-top: 3px solid #1a73e8;
+          border-radius: 50%;
+          width: 30px;
+          height: 30px;
+          animation: spin 1s linear infinite;
+          margin: 0 auto;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      </style>
+    </head>
+    <body>
+      <h2>📦 أوردر مشترك (تقسيم بين مشاريع)</h2>
+
+      <div class="order-info">
+        <div class="order-number">رقم الأوردر: ${suggestedOrderNumber}</div>
+      </div>
+
+      <div id="formContent">
+        <div class="form-group">
+          <label>📅 التاريخ</label>
+          <input type="date" id="orderDate" value="${Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd')}">
+        </div>
+
+        <div class="form-group">
+          <label>👤 المورد</label>
+          <select id="vendor">
+            <option value="">اختر المورد...</option>
+            ${vendors.map(v => '<option value="' + v + '">' + v + '</option>').join('')}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>📁 البند</label>
+          <select id="item">
+            <option value="">اختر البند...</option>
+            ${items.map(i => '<option value="' + i + '">' + i + '</option>').join('')}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>💵 إجمالي المبلغ (USD)</label>
+          <input type="number" id="totalAmount" step="0.01" min="0" placeholder="0.00" onchange="calculateDistribution()">
+        </div>
+
+        <div class="form-group">
+          <label>📝 التفاصيل</label>
+          <textarea id="details" rows="2" placeholder="وصف الأوردر..."></textarea>
+        </div>
+
+        <div class="projects-section">
+          <h3>🎬 المشاريع والضيوف</h3>
+          <div id="projectsList">
+            <div class="project-row" data-index="0">
+              <select class="project-select" onchange="calculateDistribution()">
+                <option value="">اختر المشروع...</option>
+                ${projects.map(p => '<option value="' + p.code + '">' + p.code + ' - ' + p.name + '</option>').join('')}
+              </select>
+              <input type="number" class="guest-count" min="1" value="1" placeholder="عدد الضيوف" onchange="calculateDistribution()">
+              <button type="button" class="remove-btn" onclick="removeProject(0)" style="display:none;">✕</button>
+            </div>
+          </div>
+          <button type="button" class="add-project-btn" onclick="addProject()">+ إضافة مشروع</button>
+        </div>
+
+        <div class="summary-section" id="summarySection" style="display:none;">
+          <h3>📊 ملخص التوزيع</h3>
+          <div id="distributionSummary"></div>
+        </div>
+
+        <button type="button" class="btn-primary" id="submitBtn" onclick="submitOrder()">
+          💾 حفظ الأوردر المشترك
+        </button>
+      </div>
+
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>جاري حفظ الأوردر...</p>
+      </div>
+
+      <script>
+        const projects = ${JSON.stringify(projects)};
+        let projectIndex = 1;
+
+        function addProject() {
+          const container = document.getElementById('projectsList');
+          const div = document.createElement('div');
+          div.className = 'project-row';
+          div.dataset.index = projectIndex;
+          div.innerHTML = \`
+            <select class="project-select" onchange="calculateDistribution()">
+              <option value="">اختر المشروع...</option>
+              \${projects.map(p => '<option value="' + p.code + '">' + p.code + ' - ' + p.name + '</option>').join('')}
+            </select>
+            <input type="number" class="guest-count" min="1" value="1" placeholder="عدد الضيوف" onchange="calculateDistribution()">
+            <button type="button" class="remove-btn" onclick="removeProject(\${projectIndex})">✕</button>
+          \`;
+          container.appendChild(div);
+          projectIndex++;
+          updateRemoveButtons();
+          calculateDistribution();
+        }
+
+        function removeProject(index) {
+          const row = document.querySelector('.project-row[data-index="' + index + '"]');
+          if (row) row.remove();
+          updateRemoveButtons();
+          calculateDistribution();
+        }
+
+        function updateRemoveButtons() {
+          const rows = document.querySelectorAll('.project-row');
+          rows.forEach((row, i) => {
+            const btn = row.querySelector('.remove-btn');
+            btn.style.display = rows.length > 1 ? 'block' : 'none';
+          });
+        }
+
+        function calculateDistribution() {
+          const totalAmount = parseFloat(document.getElementById('totalAmount').value) || 0;
+          const rows = document.querySelectorAll('.project-row');
+          const summarySection = document.getElementById('summarySection');
+          const summaryDiv = document.getElementById('distributionSummary');
+
+          if (totalAmount <= 0 || rows.length === 0) {
+            summarySection.style.display = 'none';
+            return;
+          }
+
+          let totalGuests = 0;
+          const projectData = [];
+
+          rows.forEach(row => {
+            const select = row.querySelector('.project-select');
+            const guestInput = row.querySelector('.guest-count');
+            const projectCode = select.value;
+            const guests = parseInt(guestInput.value) || 0;
+
+            if (projectCode && guests > 0) {
+              const projectInfo = projects.find(p => p.code === projectCode);
+              projectData.push({
+                code: projectCode,
+                name: projectInfo ? projectInfo.name : '',
+                guests: guests
+              });
+              totalGuests += guests;
+            }
+          });
+
+          if (totalGuests === 0 || projectData.length === 0) {
+            summarySection.style.display = 'none';
+            return;
+          }
+
+          let html = '';
+          projectData.forEach(p => {
+            const share = (p.guests / totalGuests) * totalAmount;
+            html += '<div class="summary-row">';
+            html += '<span>' + p.code + ' (' + p.guests + ' ضيوف)</span>';
+            html += '<span>$' + share.toFixed(2) + '</span>';
+            html += '</div>';
+          });
+
+          html += '<div class="summary-row total">';
+          html += '<span>الإجمالي (' + totalGuests + ' ضيوف)</span>';
+          html += '<span>$' + totalAmount.toFixed(2) + '</span>';
+          html += '</div>';
+
+          summaryDiv.innerHTML = html;
+          summarySection.style.display = 'block';
+        }
+
+        function submitOrder() {
+          // التحقق من البيانات
+          const vendor = document.getElementById('vendor').value;
+          const item = document.getElementById('item').value;
+          const totalAmount = parseFloat(document.getElementById('totalAmount').value) || 0;
+          const orderDate = document.getElementById('orderDate').value;
+          const details = document.getElementById('details').value;
+
+          if (!vendor) {
+            alert('برجاء اختيار المورد');
+            return;
+          }
+          if (!item) {
+            alert('برجاء اختيار البند');
+            return;
+          }
+          if (totalAmount <= 0) {
+            alert('برجاء إدخال المبلغ');
+            return;
+          }
+
+          // جمع بيانات المشاريع
+          const rows = document.querySelectorAll('.project-row');
+          const projectsData = [];
+          let totalGuests = 0;
+
+          rows.forEach(row => {
+            const select = row.querySelector('.project-select');
+            const guestInput = row.querySelector('.guest-count');
+            const projectCode = select.value;
+            const guests = parseInt(guestInput.value) || 0;
+
+            if (projectCode && guests > 0) {
+              projectsData.push({ code: projectCode, guests: guests });
+              totalGuests += guests;
+            }
+          });
+
+          if (projectsData.length === 0) {
+            alert('برجاء إضافة مشروع واحد على الأقل');
+            return;
+          }
+
+          // إظهار التحميل
+          document.getElementById('formContent').style.display = 'none';
+          document.getElementById('loading').style.display = 'block';
+
+          // إرسال البيانات
+          const orderData = {
+            orderNumber: '${suggestedOrderNumber}',
+            orderDate: orderDate,
+            vendor: vendor,
+            item: item,
+            totalAmount: totalAmount,
+            details: details,
+            projects: projectsData,
+            totalGuests: totalGuests
+          };
+
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result.success) {
+                alert('تم حفظ الأوردر بنجاح!\\n\\n' + result.message);
+                google.script.host.close();
+              } else {
+                alert('خطأ: ' + result.error);
+                document.getElementById('formContent').style.display = 'block';
+                document.getElementById('loading').style.display = 'none';
+              }
+            })
+            .withFailureHandler(function(error) {
+              alert('خطأ: ' + error.message);
+              document.getElementById('formContent').style.display = 'block';
+              document.getElementById('loading').style.display = 'none';
+            })
+            .saveSharedOrder(orderData);
+        }
+      </script>
+    </body>
+    </html>
+  `).setWidth(500).setHeight(700);
+
+  ui.showModalDialog(html, '📦 أوردر مشترك');
+}
+
+/**
+ * جلب قائمة الموردين
+ */
+function getVendorsList_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+  // فقط الموردين (النوع = مورد)
+  return data.filter(row => String(row[1]).includes('مورد')).map(row => row[0]).filter(Boolean);
+}
+
+/**
+ * جلب قائمة البنود
+ */
+function getItemsList_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+  return data.map(row => row[0]).filter(Boolean);
+}
+
+/**
+ * جلب قائمة المشاريع
+ */
+function getProjectsList_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+  return data.filter(row => row[0]).map(row => ({ code: row[0], name: row[1] || '' }));
+}
+
+/**
+ * حفظ الأوردر المشترك كحركات متعددة
+ */
+function saveSharedOrder(orderData) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+    const projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+
+    if (!sheet) {
+      return { success: false, error: 'شيت دفتر الحركات المالية غير موجود' };
+    }
+
+    // تحويل التاريخ
+    const dateParts = orderData.orderDate.split('-');
+    const transDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+
+    // جلب بيانات المشاريع
+    let projectsData = {};
+    if (projectsSheet && projectsSheet.getLastRow() > 1) {
+      const pData = projectsSheet.getRange(2, 1, projectsSheet.getLastRow() - 1, 2).getValues();
+      for (const row of pData) {
+        projectsData[row[0]] = row[1]; // code -> name
+      }
+    }
+
+    const savedRows = [];
+    const totalGuests = orderData.totalGuests;
+
+    // حفظ حركة لكل مشروع
+    for (const project of orderData.projects) {
+      // حساب حصة المشروع بناءً على عدد الضيوف
+      const share = (project.guests / totalGuests) * orderData.totalAmount;
+      const projectName = projectsData[project.code] || '';
+
+      // حساب رقم الحركة الجديد
+      const lastRow = sheet.getLastRow();
+      const newRow = lastRow + 1;
+      const newTransNum = lastRow > 1 ?
+        (Number(sheet.getRange(lastRow, 1).getValue()) || 0) + 1 : 1;
+
+      // التفاصيل مع معلومات التقسيم
+      const detailsText = orderData.details ?
+        `${orderData.details} | ${project.guests} ضيوف من ${totalGuests}` :
+        `أوردر مشترك - ${project.guests} ضيوف من ${totalGuests}`;
+
+      // الشهر
+      const monthStr = Utilities.formatDate(transDate, Session.getScriptTimeZone(), 'yyyy-MM');
+
+      // كتابة البيانات
+      // A: رقم الحركة
+      sheet.getRange(newRow, 1).setValue(newTransNum);
+
+      // B: التاريخ
+      sheet.getRange(newRow, 2).setValue(transDate).setNumberFormat('dd/mm/yyyy');
+
+      // C: طبيعة الحركة
+      sheet.getRange(newRow, 3).setValue('استحقاق مصروف');
+
+      // D: تصنيف الحركة
+      sheet.getRange(newRow, 4).setValue('مصروف');
+
+      // E: كود المشروع
+      sheet.getRange(newRow, 5).setValue(project.code);
+
+      // F: اسم المشروع
+      sheet.getRange(newRow, 6).setValue(projectName);
+
+      // G: البند
+      sheet.getRange(newRow, 7).setValue(orderData.item);
+
+      // H: التفاصيل
+      sheet.getRange(newRow, 8).setValue(detailsText);
+
+      // I: اسم المورد
+      sheet.getRange(newRow, 9).setValue(orderData.vendor);
+
+      // J: المبلغ
+      sheet.getRange(newRow, 10).setValue(share).setNumberFormat('#,##0.00');
+
+      // K: العملة
+      sheet.getRange(newRow, 11).setValue('USD');
+
+      // L: سعر الصرف
+      sheet.getRange(newRow, 12).setValue(1);
+
+      // M: القيمة بالدولار
+      sheet.getRange(newRow, 13).setValue(share).setNumberFormat('#,##0.00');
+
+      // N: نوع الحركة
+      sheet.getRange(newRow, 14).setValue('مدين استحقاق');
+
+      // O: الرصيد (سيُحسب لاحقاً)
+      // skip - will be calculated
+
+      // P: رقم مرجعي
+      sheet.getRange(newRow, 16).setValue(orderData.orderNumber);
+
+      // W: الشهر
+      sheet.getRange(newRow, 23).setValue(monthStr);
+
+      // Z: رقم الأوردر (عمود 26)
+      sheet.getRange(newRow, 26).setValue(orderData.orderNumber);
+
+      savedRows.push({
+        row: newRow,
+        transNum: newTransNum,
+        project: project.code,
+        amount: share
+      });
+    }
+
+    SpreadsheetApp.flush();
+
+    // تسجيل النشاط
+    logActivity(
+      'أوردر مشترك',
+      CONFIG.SHEETS.TRANSACTIONS,
+      savedRows[0].row,
+      orderData.orderNumber,
+      `${orderData.vendor} - ${orderData.totalAmount} USD - ${orderData.projects.length} مشاريع`,
+      {
+        orderNumber: orderData.orderNumber,
+        vendor: orderData.vendor,
+        totalAmount: orderData.totalAmount,
+        projectsCount: orderData.projects.length,
+        totalGuests: totalGuests
+      }
+    );
+
+    // رسالة النجاح
+    const projectsList = savedRows.map(r =>
+      `• ${r.project}: $${r.amount.toFixed(2)}`
+    ).join('\\n');
+
+    return {
+      success: true,
+      message: `رقم الأوردر: ${orderData.orderNumber}\\n` +
+               `المورد: ${orderData.vendor}\\n` +
+               `الإجمالي: $${orderData.totalAmount.toFixed(2)}\\n` +
+               `عدد الحركات: ${savedRows.length}\\n\\n` +
+               `التوزيع:\\n${projectsList}`
+    };
+
+  } catch (error) {
+    console.error('خطأ في saveSharedOrder:', error);
+    return { success: false, error: error.message };
+  }
 }
