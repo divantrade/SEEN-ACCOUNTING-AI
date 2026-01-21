@@ -360,6 +360,13 @@ function processNewTransaction(chatId, text, user) {
             return;
         }
 
+        // ⭐ التحقق من الأوردر المشترك
+        if (result.transaction && result.transaction.is_shared_order) {
+            Logger.log('✅ Detected SHARED ORDER');
+            handleSharedOrder(chatId, result.transaction, user);
+            return;
+        }
+
         // حفظ الحركة في الجلسة
         Logger.log('📊 Getting session...');
         const session = getAIUserSession(chatId);
@@ -1194,6 +1201,13 @@ function handleAICallback(callbackQuery) {
     if (isReportCallback(data)) {
         Logger.log('📊 Report callback detected: ' + data);
         handleReportCallback(chatId, data, session);
+        return;
+    }
+
+    // ⭐ معالجة callbacks الأوردر المشترك
+    if (data.startsWith('shared_')) {
+        Logger.log('📦 Shared order callback detected: ' + data);
+        handleSharedOrderCallback(chatId, messageId, data, session);
         return;
     }
 
@@ -2497,6 +2511,237 @@ function deleteAIBotWebhook() {
     }
 
     return infoData;
+}
+
+// ==================== دوال الأوردر المشترك (Shared Order) ====================
+
+/**
+ * ⭐ معالجة الأوردر المشترك
+ * @param {number} chatId - معرّف المحادثة
+ * @param {Object} transaction - بيانات الأوردر من الذكاء الاصطناعي
+ * @param {Object} user - بيانات المستخدم
+ */
+function handleSharedOrder(chatId, transaction, user) {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📦 handleSharedOrder STARTED');
+    Logger.log('📦 Projects: ' + JSON.stringify(transaction.projects));
+
+    // حفظ الأوردر في الجلسة
+    const session = getAIUserSession(chatId);
+    session.sharedOrder = transaction;
+    session.user = user;
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_SHARED_ORDER_CONFIRMATION;
+    saveAIUserSession(chatId, session);
+
+    // عرض ملخص الأوردر المشترك
+    showSharedOrderConfirmation(chatId, transaction);
+}
+
+/**
+ * ⭐ عرض ملخص الأوردر المشترك للتأكيد
+ */
+function showSharedOrderConfirmation(chatId, order) {
+    const projects = order.projects || [];
+    const totalGuests = projects.reduce((sum, p) => sum + (p.guests || 0), 0);
+    const totalAmount = order.total_amount || order.amount || 0;
+    const totalUnits = order.unit_count || 0;
+
+    // حساب التوزيع
+    let distributionText = '';
+    projects.forEach((project, index) => {
+        const guestRatio = totalGuests > 0 ? project.guests / totalGuests : 0;
+        const projectAmount = Math.round(totalAmount * guestRatio * 100) / 100;
+        const projectUnits = totalUnits > 0 ? Math.round(totalUnits * guestRatio) : 0;
+
+        const prefix = index === projects.length - 1 ? '└─' : '├─';
+        distributionText += `${prefix} *${project.name}*: ${project.guests} ضيف`;
+        distributionText += ` → ${projectAmount.toLocaleString()} ${order.currency || 'USD'}`;
+        if (projectUnits > 0) {
+            distributionText += ` (${projectUnits} وحدة)`;
+        }
+        distributionText += '\n';
+    });
+
+    // بناء رسالة الملخص
+    const summary = `
+📦 *أوردر مشترك*
+━━━━━━━━━━━━━━━━
+📌 *النوع:* ${order.nature || 'استحقاق مصروف'}
+📁 *التصنيف:* ${order.classification || '-'}
+📂 *البند:* ${order.item || '-'}
+👤 *الطرف:* ${order.party || '-'}
+💰 *المبلغ الإجمالي:* ${totalAmount.toLocaleString()} ${order.currency || 'USD'}
+📊 *عدد الوحدات:* ${totalUnits > 0 ? totalUnits : '-'}
+💳 *طريقة الدفع:* ${order.payment_method || 'تحويل بنكي'}
+📅 *شرط الدفع:* ${order.payment_term || 'فوري'}
+
+🎬 *التوزيع على المشاريع (${totalGuests} ضيف):*
+${distributionText}
+━━━━━━━━━━━━━━━━
+`;
+
+    // أزرار التأكيد
+    const keyboard = {
+        inline_keyboard: [
+            [
+                { text: '✅ تأكيد وحفظ', callback_data: 'shared_confirm' },
+                { text: '❌ إلغاء', callback_data: 'shared_cancel' }
+            ]
+        ]
+    };
+
+    sendAIMessage(chatId, summary, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(keyboard)
+    });
+}
+
+/**
+ * ⭐ حفظ الأوردر المشترك (عدة حركات)
+ */
+function saveSharedOrderFromAI(chatId, session) {
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('💾 saveSharedOrderFromAI STARTED');
+
+    const order = session.sharedOrder;
+    const user = session.user;
+
+    if (!order || !order.projects || order.projects.length === 0) {
+        sendAIMessage(chatId, '❌ خطأ: بيانات الأوردر غير مكتملة', { parse_mode: 'Markdown' });
+        return { success: false };
+    }
+
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheetName = CONFIG.SHEETS.BOT_TRANSACTIONS;
+        let sheet = ss.getSheetByName(sheetName);
+
+        if (!sheet) {
+            Logger.log('⚠️ الشيت غير موجود، جاري إنشاؤه...');
+            sheet = ss.insertSheet(sheetName);
+            const headers = Object.values(BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS).map(col => col.name);
+            sheet.appendRow(headers);
+        }
+
+        const projects = order.projects;
+        const totalGuests = projects.reduce((sum, p) => sum + (p.guests || 0), 0);
+        const totalAmount = order.total_amount || order.amount || 0;
+        const totalUnits = order.unit_count || 0;
+
+        // إنشاء رقم الأوردر المشترك
+        const sharedOrderId = 'SO-' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyyMMdd-HHmmss');
+
+        const savedTransactions = [];
+        const now = new Date();
+        const timestamp = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd HH:mm:ss');
+        const month = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM');
+
+        // حفظ حركة لكل مشروع
+        projects.forEach((project, index) => {
+            const guestRatio = totalGuests > 0 ? project.guests / totalGuests : 0;
+            const projectAmount = Math.round(totalAmount * guestRatio * 100) / 100;
+            const projectUnits = totalUnits > 0 ? Math.round(totalUnits * guestRatio) : 0;
+
+            // حساب القيمة بالدولار
+            let amountUSD = projectAmount;
+            if (order.currency !== 'USD' && order.exchange_rate) {
+                amountUSD = projectAmount / order.exchange_rate;
+            }
+
+            const transactionId = sharedOrderId + '-' + (index + 1);
+            const movementType = inferMovementType(order.nature || 'استحقاق مصروف');
+
+            const rowData = [
+                transactionId,                              // رقم الحركة
+                timestamp.split(' ')[0],                    // التاريخ
+                order.nature || 'استحقاق مصروف',           // طبيعة الحركة
+                order.classification || '',                 // تصنيف الحركة
+                project.code || '',                         // كود المشروع
+                project.name,                               // اسم المشروع
+                order.item || '',                           // البند
+                `أوردر مشترك: ${project.guests}/${totalGuests} ضيف - ${order.details || ''}`, // التفاصيل
+                order.party || '',                          // اسم المورد
+                projectAmount,                              // المبلغ
+                order.currency || 'USD',                    // العملة
+                order.exchange_rate || 1,                   // سعر الصرف
+                amountUSD,                                  // القيمة بالدولار
+                movementType,                               // نوع الحركة
+                '',                                         // الرصيد
+                sharedOrderId,                              // رقم مرجعي (رقم الأوردر المشترك)
+                order.payment_method || 'تحويل بنكي',      // طريقة الدفع
+                order.payment_term || 'فوري',              // نوع شرط الدفع
+                order.payment_term_weeks || '',             // عدد الأسابيع
+                order.payment_term_date || '',              // تاريخ مخصص
+                timestamp.split(' ')[0],                    // تاريخ الاستحقاق
+                'معلق',                                     // حالة السداد
+                month,                                      // الشهر
+                order.originalText || '',                   // ملاحظات
+                '',                                         // كشف
+                CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING,  // حالة المراجعة
+                `${user.first_name || ''} ${user.last_name || ''}`.trim(), // المُدخل
+                chatId,                                     // معرّف المحادثة
+                timestamp,                                  // تاريخ الإدخال
+                '',                                         // المُراجع
+                '',                                         // تاريخ المراجعة
+                '',                                         // ملاحظات المراجعة
+                '',                                         // رابط المرفق
+                'لا',                                       // طرف جديد؟
+                'بوت ذكي - أوردر مشترك',                   // مصدر الإدخال
+                projectUnits > 0 ? projectUnits : ''       // عدد الوحدات
+            ];
+
+            sheet.appendRow(rowData);
+            savedTransactions.push({
+                id: transactionId,
+                project: project.name,
+                amount: projectAmount
+            });
+
+            Logger.log(`✅ Saved transaction ${index + 1}/${projects.length}: ${project.name} - ${projectAmount}`);
+        });
+
+        // إرسال رسالة النجاح
+        let successMessage = `✅ *تم حفظ الأوردر المشترك بنجاح!*\n\n`;
+        successMessage += `📦 *رقم الأوردر:* \`${sharedOrderId}\`\n`;
+        successMessage += `📊 *عدد الحركات:* ${projects.length}\n\n`;
+        successMessage += `*التفاصيل:*\n`;
+
+        savedTransactions.forEach(t => {
+            successMessage += `• ${t.project}: ${t.amount.toLocaleString()} ${order.currency || 'USD'}\n`;
+        });
+
+        successMessage += `\n⏳ الحركات في انتظار المراجعة والاعتماد.`;
+
+        sendAIMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+
+        // مسح الجلسة
+        resetAIUserSession(chatId);
+
+        return { success: true, orderId: sharedOrderId, count: projects.length };
+
+    } catch (error) {
+        Logger.log('❌ Error saving shared order: ' + error.message);
+        Logger.log(error.stack);
+        sendAIMessage(chatId, '❌ حدث خطأ أثناء حفظ الأوردر: ' + error.message, { parse_mode: 'Markdown' });
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * ⭐ معالجة ضغط أزرار الأوردر المشترك
+ */
+function handleSharedOrderCallback(chatId, messageId, data, session) {
+    Logger.log('📦 handleSharedOrderCallback: ' + data);
+
+    if (data === 'shared_confirm') {
+        // تأكيد وحفظ
+        editAIMessage(chatId, messageId, '⏳ *جاري حفظ الأوردر المشترك...*');
+        saveSharedOrderFromAI(chatId, session);
+    } else if (data === 'shared_cancel') {
+        // إلغاء
+        resetAIUserSession(chatId);
+        editAIMessage(chatId, messageId, '❌ تم إلغاء الأوردر المشترك.');
+    }
 }
 
 /**
