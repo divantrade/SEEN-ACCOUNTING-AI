@@ -12648,6 +12648,20 @@ function showSharedOrderForm() {
           border-top: 2px solid #ff9800;
           padding-top: 10px;
         }
+        .payment-section {
+          background: #e3f2fd;
+          padding: 15px;
+          border-radius: 8px;
+          margin-bottom: 15px;
+          border: 1px solid #2196f3;
+        }
+        .payment-section h3 { margin-top: 0; color: #1565c0; }
+        .payment-row {
+          display: flex;
+          gap: 15px;
+          margin-bottom: 10px;
+        }
+        .payment-row .form-group { margin-bottom: 0; }
         .btn-primary {
           background: #1a73e8;
           color: white;
@@ -12716,6 +12730,42 @@ function showSharedOrderForm() {
           <input type="text" id="orderDescription" placeholder="مثال: تصوير حلقات شهر يناير...">
         </div>
 
+        <div class="payment-section">
+          <h3>💳 بيانات الدفع</h3>
+          <div class="payment-row">
+            <div class="form-group" style="flex:1;">
+              <label>طريقة الدفع</label>
+              <select id="paymentMethod">
+                <option value="">اختر...</option>
+                <option value="تحويل بنكي">تحويل بنكي</option>
+                <option value="كاش">كاش</option>
+                <option value="شيك">شيك</option>
+                <option value="بطاقة ائتمان">بطاقة ائتمان</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label>نوع شرط الدفع</label>
+              <select id="paymentTermType" onchange="togglePaymentFields()">
+                <option value="فوري">فوري</option>
+                <option value="بعد التسليم">بعد التسليم</option>
+                <option value="تاريخ مخصص">تاريخ مخصص</option>
+              </select>
+            </div>
+          </div>
+          <div class="payment-row" id="weeksRow" style="display:none;">
+            <div class="form-group">
+              <label>عدد الأسابيع بعد التسليم</label>
+              <input type="number" id="weeksCount" min="0" value="0" placeholder="0">
+            </div>
+          </div>
+          <div class="payment-row" id="customDateRow" style="display:none;">
+            <div class="form-group">
+              <label>تاريخ الاستحقاق المخصص</label>
+              <input type="date" id="customDueDate">
+            </div>
+          </div>
+        </div>
+
         <div class="projects-section">
           <h3>🎬 المشاريع والضيوف</h3>
           <div id="projectsList">
@@ -12750,6 +12800,12 @@ function showSharedOrderForm() {
       <script>
         const projects = ${JSON.stringify(projects)};
         let projectIndex = 1;
+
+        function togglePaymentFields() {
+          const termType = document.getElementById('paymentTermType').value;
+          document.getElementById('weeksRow').style.display = termType === 'بعد التسليم' ? 'flex' : 'none';
+          document.getElementById('customDateRow').style.display = termType === 'تاريخ مخصص' ? 'flex' : 'none';
+        }
 
         function addProject() {
           const container = document.getElementById('projectsList');
@@ -12889,6 +12945,12 @@ function showSharedOrderForm() {
             return;
           }
 
+          // جمع بيانات الدفع
+          const paymentMethod = document.getElementById('paymentMethod').value;
+          const paymentTermType = document.getElementById('paymentTermType').value;
+          const weeksCount = parseInt(document.getElementById('weeksCount').value) || 0;
+          const customDueDate = document.getElementById('customDueDate').value;
+
           // إظهار التحميل
           document.getElementById('formContent').style.display = 'none';
           document.getElementById('loading').style.display = 'block';
@@ -12902,7 +12964,12 @@ function showSharedOrderForm() {
             totalAmount: totalAmount,
             orderDescription: orderDescription,  // وصف عام للأوردر
             projects: projectsData,  // كل مشروع له تفاصيله الخاصة
-            totalGuests: totalGuests
+            totalGuests: totalGuests,
+            // بيانات الدفع
+            paymentMethod: paymentMethod,
+            paymentTermType: paymentTermType,
+            weeksCount: weeksCount,
+            customDueDate: customDueDate
           };
 
           google.script.run
@@ -13013,7 +13080,7 @@ function saveSharedOrder(orderData) {
       let detailsText = '';
       if (project.details) {
         // إذا كان هناك تفاصيل خاصة بالمشروع (أسماء الضيوف)
-        detailsText = `${project.details} (${project.guests} من ${totalGuests})`;
+        detailsText = `مقابلة ${project.details} (${project.guests} من ${totalGuests})`;
       } else if (orderData.orderDescription) {
         // إذا كان هناك وصف عام للأوردر
         detailsText = `${orderData.orderDescription} | ${project.guests} ضيوف من ${totalGuests}`;
@@ -13036,7 +13103,7 @@ function saveSharedOrder(orderData) {
       sheet.getRange(newRow, 3).setValue('استحقاق مصروف');
 
       // D: تصنيف الحركة
-      sheet.getRange(newRow, 4).setValue('مصروف');
+      sheet.getRange(newRow, 4).setValue('مصروفات مباشرة');
 
       // E: كود المشروع
       sheet.getRange(newRow, 5).setValue(project.code);
@@ -13073,6 +13140,22 @@ function saveSharedOrder(orderData) {
 
       // P: رقم مرجعي
       sheet.getRange(newRow, 16).setValue(orderData.orderNumber);
+
+      // Q: طريقة الدفع
+      sheet.getRange(newRow, 17).setValue(orderData.paymentMethod || '');
+
+      // R: نوع شرط الدفع
+      sheet.getRange(newRow, 18).setValue(orderData.paymentTermType || 'فوري');
+
+      // S: عدد الأسابيع
+      sheet.getRange(newRow, 19).setValue(orderData.weeksCount || '');
+
+      // T: تاريخ مخصص
+      if (orderData.customDueDate) {
+        const dateParts = orderData.customDueDate.split('-');
+        const customDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+        sheet.getRange(newRow, 20).setValue(customDate).setNumberFormat('dd/mm/yyyy');
+      }
 
       // W: الشهر
       sheet.getRange(newRow, 23).setValue(monthStr);
