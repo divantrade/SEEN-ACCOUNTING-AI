@@ -994,3 +994,114 @@ function getPendingBotTransactions() {
 function getPendingTransactionsCount() {
     return getPendingBotTransactions().length;
 }
+
+// ==================== دوال تحديث شيت حركات البوت ====================
+
+/**
+ * ⭐ إضافة عمود "عدد الوحدات" لشيت حركات البوت
+ * شغّل هذه الدالة مرة واحدة إذا كان الشيت موجوداً مسبقاً
+ */
+function addUnitCountColumnToBotSheet() {
+    const ui = SpreadsheetApp.getUi();
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
+
+    if (!sheet) {
+        ui.alert('❌ خطأ', 'شيت "حركات البوت" غير موجود!', ui.ButtonSet.OK);
+        return;
+    }
+
+    const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
+    const unitCountCol = columns.UNIT_COUNT.index; // 36
+
+    // التحقق من عدد الأعمدة الحالي
+    const currentCols = sheet.getMaxColumns();
+    Logger.log('عدد الأعمدة الحالي: ' + currentCols);
+
+    // التحقق إذا كان العمود موجوداً
+    if (currentCols >= unitCountCol) {
+        // فحص اسم العمود
+        const headerValue = sheet.getRange(1, unitCountCol).getValue();
+        if (headerValue === columns.UNIT_COUNT.name) {
+            ui.alert('✅ موجود', 'عمود "عدد الوحدات" موجود بالفعل في العمود ' + unitCountCol, ui.ButtonSet.OK);
+            return;
+        }
+    }
+
+    // إضافة الأعمدة الناقصة إذا لزم الأمر
+    if (currentCols < unitCountCol) {
+        const colsToAdd = unitCountCol - currentCols;
+        sheet.insertColumnsAfter(currentCols, colsToAdd);
+        Logger.log('تم إضافة ' + colsToAdd + ' عمود');
+    }
+
+    // تعيين اسم العمود
+    const headerCell = sheet.getRange(1, unitCountCol);
+    headerCell.setValue(columns.UNIT_COUNT.name);
+    headerCell.setBackground(CONFIG.COLORS.BOT.HEADER);
+    headerCell.setFontColor(CONFIG.COLORS.TEXT.WHITE);
+    headerCell.setFontWeight('bold');
+    headerCell.setHorizontalAlignment('center');
+
+    // تعيين عرض العمود
+    sheet.setColumnWidth(unitCountCol, columns.UNIT_COUNT.width);
+
+    // تنسيق العمود كأرقام
+    const lastRow = Math.max(sheet.getLastRow(), 100);
+    sheet.getRange(2, unitCountCol, lastRow, 1).setNumberFormat('#,##0');
+
+    ui.alert(
+        '✅ تم بنجاح',
+        'تم إضافة عمود "عدد الوحدات" في العمود رقم ' + unitCountCol + '\n\n' +
+        'الآن يمكنك استخدام البوت لإدخال عدد الوحدات.',
+        ui.ButtonSet.OK
+    );
+
+    Logger.log('✅ تم إضافة عمود عدد الوحدات لشيت حركات البوت');
+}
+
+/**
+ * ⭐ فحص وإصلاح هيكل شيت حركات البوت
+ * يتحقق من وجود جميع الأعمدة المطلوبة
+ */
+function verifyBotSheetStructure() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.BOT_TRANSACTIONS);
+
+    if (!sheet) {
+        Logger.log('❌ شيت حركات البوت غير موجود');
+        return { exists: false };
+    }
+
+    const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
+    const currentCols = sheet.getMaxColumns();
+    const expectedCols = Object.keys(columns).length;
+
+    const result = {
+        exists: true,
+        currentColumns: currentCols,
+        expectedColumns: expectedCols,
+        isComplete: currentCols >= expectedCols,
+        missingColumns: []
+    };
+
+    // فحص كل عمود
+    Object.entries(columns).forEach(([key, col]) => {
+        if (currentCols < col.index) {
+            result.missingColumns.push(col.name);
+        }
+    });
+
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('📊 فحص هيكل شيت حركات البوت');
+    Logger.log('═══════════════════════════════════════');
+    Logger.log('عدد الأعمدة الحالي: ' + currentCols);
+    Logger.log('عدد الأعمدة المطلوب: ' + expectedCols);
+    Logger.log('مكتمل: ' + (result.isComplete ? 'نعم ✅' : 'لا ❌'));
+
+    if (result.missingColumns.length > 0) {
+        Logger.log('الأعمدة الناقصة: ' + result.missingColumns.join(', '));
+    }
+
+    return result;
+}
