@@ -203,6 +203,7 @@ function onOpen() {
         .addItem('📄 إضافة عمود كشف الحساب (تقرير الموردين)', 'addStatementColumnToVendorReport')
         .addItem('📄 إضافة عمود كشف الحساب (تقرير الممولين)', 'addStatementColumnToFunderReport')
         .addItem('💰 إضافة أعمدة العمولات للمشاريع', 'addProjectManagerColumns')
+        .addItem('📊 إضافة عمود عدد الوحدات', 'addUnitCountColumn')
         .addSeparator()
         .addItem('🔔 تفعيل التسجيل التلقائي', 'installActivityTriggers')
         .addItem('🔕 إيقاف التسجيل التلقائي', 'uninstallActivityTriggers')
@@ -4333,6 +4334,81 @@ function addStatementLinkColumn() {
     '• عدد الصفوف التي تم ملؤها: ' + filledCount + '\n\n' +
     '📌 طريقة الاستخدام:\n' +
     'اضغط على خلية 📄 في أي صف → سيتم إنشاء كشف حساب للطرف تلقائياً',
+    ui.ButtonSet.OK
+  );
+}
+
+// ==================== إضافة عمود عدد الوحدات ====================
+/**
+ * إضافة عمود "عدد الوحدات" (AA - العمود 27) لدفتر الحركات
+ * يُستخدم لحساب تكلفة الوحدة في التقارير
+ */
+function addUnitCountColumn() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+
+  if (!sheet) {
+    ui.alert('❌ خطأ', 'شيت دفتر الحركات المالية غير موجود!', ui.ButtonSet.OK);
+    return;
+  }
+
+  // التحقق من وجود العمود مسبقاً
+  const currentHeader = sheet.getRange(1, 27).getValue();
+  if (currentHeader === 'عدد الوحدات') {
+    ui.alert(
+      '✅ موجود',
+      'عمود "عدد الوحدات" موجود بالفعل في العمود AA.',
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  // التحقق من أن العمود 26 هو "رقم الأوردر" (للتأكد من الترتيب الصحيح)
+  const col26Header = sheet.getRange(1, 26).getValue();
+  if (col26Header !== 'رقم الأوردر') {
+    // ربما هيكل الشيت مختلف، نحذر المستخدم
+    const response = ui.alert(
+      '⚠️ تحذير',
+      'العمود Z ليس "رقم الأوردر".\n' +
+      'القيمة الحالية: "' + col26Header + '"\n\n' +
+      'هل تريد المتابعة وإضافة عمود "عدد الوحدات" في العمود AA؟',
+      ui.ButtonSet.YES_NO
+    );
+    if (response !== ui.Button.YES) return;
+  }
+
+  // إضافة العنوان
+  sheet.getRange(1, 27)
+    .setValue('عدد الوحدات')
+    .setBackground(CONFIG.COLORS.HEADER.TRANSACTIONS)
+    .setFontColor(CONFIG.COLORS.TEXT.WHITE)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setFontSize(11);
+
+  // تعيين عرض العمود
+  sheet.setColumnWidth(27, 100);
+
+  // تنسيق خلايا البيانات
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 27, lastRow - 1, 1)
+      .setHorizontalAlignment('center')
+      .setNumberFormat('#,##0');
+  }
+
+  ui.alert(
+    '✅ تم بنجاح',
+    'تم إضافة عمود "عدد الوحدات" (AA) لدفتر الحركات.\n\n' +
+    '📌 الاستخدام:\n' +
+    '• عند إضافة حركة جديدة لبنود الإنتاج (تصوير، مونتاج، إلخ)،\n' +
+    '  سيظهر حقل "عدد الوحدات" في النموذج.\n\n' +
+    '• البنود المدعومة:\n' +
+    Object.entries(CONFIG.UNIT_TYPES).map(([item, unit]) =>
+      '  - ' + item + ' ← ' + unit
+    ).join('\n'),
     ui.ButtonSet.OK
   );
 }
