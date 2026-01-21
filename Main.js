@@ -61,6 +61,13 @@ function onOpen() {
         .addItem('📋 تقرير ميزانية مشروع', 'generateProjectBudgetReport')
         .addItem('📊 تقرير ميزانية مجمع (عدة مشاريع)', 'showCombinedBudgetReportForm')
         .addSeparator()
+        .addSubMenu(
+          ui.createMenu('📊 تقرير تكلفة الوحدة')
+            .addItem('● مشروع واحد', 'showUnitCostReportSingle')
+            .addItem('● عدة مشاريع (مجمع)', 'showUnitCostReportMultiple')
+            .addItem('● كل المشاريع', 'generateUnitCostReportAll')
+        )
+        .addSeparator()
         .addItem('💰 تقرير عمولات مدير مشروعات', 'showCommissionReportDialog')
         .addItem('➕ إدراج استحقاق عمولة (من التقرير)', 'insertCommissionFromReport')
     )
@@ -13968,5 +13975,463 @@ function generateCombinedBudgetReport(projectCodes) {
   } catch (error) {
     console.error('خطأ في generateCombinedBudgetReport:', error);
     return { success: false, error: error.message };
+  }
+}
+
+// ==================== تقرير تكلفة الوحدة ====================
+
+/**
+ * عرض نموذج اختيار مشروع واحد لتقرير تكلفة الوحدة
+ */
+function showUnitCostReportSingle() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+
+  if (!projectsSheet || projectsSheet.getLastRow() < 2) {
+    ui.alert('❌ خطأ', 'لا توجد مشاريع في قاعدة البيانات!', ui.ButtonSet.OK);
+    return;
+  }
+
+  // جلب قائمة المشاريع
+  const projectsData = projectsSheet.getRange(2, 1, projectsSheet.getLastRow() - 1, 2).getValues();
+  const projectsList = projectsData.filter(row => row[0]).map(row => row[0] + ' - ' + row[1]).join('\n');
+
+  const response = ui.prompt(
+    '📊 تقرير تكلفة الوحدة - مشروع واحد',
+    'أدخل كود المشروع:\n\nالمشاريع المتاحة:\n' + projectsList,
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  const projectCode = response.getResponseText().trim().toUpperCase();
+  if (!projectCode) {
+    ui.alert('❌ خطأ', 'يرجى إدخال كود المشروع!', ui.ButtonSet.OK);
+    return;
+  }
+
+  // التحقق من وجود المشروع
+  const projectExists = projectsData.some(row => String(row[0]).toUpperCase() === projectCode);
+  if (!projectExists) {
+    ui.alert('❌ خطأ', 'المشروع "' + projectCode + '" غير موجود!', ui.ButtonSet.OK);
+    return;
+  }
+
+  generateUnitCostReport([projectCode]);
+}
+
+/**
+ * عرض نموذج اختيار عدة مشاريع لتقرير تكلفة الوحدة
+ */
+function showUnitCostReportMultiple() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+
+  if (!projectsSheet || projectsSheet.getLastRow() < 2) {
+    ui.alert('❌ خطأ', 'لا توجد مشاريع في قاعدة البيانات!', ui.ButtonSet.OK);
+    return;
+  }
+
+  // جلب قائمة المشاريع
+  const projectsData = projectsSheet.getRange(2, 1, projectsSheet.getLastRow() - 1, 2).getValues();
+  const projectsList = projectsData.filter(row => row[0]).map(row => row[0] + ' - ' + row[1]).join('\n');
+
+  const response = ui.prompt(
+    '📊 تقرير تكلفة الوحدة - عدة مشاريع',
+    'أدخل أكواد المشاريع (مفصولة بفاصلة):\n\nمثال: F001, F002, F003\n\nالمشاريع المتاحة:\n' + projectsList,
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  const input = response.getResponseText().trim();
+  if (!input) {
+    ui.alert('❌ خطأ', 'يرجى إدخال أكواد المشاريع!', ui.ButtonSet.OK);
+    return;
+  }
+
+  const projectCodes = input.split(',').map(code => code.trim().toUpperCase()).filter(code => code);
+
+  if (projectCodes.length === 0) {
+    ui.alert('❌ خطأ', 'يرجى إدخال كود مشروع واحد على الأقل!', ui.ButtonSet.OK);
+    return;
+  }
+
+  generateUnitCostReport(projectCodes);
+}
+
+/**
+ * توليد تقرير تكلفة الوحدة لكل المشاريع
+ */
+function generateUnitCostReportAll() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+
+  if (!projectsSheet || projectsSheet.getLastRow() < 2) {
+    SpreadsheetApp.getUi().alert('❌ خطأ', 'لا توجد مشاريع في قاعدة البيانات!', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  // جلب كل المشاريع
+  const projectsData = projectsSheet.getRange(2, 1, projectsSheet.getLastRow() - 1, 1).getValues();
+  const allProjectCodes = projectsData.filter(row => row[0]).map(row => String(row[0]).trim());
+
+  if (allProjectCodes.length === 0) {
+    SpreadsheetApp.getUi().alert('❌ خطأ', 'لا توجد مشاريع!', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  generateUnitCostReport(allProjectCodes);
+}
+
+/**
+ * توليد تقرير تكلفة الوحدة
+ * @param {string[]} projectCodes - قائمة أكواد المشاريع
+ */
+function generateUnitCostReport(projectCodes) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ui = SpreadsheetApp.getUi();
+    const transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+    const projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+
+    if (!transSheet) {
+      ui.alert('❌ خطأ', 'شيت دفتر الحركات المالية غير موجود!', ui.ButtonSet.OK);
+      return;
+    }
+
+    // جلب بيانات المشاريع
+    let projectsData = {};
+    if (projectsSheet && projectsSheet.getLastRow() > 1) {
+      const pData = projectsSheet.getRange(2, 1, projectsSheet.getLastRow() - 1, 2).getValues();
+      for (const row of pData) {
+        projectsData[String(row[0]).toUpperCase()] = row[1];
+      }
+    }
+
+    // جلب بيانات الحركات
+    const lastRow = transSheet.getLastRow();
+    if (lastRow < 2) {
+      ui.alert('❌ خطأ', 'لا توجد حركات في دفتر الحركات!', ui.ButtonSet.OK);
+      return;
+    }
+
+    // الأعمدة: A=رقم, B=تاريخ, C=طبيعة, D=تصنيف, E=كود المشروع, F=اسم المشروع, G=البند,
+    //          H=التفاصيل, I=المورد, M=القيمة بالدولار (13), AA=عدد الوحدات (27)
+    const allData = transSheet.getRange(2, 1, lastRow - 1, 27).getValues();
+
+    // فلترة الحركات للمشاريع المحددة (استحقاقات مصروف فقط)
+    const filteredData = allData.filter(row => {
+      const projectCode = String(row[4] || '').toUpperCase(); // E = كود المشروع
+      const natureType = String(row[2] || ''); // C = طبيعة الحركة
+      return projectCodes.map(c => c.toUpperCase()).includes(projectCode) &&
+             natureType === 'استحقاق مصروف';
+    });
+
+    if (filteredData.length === 0) {
+      ui.alert('⚠️ تنبيه', 'لا توجد حركات استحقاق مصروف للمشاريع المحددة!', ui.ButtonSet.OK);
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // تجميع البيانات
+    // ═══════════════════════════════════════════════════════════════
+
+    // 1. تجميع حسب البند (الإجمالي)
+    const byItem = {};
+    // 2. تجميع حسب المشروع والبند
+    const byProjectItem = {};
+    // 3. تجميع حسب المورد والبند
+    const byVendorItem = {};
+
+    for (const row of filteredData) {
+      const projectCode = String(row[4] || '').toUpperCase();
+      const item = String(row[6] || ''); // G = البند
+      const vendor = String(row[8] || ''); // I = المورد
+      const amountUsd = Number(row[12]) || 0; // M = القيمة بالدولار
+      const unitCount = Number(row[26]) || 0; // AA = عدد الوحدات
+
+      // تجميع حسب البند
+      if (!byItem[item]) {
+        byItem[item] = { totalAmount: 0, totalUnits: 0, unitType: CONFIG.UNIT_TYPES[item] || '' };
+      }
+      byItem[item].totalAmount += amountUsd;
+      byItem[item].totalUnits += unitCount;
+
+      // تجميع حسب المشروع والبند
+      const projectKey = projectCode + '|' + item;
+      if (!byProjectItem[projectKey]) {
+        byProjectItem[projectKey] = {
+          projectCode: projectCode,
+          projectName: projectsData[projectCode] || '',
+          item: item,
+          totalAmount: 0,
+          totalUnits: 0,
+          unitType: CONFIG.UNIT_TYPES[item] || ''
+        };
+      }
+      byProjectItem[projectKey].totalAmount += amountUsd;
+      byProjectItem[projectKey].totalUnits += unitCount;
+
+      // تجميع حسب المورد والبند
+      if (vendor) {
+        const vendorKey = vendor + '|' + item;
+        if (!byVendorItem[vendorKey]) {
+          byVendorItem[vendorKey] = {
+            vendor: vendor,
+            item: item,
+            totalAmount: 0,
+            totalUnits: 0,
+            unitType: CONFIG.UNIT_TYPES[item] || ''
+          };
+        }
+        byVendorItem[vendorKey].totalAmount += amountUsd;
+        byVendorItem[vendorKey].totalUnits += unitCount;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // إنشاء شيت التقرير
+    // ═══════════════════════════════════════════════════════════════
+
+    const reportName = 'تقرير تكلفة الوحدة';
+    let reportSheet = ss.getSheetByName(reportName);
+    if (reportSheet) {
+      ss.deleteSheet(reportSheet);
+    }
+    reportSheet = ss.insertSheet(reportName);
+    reportSheet.setTabColor('#4caf50');
+
+    let currentRow = 1;
+
+    // ═══════════════════════════════════════════════════════════════
+    // العنوان الرئيسي
+    // ═══════════════════════════════════════════════════════════════
+
+    const reportTitle = projectCodes.length === 1 ?
+      '📊 تقرير تكلفة الوحدة - مشروع ' + projectCodes[0] :
+      '📊 تقرير تكلفة الوحدة - ' + projectCodes.length + ' مشاريع';
+
+    reportSheet.getRange(currentRow, 1, 1, 6).merge()
+      .setValue(reportTitle)
+      .setBackground('#4caf50')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setFontSize(16)
+      .setHorizontalAlignment('center');
+    currentRow += 2;
+
+    // معلومات التقرير
+    const reportDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+    reportSheet.getRange(currentRow, 1).setValue('تاريخ التقرير: ' + reportDate);
+    reportSheet.getRange(currentRow, 4).setValue('المشاريع: ' + projectCodes.join(', '));
+    currentRow += 2;
+
+    // ═══════════════════════════════════════════════════════════════
+    // القسم الأول: ملخص تكلفة الوحدات (حسب البند)
+    // ═══════════════════════════════════════════════════════════════
+
+    reportSheet.getRange(currentRow, 1, 1, 6).merge()
+      .setValue('📋 القسم الأول: ملخص تكلفة الوحدات حسب البند')
+      .setBackground('#1565c0')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setFontSize(13);
+    currentRow++;
+
+    // رأس الجدول
+    reportSheet.getRange(currentRow, 1, 1, 6).setValues([[
+      'البند', 'نوع الوحدة', 'العدد الكلي', 'التكلفة الكلية ($)', 'تكلفة الوحدة ($)', 'ملاحظات'
+    ]])
+      .setBackground('#1976d2')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    // بيانات البنود
+    const itemsArray = Object.entries(byItem).sort((a, b) => b[1].totalAmount - a[1].totalAmount);
+    let grandTotalAmount = 0;
+    let grandTotalUnits = 0;
+
+    for (const [item, data] of itemsArray) {
+      const unitCost = data.totalUnits > 0 ? data.totalAmount / data.totalUnits : 0;
+      const notes = data.totalUnits === 0 ? '⚠️ لا توجد وحدات مسجلة' : '';
+
+      reportSheet.getRange(currentRow, 1, 1, 6).setValues([[
+        item,
+        data.unitType || '-',
+        data.totalUnits || '-',
+        data.totalAmount,
+        data.totalUnits > 0 ? unitCost : '-',
+        notes
+      ]]);
+
+      // تلوين الصفوف
+      if (currentRow % 2 === 0) {
+        reportSheet.getRange(currentRow, 1, 1, 6).setBackground('#e3f2fd');
+      }
+
+      // تحذير إذا لا توجد وحدات
+      if (data.totalUnits === 0 && data.unitType) {
+        reportSheet.getRange(currentRow, 6).setBackground('#fff3e0').setFontColor('#e65100');
+      }
+
+      grandTotalAmount += data.totalAmount;
+      grandTotalUnits += data.totalUnits;
+      currentRow++;
+    }
+
+    // صف الإجمالي
+    reportSheet.getRange(currentRow, 1, 1, 6).setValues([[
+      '📊 الإجمالي',
+      '-',
+      grandTotalUnits,
+      grandTotalAmount,
+      '-',
+      ''
+    ]])
+      .setBackground('#4caf50')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold');
+    currentRow += 2;
+
+    // ═══════════════════════════════════════════════════════════════
+    // القسم الثاني: تفصيل حسب المشروع
+    // ═══════════════════════════════════════════════════════════════
+
+    reportSheet.getRange(currentRow, 1, 1, 6).merge()
+      .setValue('🎬 القسم الثاني: تفصيل حسب المشروع')
+      .setBackground('#7b1fa2')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setFontSize(13);
+    currentRow++;
+
+    // رأس الجدول
+    reportSheet.getRange(currentRow, 1, 1, 6).setValues([[
+      'المشروع', 'البند', 'نوع الوحدة', 'العدد', 'التكلفة ($)', 'تكلفة الوحدة ($)'
+    ]])
+      .setBackground('#9c27b0')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    // ترتيب حسب المشروع ثم البند
+    const projectItemsArray = Object.values(byProjectItem).sort((a, b) => {
+      if (a.projectCode !== b.projectCode) return a.projectCode.localeCompare(b.projectCode);
+      return b.totalAmount - a.totalAmount;
+    });
+
+    let lastProject = '';
+    for (const data of projectItemsArray) {
+      const unitCost = data.totalUnits > 0 ? data.totalAmount / data.totalUnits : 0;
+      const projectDisplay = data.projectCode + (data.projectName ? ' - ' + data.projectName : '');
+
+      // إضافة فاصل بين المشاريع
+      if (lastProject && lastProject !== data.projectCode) {
+        reportSheet.getRange(currentRow, 1, 1, 6).setBackground('#f5f5f5');
+        currentRow++;
+      }
+      lastProject = data.projectCode;
+
+      reportSheet.getRange(currentRow, 1, 1, 6).setValues([[
+        projectDisplay,
+        data.item,
+        data.unitType || '-',
+        data.totalUnits || '-',
+        data.totalAmount,
+        data.totalUnits > 0 ? unitCost : '-'
+      ]]);
+
+      currentRow++;
+    }
+    currentRow++;
+
+    // ═══════════════════════════════════════════════════════════════
+    // القسم الثالث: تفصيل حسب المورد
+    // ═══════════════════════════════════════════════════════════════
+
+    reportSheet.getRange(currentRow, 1, 1, 6).merge()
+      .setValue('👤 القسم الثالث: تفصيل حسب المورد')
+      .setBackground('#00695c')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setFontSize(13);
+    currentRow++;
+
+    // رأس الجدول
+    reportSheet.getRange(currentRow, 1, 1, 6).setValues([[
+      'المورد', 'البند', 'نوع الوحدة', 'العدد', 'التكلفة ($)', 'تكلفة الوحدة ($)'
+    ]])
+      .setBackground('#009688')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    // ترتيب حسب المورد ثم البند
+    const vendorItemsArray = Object.values(byVendorItem).sort((a, b) => {
+      if (a.vendor !== b.vendor) return a.vendor.localeCompare(b.vendor);
+      return b.totalAmount - a.totalAmount;
+    });
+
+    let lastVendor = '';
+    for (const data of vendorItemsArray) {
+      const unitCost = data.totalUnits > 0 ? data.totalAmount / data.totalUnits : 0;
+
+      // إضافة فاصل بين الموردين
+      if (lastVendor && lastVendor !== data.vendor) {
+        reportSheet.getRange(currentRow, 1, 1, 6).setBackground('#f5f5f5');
+        currentRow++;
+      }
+      lastVendor = data.vendor;
+
+      reportSheet.getRange(currentRow, 1, 1, 6).setValues([[
+        data.vendor,
+        data.item,
+        data.unitType || '-',
+        data.totalUnits || '-',
+        data.totalAmount,
+        data.totalUnits > 0 ? unitCost : '-'
+      ]]);
+
+      currentRow++;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // تنسيقات عامة
+    // ═══════════════════════════════════════════════════════════════
+
+    // تنسيق الأعمدة
+    reportSheet.setColumnWidth(1, 200);
+    reportSheet.setColumnWidth(2, 150);
+    reportSheet.setColumnWidth(3, 100);
+    reportSheet.setColumnWidth(4, 120);
+    reportSheet.setColumnWidth(5, 130);
+    reportSheet.setColumnWidth(6, 150);
+
+    // تنسيق الأرقام
+    reportSheet.getRange(1, 4, currentRow, 1).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(1, 5, currentRow, 1).setNumberFormat('$#,##0.00');
+
+    // تفعيل الشيت
+    ss.setActiveSheet(reportSheet);
+
+    ui.alert(
+      '✅ تم إنشاء التقرير',
+      'تقرير تكلفة الوحدة جاهز!\n\n' +
+      '• عدد المشاريع: ' + projectCodes.length + '\n' +
+      '• عدد البنود: ' + itemsArray.length + '\n' +
+      '• إجمالي التكلفة: $' + grandTotalAmount.toLocaleString(),
+      ui.ButtonSet.OK
+    );
+
+  } catch (error) {
+    console.error('خطأ في generateUnitCostReport:', error);
+    SpreadsheetApp.getUi().alert('❌ خطأ', 'حدث خطأ: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
