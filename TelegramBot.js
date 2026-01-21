@@ -1286,6 +1286,10 @@ function handleTextInput(chatId, text, session) {
             handleItemSearch(chatId, text, session);
             break;
 
+        case BOT_CONFIG.CONVERSATION_STATES.WAITING_UNIT_COUNT:
+            handleUnitCountInput(chatId, text, session);
+            break;
+
         case BOT_CONFIG.CONVERSATION_STATES.WAITING_PARTY:
             handlePartySearch(chatId, text, session);
             break;
@@ -1638,10 +1642,52 @@ function handleItemSelection(chatId, messageId, itemName, session) {
         return;
     }
 
+    editMessage(chatId, messageId, `✅ البند: *${itemName}*`);
+
+    // ✅ التحقق إذا كان البند يحتاج عدد وحدات
+    const unitType = CONFIG.getUnitType(itemName);
+    if (unitType) {
+        // البند يحتاج وحدات - نسأل عن العدد
+        session.data.unitType = unitType;
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_UNIT_COUNT;
+        saveUserSession(chatId, session);
+
+        const unitMessage = BOT_CONFIG.INTERACTIVE_MESSAGES.ENTER_UNIT_COUNT.replace('{unitType}', unitType);
+        sendMessage(chatId, unitMessage, null, 'Markdown');
+    } else {
+        // البند لا يحتاج وحدات - ننتقل للطرف مباشرة
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_PARTY;
+        saveUserSession(chatId, session);
+        sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.SELECT_PARTY, null, 'Markdown');
+    }
+}
+
+/**
+ * ✅ معالجة إدخال عدد الوحدات (جديد)
+ */
+function handleUnitCountInput(chatId, text, session) {
+    // التحقق من التخطي
+    if (text === 'تخطي' || text === '0' || text === 'skip') {
+        session.data.unitCount = 0;
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_PARTY;
+        saveUserSession(chatId, session);
+        sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.SELECT_PARTY, null, 'Markdown');
+        return;
+    }
+
+    // التحقق من صحة الرقم
+    const unitCount = parseInt(text.replace(/[^\d]/g, ''), 10);
+    if (isNaN(unitCount) || unitCount < 0) {
+        sendMessage(chatId, '❌ الرجاء إدخال رقم صحيح\n\nمثال: 5\n\nأو اكتب "تخطي" للتخطي', null, 'Markdown');
+        return;
+    }
+
+    session.data.unitCount = unitCount;
     session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_PARTY;
     saveUserSession(chatId, session);
 
-    editMessage(chatId, messageId, `✅ البند: *${itemName}*`);
+    const unitType = session.data.unitType || 'وحدة';
+    sendMessage(chatId, `✅ عدد الوحدات: *${unitCount} ${unitType}*`, null, 'Markdown');
     sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.SELECT_PARTY, null, 'Markdown');
 }
 
@@ -2008,10 +2054,18 @@ function handleAttachment(chatId, message) {
 function showTransactionSummary(chatId, session) {
     const data = session.data;
 
+    // ✅ تنسيق عدد الوحدات
+    let unitCountDisplay = '-';
+    if (data.unitCount && data.unitCount > 0) {
+        const unitType = data.unitType || CONFIG.getUnitType(data.item) || 'وحدة';
+        unitCountDisplay = `${data.unitCount} ${unitType}`;
+    }
+
     let summary = BOT_CONFIG.INTERACTIVE_MESSAGES.TRANSACTION_SUMMARY
         .replace('{nature}', data.nature)
         .replace('{project}', data.projectName || '-')
         .replace('{item}', data.item || '-')
+        .replace('{unit_count}', unitCountDisplay)
         .replace('{party}', data.partyName + (data.isNewParty ? ' (جديد)' : ''))
         .replace('{amount}', data.amount)
         .replace('{currency}', data.currency)
@@ -2070,7 +2124,8 @@ function saveTransaction(chatId, session) {
             telegramUser: session.userName,
             chatId: chatId,
             attachmentUrl: data.attachmentUrl,
-            isNewParty: data.isNewParty
+            isNewParty: data.isNewParty,
+            unitCount: data.unitCount || 0  // ✅ عدد الوحدات (جديد)
         };
 
         // حفظ الحركة

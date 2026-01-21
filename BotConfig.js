@@ -45,7 +45,8 @@ const BOT_CONFIG = {
         REVIEW_NOTES: { index: 32, name: 'ملاحظات المراجعة', width: 200 },
         ATTACHMENT_URL: { index: 33, name: 'رابط المرفق', width: 200 },
         IS_NEW_PARTY: { index: 34, name: 'طرف جديد؟', width: 80 },
-        INPUT_SOURCE: { index: 35, name: 'مصدر الإدخال', width: 120 }
+        INPUT_SOURCE: { index: 35, name: 'مصدر الإدخال', width: 120 },
+        UNIT_COUNT: { index: 36, name: 'عدد الوحدات', width: 100 }
     },
 
     // ==================== هيكل شيت أطراف البوت ====================
@@ -127,6 +128,7 @@ const BOT_CONFIG = {
         WAITING_CLASSIFICATION: 'waiting_classification',
         WAITING_PROJECT: 'waiting_project',
         WAITING_ITEM: 'waiting_item',
+        WAITING_UNIT_COUNT: 'waiting_unit_count',  // ✅ جديد: انتظار عدد الوحدات
         WAITING_PARTY: 'waiting_party',
         WAITING_NEW_PARTY_TYPE: 'waiting_new_party_type',
         WAITING_AMOUNT: 'waiting_amount',
@@ -488,6 +490,7 @@ const BOT_CONFIG = {
         ENTER_DETAILS: '📝 *أدخل التفاصيل:*\n\nوصف مختصر للحركة',
         SELECT_PAYMENT_METHOD: '💳 *اختر طريقة الدفع:*',
         SELECT_PAYMENT_TERM: '📅 *اختر شرط الدفع:*',
+        ENTER_UNIT_COUNT: '📊 *أدخل عدد الوحدات ({unitType}):*\n\nاكتب الرقم فقط (مثال: 5)\n\n💡 اكتب "تخطي" أو "0" للتخطي',
         ENTER_WEEKS: '📆 *أدخل عدد الأسابيع:*\n\n(بعد التسليم)',
         ENTER_CUSTOM_DATE: '📅 *أدخل التاريخ:*\n\n(بصيغة: يوم/شهر/سنة مثل 15/01/2024)',
         ASK_ATTACHMENT: '📎 *هل تريد إرفاق صورة الفاتورة؟*',
@@ -502,6 +505,7 @@ const BOT_CONFIG = {
 📌 *النوع:* {nature}
 🎬 *المشروع:* {project}
 📂 *البند:* {item}
+📊 *عدد الوحدات:* {unit_count}
 👤 *الطرف:* {party}
 💵 *المبلغ:* {amount} {currency}
 📝 *التفاصيل:* {details}
