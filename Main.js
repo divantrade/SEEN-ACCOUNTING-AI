@@ -13699,6 +13699,114 @@ function generateCombinedBudgetReport(projectCodes) {
       grandVarianceCell.setBackground('#c8e6c9').setFontColor('#2e7d32').setFontWeight('bold');
     }
 
+    currentRow += 2;
+
+    // ═══════════════════════════════════════════════════════════
+    // 📊 مقارنة البنود المجمعة من كل المشاريع
+    // ═══════════════════════════════════════════════════════════
+
+    // تجميع كل البنود من كل المشاريع
+    const aggregatedItems = {};
+    for (const project of projectsReport) {
+      for (const item of project.items) {
+        if (!aggregatedItems[item.item]) {
+          aggregatedItems[item.item] = { planned: 0, actual: 0 };
+        }
+        aggregatedItems[item.item].planned += item.planned;
+        aggregatedItems[item.item].actual += item.actual;
+      }
+    }
+
+    // تحويل إلى مصفوفة وترتيب حسب الفعلي
+    const aggregatedArray = [];
+    for (const itemName in aggregatedItems) {
+      const data = aggregatedItems[itemName];
+      aggregatedArray.push({
+        item: itemName,
+        planned: data.planned,
+        actual: data.actual,
+        variance: data.planned - data.actual
+      });
+    }
+    aggregatedArray.sort((a, b) => b.actual - a.actual);
+
+    // عنوان القسم
+    reportSheet.getRange(currentRow, 1, 1, 5).merge()
+      .setValue('📊 مقارنة البنود المجمعة (كل المشاريع)')
+      .setBackground('#ff6f00')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setFontSize(14)
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    reportSheet.getRange(currentRow, 1, 1, 5).merge()
+      .setValue('هذا القسم يجمع كل بند من جميع المشاريع المختارة لمعرفة هل البند ككل ضمن الحد المسموح')
+      .setBackground('#ffe0b2')
+      .setFontSize(11)
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    // رأس الجدول
+    reportSheet.getRange(currentRow, 1, 1, 5).setValues([['البند', 'المخطط الكلي ($)', 'الفعلي الكلي ($)', 'الفرق ($)', 'الحالة']])
+      .setBackground('#ffb74d')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    // بيانات البنود المجمعة
+    for (const item of aggregatedArray) {
+      const percentage = item.planned > 0 ? Math.round((item.actual / item.planned) * 100) : (item.actual > 0 ? 999 : 0);
+      let status = '';
+      if (item.variance > 0) {
+        status = '✅ وفر ' + Math.round(item.variance) + '$';
+      } else if (item.variance < 0) {
+        status = '❌ تجاوز ' + Math.round(Math.abs(item.variance)) + '$';
+      } else {
+        status = '⚖️ متطابق';
+      }
+
+      reportSheet.getRange(currentRow, 1, 1, 5).setValues([[
+        item.item,
+        item.planned,
+        item.actual,
+        item.variance,
+        status
+      ]]);
+
+      // تلوين الفرق والحالة
+      const varCell = reportSheet.getRange(currentRow, 4);
+      const statusCell = reportSheet.getRange(currentRow, 5);
+      if (item.variance < 0) {
+        varCell.setBackground('#ffcdd2').setFontColor('#c62828');
+        statusCell.setBackground('#ffcdd2').setFontColor('#c62828');
+      } else if (item.variance > 0) {
+        varCell.setBackground('#c8e6c9').setFontColor('#2e7d32');
+        statusCell.setBackground('#c8e6c9').setFontColor('#2e7d32');
+      }
+
+      currentRow++;
+    }
+
+    // إجمالي البنود المجمعة
+    currentRow++;
+    const aggTotalPlanned = aggregatedArray.reduce((sum, i) => sum + i.planned, 0);
+    const aggTotalActual = aggregatedArray.reduce((sum, i) => sum + i.actual, 0);
+    const aggTotalVariance = aggTotalPlanned - aggTotalActual;
+    let aggStatus = aggTotalVariance >= 0 ? '✅ ضمن الميزانية' : '❌ تجاوز الميزانية';
+
+    reportSheet.getRange(currentRow, 1, 1, 5).setValues([[
+      '📊 الإجمالي الكلي للبنود',
+      aggTotalPlanned,
+      aggTotalActual,
+      aggTotalVariance,
+      aggStatus
+    ]])
+      .setBackground('#ff6f00')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setFontSize(12);
+
     // تنسيقات الأرقام
     const lastDataRow = currentRow;
     reportSheet.getRange(4, 2, lastDataRow - 3, 3).setNumberFormat('$#,##0.00');
