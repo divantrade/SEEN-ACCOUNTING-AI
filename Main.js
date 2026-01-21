@@ -12737,10 +12737,11 @@ function showSharedOrderForm() {
               <label>طريقة الدفع</label>
               <select id="paymentMethod">
                 <option value="">اختر...</option>
+                <option value="نقدي">نقدي</option>
                 <option value="تحويل بنكي">تحويل بنكي</option>
-                <option value="كاش">كاش</option>
                 <option value="شيك">شيك</option>
-                <option value="بطاقة ائتمان">بطاقة ائتمان</option>
+                <option value="بطاقة">بطاقة</option>
+                <option value="أخرى">أخرى</option>
               </select>
             </div>
             <div class="form-group" style="flex:1;">
