@@ -12593,15 +12593,17 @@ function showSharedOrderForm() {
         .projects-section h3 { margin-top: 0; color: #555; }
         .project-row {
           display: flex;
-          gap: 10px;
+          flex-wrap: wrap;
+          gap: 8px;
           align-items: center;
           margin-bottom: 10px;
           padding: 10px;
           background: #f9f9f9;
           border-radius: 5px;
         }
-        .project-row select { flex: 2; }
-        .project-row input { flex: 1; width: 80px; }
+        .project-row select { flex: 2; min-width: 150px; }
+        .project-row .guest-count { width: 60px; flex: 0 0 60px; }
+        .project-row .guest-details { flex: 2; min-width: 120px; }
         .project-row .remove-btn {
           background: #f44336;
           color: white;
@@ -12701,8 +12703,8 @@ function showSharedOrderForm() {
         </div>
 
         <div class="form-group">
-          <label>📝 التفاصيل</label>
-          <textarea id="details" rows="2" placeholder="وصف الأوردر..."></textarea>
+          <label>📝 وصف الأوردر (اختياري)</label>
+          <input type="text" id="orderDescription" placeholder="مثال: تصوير حلقات شهر يناير...">
         </div>
 
         <div class="projects-section">
@@ -12713,7 +12715,8 @@ function showSharedOrderForm() {
                 <option value="">اختر المشروع...</option>
                 ${projects.map(p => '<option value="' + p.code + '">' + p.code + ' - ' + p.name + '</option>').join('')}
               </select>
-              <input type="number" class="guest-count" min="1" value="1" placeholder="عدد الضيوف" onchange="calculateDistribution()">
+              <input type="number" class="guest-count" min="1" value="1" placeholder="عدد" onchange="calculateDistribution()">
+              <input type="text" class="guest-details" placeholder="أسماء الضيوف...">
               <button type="button" class="remove-btn" onclick="removeProject(0)" style="display:none;">✕</button>
             </div>
           </div>
@@ -12749,7 +12752,8 @@ function showSharedOrderForm() {
               <option value="">اختر المشروع...</option>
               \${projects.map(p => '<option value="' + p.code + '">' + p.code + ' - ' + p.name + '</option>').join('')}
             </select>
-            <input type="number" class="guest-count" min="1" value="1" placeholder="عدد الضيوف" onchange="calculateDistribution()">
+            <input type="number" class="guest-count" min="1" value="1" placeholder="عدد" onchange="calculateDistribution()">
+            <input type="text" class="guest-details" placeholder="أسماء الضيوف...">
             <button type="button" class="remove-btn" onclick="removeProject(\${projectIndex})">✕</button>
           \`;
           container.appendChild(div);
@@ -12833,7 +12837,7 @@ function showSharedOrderForm() {
           const item = document.getElementById('item').value;
           const totalAmount = parseFloat(document.getElementById('totalAmount').value) || 0;
           const orderDate = document.getElementById('orderDate').value;
-          const details = document.getElementById('details').value;
+          const orderDescription = document.getElementById('orderDescription').value;
 
           if (!vendor) {
             alert('برجاء اختيار المورد');
@@ -12848,7 +12852,7 @@ function showSharedOrderForm() {
             return;
           }
 
-          // جمع بيانات المشاريع
+          // جمع بيانات المشاريع مع التفاصيل الخاصة بكل مشروع
           const rows = document.querySelectorAll('.project-row');
           const projectsData = [];
           let totalGuests = 0;
@@ -12856,11 +12860,17 @@ function showSharedOrderForm() {
           rows.forEach(row => {
             const select = row.querySelector('.project-select');
             const guestInput = row.querySelector('.guest-count');
+            const detailsInput = row.querySelector('.guest-details');
             const projectCode = select.value;
             const guests = parseInt(guestInput.value) || 0;
+            const guestDetails = detailsInput ? detailsInput.value.trim() : '';
 
             if (projectCode && guests > 0) {
-              projectsData.push({ code: projectCode, guests: guests });
+              projectsData.push({
+                code: projectCode,
+                guests: guests,
+                details: guestDetails  // تفاصيل/أسماء ضيوف هذا المشروع
+              });
               totalGuests += guests;
             }
           });
@@ -12881,8 +12891,8 @@ function showSharedOrderForm() {
             vendor: vendor,
             item: item,
             totalAmount: totalAmount,
-            details: details,
-            projects: projectsData,
+            orderDescription: orderDescription,  // وصف عام للأوردر
+            projects: projectsData,  // كل مشروع له تفاصيله الخاصة
             totalGuests: totalGuests
           };
 
@@ -12990,10 +13000,18 @@ function saveSharedOrder(orderData) {
       const newTransNum = lastRow > 1 ?
         (Number(sheet.getRange(lastRow, 1).getValue()) || 0) + 1 : 1;
 
-      // التفاصيل مع معلومات التقسيم
-      const detailsText = orderData.details ?
-        `${orderData.details} | ${project.guests} ضيوف من ${totalGuests}` :
-        `أوردر مشترك - ${project.guests} ضيوف من ${totalGuests}`;
+      // التفاصيل: أسماء الضيوف الخاصة بهذا المشروع + معلومات التقسيم
+      let detailsText = '';
+      if (project.details) {
+        // إذا كان هناك تفاصيل خاصة بالمشروع (أسماء الضيوف)
+        detailsText = `${project.details} (${project.guests} من ${totalGuests})`;
+      } else if (orderData.orderDescription) {
+        // إذا كان هناك وصف عام للأوردر
+        detailsText = `${orderData.orderDescription} | ${project.guests} ضيوف من ${totalGuests}`;
+      } else {
+        // الافتراضي
+        detailsText = `أوردر مشترك - ${project.guests} ضيوف من ${totalGuests}`;
+      }
 
       // الشهر
       const monthStr = Utilities.formatDate(transDate, Session.getScriptTimeZone(), 'yyyy-MM');
@@ -13057,7 +13075,9 @@ function saveSharedOrder(orderData) {
         row: newRow,
         transNum: newTransNum,
         project: project.code,
-        amount: share
+        amount: share,
+        details: project.details || '',
+        guests: project.guests
       });
     }
 
@@ -13079,10 +13099,14 @@ function saveSharedOrder(orderData) {
       }
     );
 
-    // رسالة النجاح
-    const projectsList = savedRows.map(r =>
-      `• ${r.project}: $${r.amount.toFixed(2)}`
-    ).join('\\n');
+    // رسالة النجاح مع تفاصيل الضيوف
+    const projectsList = savedRows.map(r => {
+      let line = `• ${r.project}: $${r.amount.toFixed(2)} (${r.guests} ضيوف)`;
+      if (r.details) {
+        line += `\\n  ↳ ${r.details}`;
+      }
+      return line;
+    }).join('\\n');
 
     return {
       success: true,
