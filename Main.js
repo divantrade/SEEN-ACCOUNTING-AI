@@ -12458,6 +12458,15 @@ function saveTransactionData(formData) {
   SpreadsheetApp.flush();
 
   // ═══════════════════════════════════════════════════════════════
+  // إعادة حساب الرصيد (O) وحالة السداد (V) لكل حركات نفس الطرف
+  // هذا يضمن تحديث الحركات السابقة عند إضافة حركة جديدة
+  // ═══════════════════════════════════════════════════════════════
+  if (formData.partyName) {
+    recalculatePartyBalance_(sheet, newRow);
+    SpreadsheetApp.flush();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // تسجيل النشاط
   // ═══════════════════════════════════════════════════════════════
   const summaryText = `${formData.natureType} - ${formData.partyName || formData.item} - ${amount} ${formData.currency}`;
@@ -13080,6 +13089,18 @@ function saveSharedOrder(orderData) {
         guests: project.guests
       });
     }
+
+    SpreadsheetApp.flush();
+
+    // ═══════════════════════════════════════════════════════════════
+    // إعادة حساب الأرصدة وتواريخ الاستحقاق لجميع الحركات المضافة
+    // ═══════════════════════════════════════════════════════════════
+    for (const saved of savedRows) {
+      // حساب تاريخ الاستحقاق (U)
+      calculateDueDate_(ss, sheet, saved.row);
+    }
+    // إعادة حساب الرصيد (O) وحالة السداد (V) لكل حركات الطرف (مرة واحدة تكفي)
+    recalculatePartyBalance_(sheet, savedRows[0].row);
 
     SpreadsheetApp.flush();
 
