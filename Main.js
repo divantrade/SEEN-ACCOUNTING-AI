@@ -13013,7 +13013,7 @@ function saveSharedOrder(orderData) {
       let detailsText = '';
       if (project.details) {
         // إذا كان هناك تفاصيل خاصة بالمشروع (أسماء الضيوف)
-        detailsText = `${project.details} (${project.guests} من ${totalGuests})`;
+        detailsText = `مقابلة ${project.details} (${project.guests} من ${totalGuests})`;
       } else if (orderData.orderDescription) {
         // إذا كان هناك وصف عام للأوردر
         detailsText = `${orderData.orderDescription} | ${project.guests} ضيوف من ${totalGuests}`;
@@ -13036,7 +13036,7 @@ function saveSharedOrder(orderData) {
       sheet.getRange(newRow, 3).setValue('استحقاق مصروف');
 
       // D: تصنيف الحركة
-      sheet.getRange(newRow, 4).setValue('مصروف');
+      sheet.getRange(newRow, 4).setValue('مصروفات مباشرة');
 
       // E: كود المشروع
       sheet.getRange(newRow, 5).setValue(project.code);
