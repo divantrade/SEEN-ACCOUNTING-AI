@@ -115,7 +115,8 @@ const AI_CONFIG = {
         WAITING_PAYMENT_TERM: 'ai_waiting_payment_term',          // ⭐ انتظار شرط الدفع
         WAITING_CONFIRMATION: 'ai_waiting_confirmation',
         WAITING_EDIT: 'ai_waiting_edit',
-        CONFIRM_WAIT: 'ai_confirm_wait'
+        CONFIRM_WAIT: 'ai_confirm_wait',
+        WAITING_SHARED_ORDER_CONFIRMATION: 'ai_waiting_shared_order_confirm'  // ⭐ انتظار تأكيد الأوردر المشترك
     },
 
     // ==================== الرسائل ====================
@@ -402,6 +403,31 @@ const AI_CONFIG = {
 - طابق اسم المشروع مع القائمة المتاحة
 - إذا وجدت تطابق، استخدم الكود والاسم من القائمة
 - إذا لم يوجد المشروع في القائمة، اكتب الاسم كما هو واترك الكود فارغ
+
+## ⭐ الأوردر المشترك (Shared Order):
+- إذا ذكر المستخدم **عدة مشاريع** في نفس الحركة مع **عدد الضيوف/المقابلات** لكل مشروع
+- كلمات دالة: "أوردر مشترك"، "مشترك بين"، "موزع على"، أو ذكر عدة مشاريع مع أرقام ضيوف
+- مثال: "تصوير 3 مقابلات لـ: جمهورية الخوف (1 ضيف)، أرض النفاق (4 ضيوف)، شارع الحب (3 ضيوف)"
+
+عند اكتشاف أوردر مشترك، أرجع:
+{
+  "is_shared_order": true,
+  "nature": "استحقاق مصروف",
+  "classification": "إنتاج",
+  "item": "البند",
+  "party": "اسم الطرف",
+  "total_amount": 2000,
+  "currency": "USD",
+  "unit_count": 8,
+  "payment_method": "تحويل بنكي",
+  "payment_term": "فوري",
+  "details": "التفاصيل",
+  "projects": [
+    {"name": "جمهورية الخوف", "code": "الكود أو null", "guests": 1},
+    {"name": "أرض النفاق", "code": "الكود أو null", "guests": 4},
+    {"name": "شارع الحب", "code": "الكود أو null", "guests": 3}
+  ]
+}
 
 ## المخرجات المطلوبة:
 أرجع JSON فقط بدون أي نص إضافي:
