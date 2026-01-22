@@ -1599,7 +1599,7 @@ function saveAITransaction(transaction, user, chatId) {
             chatId: chatId,
             attachmentUrl: '',
             isNewParty: transaction.isNewParty,
-            unitCount: transaction.unitCount || '',
+            unitCount: transaction.unit_count || transaction.unitCount || '',
             notes: transaction.originalText ? `النص الأصلي: ${transaction.originalText}` : ''
         };
 
