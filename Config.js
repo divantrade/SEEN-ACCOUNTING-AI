@@ -61,6 +61,8 @@ const CONFIG = {
         LEGACY_FUNDERS: 'قاعدة بيانات الممولين',
 
         // شيتات بوت تليجرام
+        BOT_TRANSACTIONS: 'شيت حركات البوت',
+        BOT_PARTIES: 'أطراف البوت',
         REJECTED_ARCHIVE: 'أرشيف المرفوضات',
         BOT_USERS: 'المستخدمين المصرح لهم'
     },

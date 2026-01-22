@@ -234,6 +234,10 @@ function getBotReviewSidebarHtml() {
             <div class="empty-state">
                 <div class="empty-state-icon">✅</div>
                 <p>لا توجد حركات معلقة للمراجعة</p>
+                <p style="font-size: 12px; color: #666; margin-top: 8px;">
+                    💡 الحركات تُسجَّل مباشرة في دفتر الحركات الآن.<br>
+                    لرفض حركة: حدد الصف ➡️ القائمة ➡️ "❌ رفض الحركة المحددة"
+                </p>
             </div>
         `;
     } else {
@@ -379,7 +383,7 @@ function getBotReviewSidebarHtml() {
                         alert('خطأ: ' + error.message);
                         hideLoading();
                     })
-                    .rejectTransaction(rowNumber, reason);
+                    .rejectBotTransaction(rowNumber, reason);
             }
 
             function showToast(message) {
@@ -541,17 +545,24 @@ function approveTransaction(rowNumber) {
 }
 
 /**
- * رفض حركة
+ * رفض حركة من شيت حركات البوت (النظام القديم)
+ * ⚠️ ملاحظة: هذه الدالة للنظام القديم. الحركات الآن تُسجَّل مباشرة.
+ * لرفض حركة من دفتر الحركات الرئيسي، استخدم rejectTransaction في BotSheets.js
  */
-function rejectTransaction(rowNumber, reason) {
+function rejectBotTransaction(rowNumber, reason) {
     try {
         const botSheet = getBotTransactionsSheet();
         const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
 
+        // التحقق من وجود الشيت
+        if (!botSheet) {
+            return { success: false, error: 'شيت حركات البوت غير موجود.\nالحركات تُسجَّل مباشرة الآن.\nلرفض حركة: حدد الصف ← القائمة ← "رفض الحركة المحددة"' };
+        }
+
         // التحقق من الحالة
         const currentStatus = botSheet.getRange(rowNumber, columns.REVIEW_STATUS.index).getValue();
         if (currentStatus !== CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING) {
-            return { success: false, error: 'الحركة ليست في حالة انتظار' };
+            return { success: false, error: 'الحركة ليست في حالة انتظار.\nربما تم اعتمادها أو رفضها مسبقاً، أو أنها حركة مباشرة.' };
         }
 
         // تحديث حالة الحركة
