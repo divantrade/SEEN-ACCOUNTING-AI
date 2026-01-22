@@ -148,6 +148,8 @@ function onOpen() {
 
     .addSubMenu(
       ui.createMenu('👁️ إخفاء/إظهار الشيتات')
+        .addItem('⚙️ مدير الشيتات المتقدم', 'showSheetVisibilityManager')
+        .addSeparator()
         .addItem('📊 إخفاء/إظهار التقارير', 'toggleReportsVisibility')
         .addItem('📋 إخفاء/إظهار التقارير التشغيلية', 'toggleOperationalReportsVisibility')
         .addItem('🏦 إخفاء/إظهار حسابات البنوك', 'toggleBankAccountsVisibility')
@@ -11578,6 +11580,444 @@ function toggleSheetsVisibility_(ss, sheetNames, groupName) {
     title: icon + ' تم ' + action + ' ' + groupName,
     message: message
   };
+}
+
+// ==================== مدير إظهار/إخفاء الشيتات المتقدم ====================
+
+/**
+ * عرض مدير الشيتات المتقدم (Sidebar)
+ * يعرض قائمتين: الشيتات الظاهرة والمخفية
+ */
+function showSheetVisibilityManager() {
+  const html = HtmlService.createHtmlOutput(getSheetVisibilityManagerHtml())
+    .setTitle('👁️ مدير إظهار/إخفاء الشيتات')
+    .setWidth(350);
+
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * الحصول على بيانات الشيتات (الظاهرة والمخفية)
+ */
+function getSheetVisibilityData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+
+  const visible = [];
+  const hidden = [];
+
+  sheets.forEach(sheet => {
+    const name = sheet.getName();
+    const info = {
+      name: name,
+      index: sheet.getIndex()
+    };
+
+    if (sheet.isSheetHidden()) {
+      hidden.push(info);
+    } else {
+      visible.push(info);
+    }
+  });
+
+  // ترتيب حسب الفهرس
+  visible.sort((a, b) => a.index - b.index);
+  hidden.sort((a, b) => a.index - b.index);
+
+  return { visible, hidden };
+}
+
+/**
+ * تغيير حالة إظهار/إخفاء شيتات متعددة
+ * @param {Object[]} changes - [{name: 'شيت1', action: 'hide'}, {name: 'شيت2', action: 'show'}]
+ */
+function applySheetVisibilityChanges(changes) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const results = { success: 0, failed: 0, errors: [] };
+
+  // التأكد من وجود شيت واحد على الأقل ظاهر
+  const allSheets = ss.getSheets();
+  const currentlyVisible = allSheets.filter(s => !s.isSheetHidden()).map(s => s.getName());
+
+  // حساب كم شيت سيبقى ظاهراً بعد التغييرات
+  let willBeVisible = [...currentlyVisible];
+
+  changes.forEach(change => {
+    if (change.action === 'hide') {
+      willBeVisible = willBeVisible.filter(n => n !== change.name);
+    } else if (change.action === 'show') {
+      if (!willBeVisible.includes(change.name)) {
+        willBeVisible.push(change.name);
+      }
+    }
+  });
+
+  if (willBeVisible.length === 0) {
+    return {
+      success: 0,
+      failed: changes.length,
+      errors: ['لا يمكن إخفاء كل الشيتات - يجب بقاء شيت واحد على الأقل ظاهراً']
+    };
+  }
+
+  // تطبيق التغييرات
+  changes.forEach(change => {
+    try {
+      const sheet = ss.getSheetByName(change.name);
+      if (!sheet) {
+        results.failed++;
+        results.errors.push(`الشيت "${change.name}" غير موجود`);
+        return;
+      }
+
+      if (change.action === 'hide') {
+        // التحقق من أنه ليس الشيت الوحيد الظاهر
+        if (willBeVisible.length === 0 || (willBeVisible.length === 1 && !willBeVisible.includes(change.name))) {
+          sheet.hideSheet();
+          results.success++;
+        } else if (currentlyVisible.length === 1 && currentlyVisible[0] === change.name) {
+          results.failed++;
+          results.errors.push(`لا يمكن إخفاء "${change.name}" - هو الشيت الوحيد الظاهر`);
+        } else {
+          sheet.hideSheet();
+          results.success++;
+        }
+      } else if (change.action === 'show') {
+        sheet.showSheet();
+        results.success++;
+      }
+    } catch (e) {
+      results.failed++;
+      results.errors.push(`خطأ في "${change.name}": ${e.message}`);
+    }
+  });
+
+  return results;
+}
+
+/**
+ * إنشاء HTML لمدير الشيتات
+ */
+function getSheetVisibilityManagerHtml() {
+  const data = getSheetVisibilityData();
+
+  return `
+  <!DOCTYPE html>
+  <html dir="rtl">
+  <head>
+    <base target="_top">
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+        padding: 12px;
+        margin: 0;
+        background: #f8f9fa;
+      }
+      .section {
+        background: white;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #e9ecef;
+      }
+      .section-title {
+        font-weight: bold;
+        font-size: 14px;
+        color: #333;
+      }
+      .count-badge {
+        background: #6c757d;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+      }
+      .visible-section .count-badge { background: #28a745; }
+      .hidden-section .count-badge { background: #dc3545; }
+
+      .sheet-list {
+        max-height: 200px;
+        overflow-y: auto;
+        margin-bottom: 8px;
+      }
+      .sheet-item {
+        display: flex;
+        align-items: center;
+        padding: 6px 8px;
+        margin: 4px 0;
+        background: #f8f9fa;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .sheet-item:hover {
+        background: #e9ecef;
+      }
+      .sheet-item.selected {
+        background: #e3f2fd;
+        border: 1px solid #2196f3;
+      }
+      .sheet-item input[type="checkbox"] {
+        margin-left: 8px;
+        cursor: pointer;
+      }
+      .sheet-name {
+        flex: 1;
+        font-size: 13px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .action-buttons {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .btn {
+        flex: 1;
+        padding: 8px 12px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        transition: all 0.2s;
+      }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .btn-hide {
+        background: #dc3545;
+        color: white;
+      }
+      .btn-hide:hover:not(:disabled) {
+        background: #c82333;
+      }
+      .btn-show {
+        background: #28a745;
+        color: white;
+      }
+      .btn-show:hover:not(:disabled) {
+        background: #218838;
+      }
+
+      .select-all {
+        font-size: 12px;
+        color: #007bff;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .select-all:hover {
+        color: #0056b3;
+      }
+
+      .status-bar {
+        background: #17a2b8;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        margin-top: 12px;
+        font-size: 12px;
+        display: none;
+      }
+      .status-bar.success { background: #28a745; }
+      .status-bar.error { background: #dc3545; }
+      .status-bar.show { display: block; }
+
+      .empty-state {
+        text-align: center;
+        padding: 20px;
+        color: #6c757d;
+        font-size: 13px;
+      }
+
+      .refresh-btn {
+        width: 100%;
+        padding: 10px;
+        background: #6c757d;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        margin-top: 8px;
+      }
+      .refresh-btn:hover {
+        background: #5a6268;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- الشيتات الظاهرة -->
+    <div class="section visible-section">
+      <div class="section-header">
+        <span class="section-title">👁️ شيتات ظاهرة</span>
+        <span class="count-badge" id="visible-count">${data.visible.length}</span>
+      </div>
+      <div class="sheet-list" id="visible-list">
+        ${data.visible.length === 0 ? '<div class="empty-state">لا توجد شيتات ظاهرة</div>' :
+          data.visible.map(s => `
+            <label class="sheet-item">
+              <input type="checkbox" name="visible" value="${escapeHtml(s.name)}">
+              <span class="sheet-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+            </label>
+          `).join('')}
+      </div>
+      ${data.visible.length > 1 ? `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="select-all" onclick="toggleAll('visible')">تحديد/إلغاء الكل</span>
+          <button class="btn btn-hide" onclick="hideSelected()" id="hide-btn" disabled>🙈 إخفاء المحدد</button>
+        </div>
+      ` : ''}
+    </div>
+
+    <!-- الشيتات المخفية -->
+    <div class="section hidden-section">
+      <div class="section-header">
+        <span class="section-title">🙈 شيتات مخفية</span>
+        <span class="count-badge" id="hidden-count">${data.hidden.length}</span>
+      </div>
+      <div class="sheet-list" id="hidden-list">
+        ${data.hidden.length === 0 ? '<div class="empty-state">لا توجد شيتات مخفية</div>' :
+          data.hidden.map(s => `
+            <label class="sheet-item">
+              <input type="checkbox" name="hidden" value="${escapeHtml(s.name)}">
+              <span class="sheet-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+            </label>
+          `).join('')}
+      </div>
+      ${data.hidden.length > 0 ? `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="select-all" onclick="toggleAll('hidden')">تحديد/إلغاء الكل</span>
+          <button class="btn btn-show" onclick="showSelected()" id="show-btn" disabled>👁️ إظهار المحدد</button>
+        </div>
+      ` : ''}
+    </div>
+
+    <div class="status-bar" id="status"></div>
+
+    <button class="refresh-btn" onclick="refresh()">🔄 تحديث القائمة</button>
+
+    <script>
+      // تحديث حالة الأزرار عند تغيير الاختيار
+      document.querySelectorAll('input[name="visible"]').forEach(cb => {
+        cb.addEventListener('change', updateButtons);
+      });
+      document.querySelectorAll('input[name="hidden"]').forEach(cb => {
+        cb.addEventListener('change', updateButtons);
+      });
+
+      function updateButtons() {
+        const visibleChecked = document.querySelectorAll('input[name="visible"]:checked').length;
+        const hiddenChecked = document.querySelectorAll('input[name="hidden"]:checked').length;
+
+        const hideBtn = document.getElementById('hide-btn');
+        const showBtn = document.getElementById('show-btn');
+
+        if (hideBtn) hideBtn.disabled = visibleChecked === 0;
+        if (showBtn) showBtn.disabled = hiddenChecked === 0;
+      }
+
+      function toggleAll(type) {
+        const checkboxes = document.querySelectorAll('input[name="' + type + '"]');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+        updateButtons();
+      }
+
+      function showStatus(message, type) {
+        const status = document.getElementById('status');
+        status.textContent = message;
+        status.className = 'status-bar show ' + type;
+        setTimeout(() => {
+          status.className = 'status-bar';
+        }, 3000);
+      }
+
+      function hideSelected() {
+        const selected = Array.from(document.querySelectorAll('input[name="visible"]:checked'))
+          .map(cb => ({ name: cb.value, action: 'hide' }));
+
+        if (selected.length === 0) return;
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success > 0) {
+              showStatus('✅ تم إخفاء ' + result.success + ' شيت', 'success');
+              setTimeout(refresh, 500);
+            }
+            if (result.errors.length > 0) {
+              showStatus('⚠️ ' + result.errors[0], 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showStatus('❌ خطأ: ' + error.message, 'error');
+          })
+          .applySheetVisibilityChanges(selected);
+      }
+
+      function showSelected() {
+        const selected = Array.from(document.querySelectorAll('input[name="hidden"]:checked'))
+          .map(cb => ({ name: cb.value, action: 'show' }));
+
+        if (selected.length === 0) return;
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success > 0) {
+              showStatus('✅ تم إظهار ' + result.success + ' شيت', 'success');
+              setTimeout(refresh, 500);
+            }
+            if (result.errors.length > 0) {
+              showStatus('⚠️ ' + result.errors[0], 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showStatus('❌ خطأ: ' + error.message, 'error');
+          })
+          .applySheetVisibilityChanges(selected);
+      }
+
+      function refresh() {
+        google.script.run
+          .withSuccessHandler(function() {
+            google.script.host.close();
+          })
+          .showSheetVisibilityManager();
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+    </script>
+  </body>
+  </html>
+  `;
+}
+
+/**
+ * دالة مساعدة لتهريب HTML
+ */
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ==================== فلتر الشيتات ====================
