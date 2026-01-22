@@ -22,20 +22,21 @@ function onOpen() {
     // ═══════════════════════════════════════════════════════════
     // 1. العمليات اليومية (الأكثر استخداماً - في الأعلى)
     // ═══════════════════════════════════════════════════════════
-    .addItem('➕ إضافة حركة جديدة (نموذج)', 'showTransactionForm')
-    .addItem('⚡ إضافة حركة سريعة', 'quickTransactionEntry')
+    .addItem('📝 إضافة حركة جديدة (نموذج)', 'showTransactionForm')
     .addItem('📦 أوردر مشترك (تقسيم بين مشاريع)', 'showSharedOrderForm')
     .addItem('🧾 إنشاء فاتورة قناة', 'generateChannelInvoice')
     .addItem('🔄 إعادة طباعة فاتورة', 'regenerateChannelInvoice')
     .addSeparator()
 
     // ═══════════════════════════════════════════════════════════
-    // 2. الاستحقاقات والمتابعة
+    // 2. التقارير التشغيلية
     // ═══════════════════════════════════════════════════════════
-    .addItem('⏰ عرض الاستحقاقات (نافذة)', 'showUpcomingPayments')
-    .addItem('📊 تقرير الاستحقاقات الشامل', 'generateDueReport')
-    .addItem('📋 دفتر الأستاذ المساعد', 'generateDetailedPayablesReport')
-    .addSeparator()
+    .addSubMenu(
+      ui.createMenu('📋 التقارير التشغيلية')
+        .addItem('⏰ عرض الاستحقاقات (نافذة)', 'showUpcomingPayments')
+        .addItem('📊 تقرير الاستحقاقات الشامل', 'generateDueReport')
+        .addItem('📋 دفتر الأستاذ المساعد', 'generateDetailedPayablesReport')
+    )
 
     // ═══════════════════════════════════════════════════════════
     // 3. كشوف الحسابات
@@ -72,14 +73,6 @@ function onOpen() {
         .addItem('➕ إدراج استحقاق عمولة (من التقرير)', 'insertCommissionFromReport')
     )
 
-    // التقارير التشغيلية
-    .addSubMenu(
-      ui.createMenu('📋 التقارير التشغيلية')
-        .addItem('📊 تقارير ربحية المشاريع (شيت)', 'generateAllProjectsProfitabilityReport')
-        .addItem('📋 دفتر الأستاذ المساعد (شيت)', 'generateDetailedPayablesReport')
-        .addItem('📊 تقرير الاستحقاقات (شيت)', 'generateDueReport')
-        .addItem('🔔 التنبيهات والاستحقاقات (شيت)', 'updateAlerts')
-    )
 
     // التقارير الملخصة
     .addSubMenu(
@@ -174,52 +167,23 @@ function onOpen() {
         .addSeparator()
         .addItem('📈 إحصائيات البوت', 'showBotStatistics')
         .addItem('📎 تقرير المرفقات', 'showAttachmentsReport')
-        .addSeparator()
-        .addItem('🔧 إعداد شيتات البوت', 'setupBotSheets')
-        .addItem('🔄 تحديث قوائم شيت البوت', 'updateBotSheetValidationUI')
-        .addItem('🔐 تحديث Token وإعداد Webhook', 'updateBotTokenAndSetup')
-        .addItem('🔗 إعداد Webhook', 'setWebhook')
-        .addItem('🧪 اختبار Token البوت', 'testBotToken')
-        .addItem('📡 معلومات Webhook', 'getWebhookInfo')
-        .addSeparator()
-        .addItem('📁 إعداد مجلدات المرفقات', 'setupAttachmentsFolders')
-        .addItem('🧪 اختبار مجلد المرفقات', 'testAttachmentsFolder')
-        .addSeparator()
         .addItem('🗑️ تنظيف مرفقات المرفوضة', 'cleanupRejectedAttachments')
     )
 
     .addSubMenu(
       ui.createMenu('⚙️ إعدادات متقدمة')
-        .addItem('💾 حفظ الحركة المعلقة', 'processPendingTransaction')
-        .addItem('📝 إدخال حركة يدوياً (JSON)', 'manualTransactionEntry')
-        .addSeparator()
         .addItem('📅 تطبيع التواريخ', 'normalizeDateColumns')
         .addItem('📋 إصلاح القوائم المنسدلة', 'fixAllDropdowns')
-        .addItem('🔗 مراجعة نوع الحركة (تقرير فقط)', 'reviewMovementTypesOnly')
         .addItem('🔗 مراجعة وإصلاح نوع الحركة', 'reviewAndFixMovementTypes')
         .addItem('⚖️ فحص الاستحقاقات والدفعات (سريع)', 'checkAccrualPaymentBalance')
         .addItem('⚖️ تقرير الاستحقاقات والدفعات (شيت)', 'generateAccrualPaymentReport')
-        .addSeparator()
         .addItem('🎨 إعادة تطبيق التلوين الشرطي', 'refreshTransactionsFormatting')
-        .addItem('📌 تثبيت أعمدة + تظليل الفواتير (المشاريع)', 'applyProjectsSheetEnhancements')
-        .addItem('🔄 تحديث الموازنات المخططة (dropdown + تناغم)', 'applyBudgetsSheetEnhancements')
-        .addItem('🔄 تحديث معادلة تاريخ الاستحقاق', 'refreshDueDateFormulas')
         .addItem('💵 تحديث شامل (M, O, U, V)', 'refreshValueAndBalanceFormulas')
-        .addSeparator()
-        .addItem('📄 إضافة عمود كشف الحساب (دفتر الحركات)', 'addStatementLinkColumn')
-        .addItem('📄 إضافة عمود كشف الحساب (تقرير الموردين)', 'addStatementColumnToVendorReport')
-        .addItem('📄 إضافة عمود كشف الحساب (تقرير الممولين)', 'addStatementColumnToFunderReport')
-        .addItem('💰 إضافة أعمدة العمولات للمشاريع', 'addProjectManagerColumns')
-        .addItem('📊 إضافة عمود عدد الوحدات (دفتر الحركات)', 'addUnitCountColumn')
-        .addItem('📊 إضافة عمود عدد الوحدات (حركات البوت)', 'addUnitCountColumnToBotSheet')
         .addSeparator()
         .addItem('🔔 تفعيل التسجيل التلقائي', 'installActivityTriggers')
         .addItem('🔕 إيقاف التسجيل التلقائي', 'uninstallActivityTriggers')
         .addSeparator()
         .addItem('💾 إنشاء نسخة احتياطية للشيت', 'backupSpreadsheet')
-        .addSeparator()
-        .addItem('🔧 إنشاء النظام - الجزء 1 (حذف كامل)', 'setupPart1')
-        .addItem('🔧 إنشاء النظام - الجزء 2 (حذف كامل)', 'setupPart2')
     )
 
     // ═══════════════════════════════════════════════════════════
