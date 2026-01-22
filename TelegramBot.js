@@ -2099,6 +2099,7 @@ function handleConfirmation(chatId, messageId, choice, session) {
 
 /**
  * حفظ الحركة
+ * ✅ البنية الجديدة: الحفظ مباشرة في شيت الحركات الرئيسي
  */
 function saveTransaction(chatId, session) {
     try {
@@ -2125,42 +2126,58 @@ function saveTransaction(chatId, session) {
             chatId: chatId,
             attachmentUrl: data.attachmentUrl,
             isNewParty: data.isNewParty,
-            unitCount: data.unitCount || 0  // ✅ عدد الوحدات (جديد)
+            unitCount: data.unitCount || 0,
+            notes: data.attachmentUrl ? `📎 مرفق: ${data.attachmentUrl}` : ''
         };
 
-        // حفظ الحركة
-        const result = addBotTransaction(transactionData);
+        // ✅ إذا كان طرف جديد، أضفه مباشرة لشيت الأطراف الرئيسي
+        if (data.isNewParty) {
+            const partyResult = addPartyDirectly({
+                name: data.partyName,
+                type: data.partyType,
+                notes: `(مضاف من البوت بواسطة ${session.userName})`
+            });
+            if (!partyResult.success && !partyResult.alreadyExists) {
+                Logger.log('⚠️ فشل إضافة الطرف الجديد: ' + partyResult.error);
+            }
+        }
+
+        // ✅ حفظ الحركة مباشرة في شيت الحركات الرئيسي
+        const result = addTransactionDirectly(transactionData, '🤖 بوت');
 
         if (result.success) {
-            // إذا كان طرف جديد، أضفه لشيت الأطراف
-            if (data.isNewParty) {
-                addBotParty({
-                    name: data.partyName,
-                    type: data.partyType,
-                    telegramUser: session.userName,
-                    chatId: chatId,
-                    linkedTransactionId: result.transactionId
-                });
-            }
-
             // إرسال رسالة النجاح
-            const successMessage = BOT_CONFIG.INTERACTIVE_MESSAGES.SUCCESS
-                .replace('{id}', result.transactionId);
+            const successMessage = CONFIG.TELEGRAM_BOT.MESSAGES.SUCCESS
+                .replace('#{id}', '#' + result.transactionId);
             sendMessage(chatId, successMessage, null, 'Markdown');
 
-            // إرسال إشعار للمحاسب
-            notifyAccountant(transactionData, result.transactionId);
+            // إرسال إشعار للمحاسب (اختياري - للعلم فقط)
+            try {
+                notifyAccountantNewEntry(transactionData, result.transactionId);
+            } catch (notifyError) {
+                Logger.log('⚠️ فشل إرسال إشعار للمحاسب: ' + notifyError.message);
+            }
 
             // مسح الجلسة
             resetSession(chatId);
         } else {
-            sendMessage(chatId, CONFIG.TELEGRAM_BOT.MESSAGES.ERROR);
+            Logger.log('❌ فشل حفظ الحركة: ' + result.error);
+            sendMessage(chatId, CONFIG.TELEGRAM_BOT.MESSAGES.ERROR + '\n' + (result.error || ''));
         }
 
     } catch (error) {
         Logger.log('Error saving transaction: ' + error.message);
         sendMessage(chatId, CONFIG.TELEGRAM_BOT.MESSAGES.ERROR);
     }
+}
+
+/**
+ * إشعار المحاسب بإدخال جديد (للعلم فقط - ليس للاعتماد)
+ */
+function notifyAccountantNewEntry(transactionData, transactionId) {
+    // يمكن إضافة إشعار بسيط للمحاسب هنا إذا أردت
+    // حالياً نكتفي بالتسجيل في اللوج
+    Logger.log('📝 إدخال جديد من البوت - رقم: ' + transactionId + ' | المُدخل: ' + transactionData.telegramUser);
 }
 
 /**

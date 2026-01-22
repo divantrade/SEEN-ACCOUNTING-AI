@@ -1544,125 +1544,75 @@ function handleAIConfirmation(chatId, session, user) {
  * حفظ الحركة في شيت حركات البوت
  */
 /**
- * حفظ الحركة في شيت حركات البوت
+ * حفظ الحركة مباشرة في شيت الحركات الرئيسي
+ * ✅ البنية الجديدة: الحفظ مباشرة بدون مرحلة المراجعة
  */
 function saveAITransaction(transaction, user, chatId) {
-    Logger.log('🚀 بدء عملية حفظ الحركة...');
+    Logger.log('🚀 بدء عملية حفظ الحركة (البوت الذكي)...');
     try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const sheetName = CONFIG.SHEETS.BOT_TRANSACTIONS;
-        Logger.log(`📂 البحث عن الشيت: "${sheetName}"`);
+        const userName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
 
-        let sheet = ss.getSheetByName(sheetName);
-
-        // إذا كان الشيت غير موجود، نقوم بإنشائه (اختياري أو إرسال خطأ واضح)
-        if (!sheet) {
-            Logger.log(`⚠️ الشيت "${sheetName}" غير موجود. جاري إنشاؤه...`);
-            try {
-                sheet = ss.insertSheet(sheetName);
-                // إعداد الهيدر إذا لزم الأمر
-                const headers = Object.values(BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS).map(col => col.name);
-                sheet.appendRow(headers);
-                sheet.getRange(1, 1, 1, headers.length).setBackground('#f3f3f3').setFontWeight('bold');
-                Logger.log('✅ تم إنشاء الشيت والهيدر بنجاح.');
-            } catch (e) {
-                Logger.log(`❌ فشل إنشاء الشيت: ${e.message}`);
-                throw new Error(`شيت "${sheetName}" غير موجود وفشل إنشاؤه تلقائياً. تأكد من الصلاحيات.`);
-            }
-        } else {
-            Logger.log('✅ الشيت موجود.');
-        }
-
-        // إنشاء رقم الحركة
-        const transactionId = generateTransactionId();
-        Logger.log(`🆔 رقم الحركة الجديد: ${transactionId}`);
-
-        const now = new Date();
-        const timestamp = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd HH:mm:ss');
-        const month = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM');
-
-        // حساب القيمة بالدولار
-        let amountUSD = 0;
-        try {
-            amountUSD = calculateUSDAmount(
-                transaction.amount,
-                transaction.currency,
-                transaction.exchangeRate
-            );
-        } catch (e) {
-            Logger.log('⚠️ خطأ في حساب الدولار: ' + e.message);
-            amountUSD = transaction.amount; // Fallback
-        }
-
-        // تحديد نوع الحركة
-        const movementType = inferMovementType(transaction.nature);
-
-        // بناء صف البيانات (مطابق لهيكل BOT_TRANSACTIONS_COLUMNS)
-        const rowData = [
-            transactionId,                                          // رقم الحركة
-            transaction.due_date && transaction.due_date !== 'TODAY' ? transaction.due_date : timestamp.split(' ')[0], // التاريخ
-            transaction.nature,                                     // طبيعة الحركة
-            transaction.classification,                             // تصنيف الحركة
-            transaction.project_code || '',                         // كود المشروع
-            transaction.project || '',                              // اسم المشروع
-            transaction.item || '',                                 // البند
-            transaction.details || '',                              // التفاصيل
-            transaction.party,                                      // اسم المورد/الجهة
-            transaction.amount,                                     // المبلغ بالعملة الأصلية
-            transaction.currency,                                   // العملة
-            transaction.exchangeRate || 1,                          // سعر الصرف
-            amountUSD,                                              // القيمة بالدولار
-            movementType,                                           // نوع الحركة
-            '',                                                     // الرصيد
-            '',                                                     // رقم مرجعي
-            transaction.payment_method || 'تحويل بنكي',            // طريقة الدفع
-            transaction.payment_term || 'فوري',                     // نوع شرط الدفع
-            transaction.payment_term_weeks || '',                   // عدد الأسابيع
-            transaction.payment_term_date || '',                    // تاريخ مخصص
-            transaction.due_date && transaction.due_date !== 'TODAY' ? transaction.due_date : timestamp.split(' ')[0], // تاريخ الاستحقاق
-            'معلق',                                                 // حالة السداد
-            month,                                                  // الشهر
-            transaction.originalText || '',                         // ملاحظات (النص الأصلي)
-            '',                                                     // كشف
-            CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING,             // حالة المراجعة
-            `${user.first_name || ''} ${user.last_name || ''}`.trim(), // المُدخل
-            chatId,                                                 // معرّف المحادثة
-            timestamp,                                              // تاريخ الإدخال
-            '',                                                     // المُراجع
-            '',                                                     // تاريخ المراجعة
-            '',                                                     // ملاحظات المراجعة
-            '',                                                     // رابط المرفق
-            transaction.isNewParty ? 'نعم' : 'لا',                 // طرف جديد؟
-            'بوت ذكي'                                               // مصدر الإدخال
-        ];
-
-        Logger.log('📝 تجهيز البيانات للحفظ: ' + JSON.stringify(rowData));
-
-        // إضافة الصف
-        try {
-            sheet.appendRow(rowData);
-            Logger.log('✅ تم إضافة الصف بنجاح!');
-        } catch (appendError) {
-            Logger.log('❌ خطأ أثناء appendRow: ' + appendError.message);
-            throw new Error('فشل في الكتابة في الشيت: ' + appendError.message);
-        }
-
-        // إذا كان طرف جديد، أضفه لشيت أطراف البوت
+        // ✅ إذا كان طرف جديد، أضفه مباشرة لشيت الأطراف الرئيسي
         if (transaction.isNewParty) {
             try {
-                Logger.log('👤 إضافة طرف جديد...');
-                addNewPartyFromAI(transaction, user, chatId);
-                Logger.log('✅ تم إضافة الطرف الجديد.');
+                Logger.log('👤 إضافة طرف جديد مباشرة...');
+                const partyType = transaction.partyType || inferPartyType(transaction.nature, transaction.classification);
+                const partyResult = addPartyDirectly({
+                    name: transaction.party,
+                    type: partyType,
+                    notes: `(مضاف من البوت الذكي بواسطة ${userName})`
+                });
+                if (partyResult.success) {
+                    Logger.log('✅ تم إضافة الطرف الجديد.');
+                } else if (partyResult.alreadyExists) {
+                    Logger.log('⚠️ الطرف موجود مسبقاً.');
+                } else {
+                    Logger.log('⚠️ فشل إضافة الطرف: ' + partyResult.error);
+                }
             } catch (e) {
                 Logger.log('⚠️ تحذير: فشل إضافة الطرف الجديد: ' + e.message);
-                // لا نوقف العملية إذا فشل إضافة الطرف فقط
             }
         }
 
-        return {
-            success: true,
-            transactionId: transactionId
+        // تجهيز بيانات الحركة
+        const transactionDate = transaction.due_date && transaction.due_date !== 'TODAY'
+            ? transaction.due_date
+            : new Date();
+
+        const transactionData = {
+            date: transactionDate,
+            nature: transaction.nature,
+            classification: transaction.classification,
+            projectCode: transaction.project_code || '',
+            projectName: transaction.project || '',
+            item: transaction.item || '',
+            details: transaction.details || '',
+            partyName: transaction.party,
+            amount: transaction.amount,
+            currency: transaction.currency,
+            exchangeRate: transaction.exchangeRate || 1,
+            paymentMethod: transaction.payment_method || 'تحويل بنكي',
+            paymentTermType: transaction.payment_term || 'فوري',
+            weeks: transaction.payment_term_weeks || '',
+            customDate: transaction.payment_term_date || '',
+            telegramUser: userName,
+            chatId: chatId,
+            attachmentUrl: '',
+            isNewParty: transaction.isNewParty,
+            unitCount: transaction.unitCount || '',
+            notes: transaction.originalText ? `النص الأصلي: ${transaction.originalText}` : ''
         };
+
+        // ✅ حفظ الحركة مباشرة في شيت الحركات الرئيسي
+        const result = addTransactionDirectly(transactionData, '🤖 بوت ذكي');
+
+        if (result.success) {
+            Logger.log('✅ تم حفظ الحركة بنجاح - رقم: ' + result.transactionId);
+        } else {
+            Logger.log('❌ فشل حفظ الحركة: ' + result.error);
+        }
+
+        return result;
 
     } catch (error) {
         Logger.log('❌ Save Transaction Error: ' + error.message);

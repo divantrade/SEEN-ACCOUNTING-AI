@@ -995,7 +995,496 @@ function getPendingTransactionsCount() {
     return getPendingBotTransactions().length;
 }
 
-// ==================== دوال تحديث شيت حركات البوت ====================
+// ==================== أرشيف المرفوضات (البنية الجديدة) ====================
+
+/**
+ * هيكل أعمدة شيت أرشيف المرفوضات
+ * يحتوي على بيانات الحركات المرفوضة + بيانات الرفض
+ */
+const REJECTED_ARCHIVE_COLUMNS = {
+    ORIGINAL_ID: { index: 1, name: 'رقم الحركة الأصلي', width: 120 },
+    ORIGINAL_DATE: { index: 2, name: 'تاريخ الحركة', width: 100 },
+    NATURE: { index: 3, name: 'طبيعة الحركة', width: 130 },
+    PROJECT_NAME: { index: 4, name: 'المشروع', width: 150 },
+    ITEM: { index: 5, name: 'البند', width: 120 },
+    PARTY_NAME: { index: 6, name: 'الطرف', width: 150 },
+    AMOUNT: { index: 7, name: 'المبلغ', width: 120 },
+    CURRENCY: { index: 8, name: 'العملة', width: 80 },
+    DETAILS: { index: 9, name: 'التفاصيل', width: 200 },
+    INPUT_SOURCE: { index: 10, name: 'مصدر الإدخال', width: 100 },
+    REJECTION_REASON: { index: 11, name: 'سبب الرفض', width: 250 },
+    REJECTION_DATE: { index: 12, name: 'تاريخ الرفض', width: 150 },
+    REJECTED_BY: { index: 13, name: 'رافض الحركة', width: 150 },
+    ATTACHMENT_URL: { index: 14, name: 'رابط المرفق', width: 200 },
+    TELEGRAM_USER: { index: 15, name: 'مُدخل الحركة', width: 150 },
+    TELEGRAM_CHAT_ID: { index: 16, name: 'معرّف المحادثة', width: 120 }
+};
+
+/**
+ * إنشاء/إعادة بناء شيت أرشيف المرفوضات
+ * يُستخدم لأرشفة الحركات المرفوضة من دفتر الحركات الرئيسي
+ */
+function createRejectedArchiveSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = CONFIG.SHEETS.REJECTED_ARCHIVE;
+
+    // حذف الشيت القديم إذا كان موجوداً
+    let sheet = ss.getSheetByName(sheetName);
+    if (sheet) {
+        ss.deleteSheet(sheet);
+    }
+
+    // إنشاء شيت جديد
+    sheet = ss.insertSheet(sheetName);
+
+    const columns = REJECTED_ARCHIVE_COLUMNS;
+    const headers = [];
+    const widths = [];
+
+    // جمع العناوين والعروض
+    Object.values(columns).forEach(col => {
+        headers[col.index - 1] = col.name;
+        widths[col.index - 1] = col.width;
+    });
+
+    // إضافة صف العناوين
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setValues([headers]);
+
+    // تنسيق الهيدر (أحمر للمرفوضات)
+    headerRange
+        .setBackground('#c62828')  // أحمر داكن
+        .setFontColor(CONFIG.COLORS.TEXT.WHITE)
+        .setFontWeight('bold')
+        .setFontSize(CONFIG.FONT.NORMAL)
+        .setHorizontalAlignment('center')
+        .setVerticalAlignment('middle')
+        .setWrap(true);
+
+    // تعيين عرض الأعمدة
+    widths.forEach((width, index) => {
+        sheet.setColumnWidth(index + 1, width);
+    });
+
+    // تجميد الصف الأول
+    sheet.setFrozenRows(1);
+
+    // تنسيق أعمدة التاريخ
+    sheet.getRange(2, columns.ORIGINAL_DATE.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat('dd/mm/yyyy');
+    sheet.getRange(2, columns.REJECTION_DATE.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat('dd/mm/yyyy hh:mm:ss');
+
+    // تنسيق عمود المبلغ
+    sheet.getRange(2, columns.AMOUNT.index, CONFIG.SHEET.DEFAULT_ROWS, 1)
+        .setNumberFormat(CONFIG.FORMATS.CURRENCY);
+
+    // لون التبويب أحمر
+    sheet.setTabColor('#c62828');
+
+    Logger.log('✅ تم إنشاء شيت أرشيف المرفوضات');
+    return sheet;
+}
+
+/**
+ * واجهة إعادة بناء شيت أرشيف المرفوضات (من القائمة)
+ */
+function rebuildRejectedArchiveSheetUI() {
+    const ui = SpreadsheetApp.getUi();
+
+    const result = ui.alert(
+        '⚠️ إعادة بناء شيت الأرشيف',
+        'سيتم حذف شيت "أرشيف المرفوضات" الحالي وإنشاء شيت جديد بالبنية الصحيحة.\n\n' +
+        '⚠️ سيتم فقدان أي بيانات موجودة في الشيت الحالي!\n\n' +
+        'هل تريد المتابعة؟',
+        ui.ButtonSet.YES_NO
+    );
+
+    if (result !== ui.Button.YES) {
+        return;
+    }
+
+    try {
+        createRejectedArchiveSheet();
+        ui.alert('✅ تم بنجاح', 'تم إعادة بناء شيت أرشيف المرفوضات بالبنية الجديدة.', ui.ButtonSet.OK);
+    } catch (error) {
+        ui.alert('❌ خطأ', 'حدث خطأ: ' + error.message, ui.ButtonSet.OK);
+    }
+}
+
+/**
+ * الحصول على شيت أرشيف المرفوضات (أو إنشاؤه)
+ */
+function getRejectedArchiveSheet() {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(CONFIG.SHEETS.REJECTED_ARCHIVE);
+
+    if (!sheet) {
+        sheet = createRejectedArchiveSheet();
+    }
+
+    return sheet;
+}
+
+// ==================== الإضافة المباشرة لشيت الحركات الرئيسي ====================
+
+/**
+ * ⭐ إضافة حركة مباشرة لشيت دفتر الحركات الرئيسي
+ * البديل الجديد لـ addBotTransaction - يضيف مباشرة بدون مرحلة المراجعة
+ *
+ * @param {Object} transactionData - بيانات الحركة
+ * @param {string} inputSource - مصدر الإدخال ('🤖 بوت' / '📝 نموذج' / '✍️ يدوي')
+ * @returns {Object} نتيجة العملية {success, transactionId, rowNumber}
+ */
+function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const mainSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+
+        if (!mainSheet) {
+            Logger.log('❌ لم يتم العثور على دفتر الحركات');
+            return { success: false, error: 'لم يتم العثور على دفتر الحركات' };
+        }
+
+        // الحصول على آخر صف ورقم الحركة الجديد
+        const mainLastRow = mainSheet.getLastRow();
+        const newRow = mainLastRow + 1;
+        const transactionId = newRow - 1; // رقم الحركة
+
+        Logger.log('📝 إضافة حركة جديدة - الصف: ' + newRow);
+
+        // حساب القيمة بالدولار
+        const currency = transactionData.currency || 'USD';
+        const amount = transactionData.amount || 0;
+        const exchangeRate = transactionData.exchangeRate || 1;
+        const amountUSD = (currency === 'USD' || currency === 'دولار')
+            ? amount
+            : amount / exchangeRate;
+
+        // تحديد نوع الحركة
+        const nature = transactionData.nature || '';
+        let movementType = '';
+        if (nature.includes('استحقاق') || nature === 'تمويل') {
+            movementType = CONFIG.MOVEMENT.DEBIT;
+        } else if (nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استرداد') || nature.includes('استلام')) {
+            movementType = CONFIG.MOVEMENT.CREDIT;
+        }
+
+        // ملاحظات مع معلومات المُدخل
+        let notes = transactionData.notes || '';
+        if (transactionData.telegramUser) {
+            notes = notes ? notes + ' | ' : '';
+            notes += `(من البوت: ${transactionData.telegramUser})`;
+        }
+
+        // إعداد بيانات الصف (28 عمود مع عمود مصدر الإدخال الجديد)
+        const mainRowData = [
+            transactionId,                              // A: رقم الحركة
+            transactionData.date || new Date(),         // B: التاريخ
+            nature,                                     // C: طبيعة الحركة
+            transactionData.classification || '',       // D: تصنيف الحركة
+            transactionData.projectCode || '',          // E: كود المشروع
+            transactionData.projectName || '',          // F: اسم المشروع
+            transactionData.item || '',                 // G: البند
+            transactionData.details || '',              // H: التفاصيل
+            transactionData.partyName || '',            // I: اسم المورد/الجهة
+            amount,                                     // J: المبلغ بالعملة الأصلية
+            currency,                                   // K: العملة
+            exchangeRate,                               // L: سعر الصرف
+            amountUSD,                                  // M: القيمة بالدولار
+            movementType,                               // N: نوع الحركة
+            '',                                         // O: الرصيد - سيُحسب بالصيغة
+            '',                                         // P: رقم مرجعي
+            transactionData.paymentMethod || '',        // Q: طريقة الدفع
+            transactionData.paymentTermType || 'فوري', // R: نوع شرط الدفع
+            transactionData.weeks || '',                // S: عدد الأسابيع
+            transactionData.customDate || '',           // T: تاريخ مخصص
+            '',                                         // U: تاريخ الاستحقاق - سيُحسب
+            '',                                         // V: حالة السداد - سيُحسب
+            '',                                         // W: الشهر - سيُحسب
+            notes,                                      // X: ملاحظات
+            '',                                         // Y: كشف
+            '',                                         // Z: رقم الأوردر
+            transactionData.unitCount || '',            // AA: عدد الوحدات
+            inputSource                                 // AB: مصدر الإدخال
+        ];
+
+        // إضافة الصف
+        mainSheet.getRange(newRow, 1, 1, mainRowData.length).setValues([mainRowData]);
+        Logger.log('✅ تم كتابة البيانات بنجاح!');
+
+        // Force flush
+        SpreadsheetApp.flush();
+
+        // حساب الأعمدة التلقائية (M, U, O, V)
+        try {
+            if (typeof calculateUsdValue_ === 'function') {
+                calculateUsdValue_(mainSheet, newRow);
+            }
+            if (typeof calculateDueDate_ === 'function') {
+                calculateDueDate_(ss, mainSheet, newRow);
+            }
+            if (typeof recalculatePartyBalance_ === 'function') {
+                recalculatePartyBalance_(mainSheet, newRow);
+            }
+            Logger.log('✅ تم حساب الأعمدة التلقائية');
+        } catch (calcError) {
+            Logger.log('⚠️ خطأ في حساب الأعمدة التلقائية: ' + calcError.message);
+        }
+
+        // تسجيل النشاط
+        if (typeof logActivity === 'function') {
+            logActivity('إضافة حركة من البوت', CONFIG.SHEETS.TRANSACTIONS, newRow,
+                transactionId, 'مصدر: ' + inputSource);
+        }
+
+        Logger.log('✅ تمت إضافة الحركة بنجاح - رقم: ' + transactionId);
+
+        return {
+            success: true,
+            transactionId: transactionId,
+            rowNumber: newRow
+        };
+
+    } catch (error) {
+        Logger.log('❌ خطأ في إضافة الحركة: ' + error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * ⭐ إضافة طرف مباشرة لشيت الأطراف الرئيسي
+ * البديل الجديد لـ addBotParty
+ *
+ * @param {Object} partyData - بيانات الطرف {name, type}
+ * @returns {Object} نتيجة العملية
+ */
+function addPartyDirectly(partyData) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const partiesSheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
+
+        if (!partiesSheet) {
+            Logger.log('❌ شيت الأطراف غير موجود');
+            return { success: false, error: 'شيت الأطراف غير موجود' };
+        }
+
+        // التحقق من عدم وجود الطرف مسبقاً
+        const data = partiesSheet.getDataRange().getValues();
+        for (let i = 1; i < data.length; i++) {
+            if (String(data[i][0]).trim() === String(partyData.name).trim()) {
+                Logger.log('⚠️ الطرف موجود مسبقاً: ' + partyData.name);
+                return { success: true, message: 'الطرف موجود مسبقاً', alreadyExists: true };
+            }
+        }
+
+        // إضافة الطرف الجديد
+        const lastRow = partiesSheet.getLastRow();
+        const newRow = lastRow + 1;
+
+        // بيانات الطرف (حسب هيكل شيت الأطراف)
+        const partyRowData = [
+            partyData.name,         // اسم الطرف
+            partyData.type || '',   // نوع الطرف
+            '',                     // التخصص
+            '',                     // رقم الهاتف
+            '',                     // البريد
+            '',                     // المدينة
+            '',                     // طريقة الدفع
+            '',                     // بيانات البنك
+            partyData.notes || '(مضاف من البوت)'  // ملاحظات
+        ];
+
+        partiesSheet.getRange(newRow, 1, 1, partyRowData.length).setValues([partyRowData]);
+
+        Logger.log('✅ تم إضافة الطرف: ' + partyData.name);
+
+        return { success: true, rowNumber: newRow };
+
+    } catch (error) {
+        Logger.log('❌ خطأ في إضافة الطرف: ' + error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * ⭐ رفض حركة من دفتر الحركات الرئيسي
+ * نقل الحركة إلى شيت الأرشيف مع سبب الرفض
+ * @param {number} rowNumber - رقم صف الحركة في دفتر الحركات
+ * @param {string} reason - سبب الرفض
+ * @returns {Object} نتيجة العملية
+ */
+function rejectTransaction(rowNumber, reason) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const transactionsSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+    const archiveSheet = getRejectedArchiveSheet();
+
+    if (!transactionsSheet) {
+        return { success: false, error: 'شيت دفتر الحركات غير موجود' };
+    }
+
+    if (rowNumber < 2) {
+        return { success: false, error: 'رقم الصف غير صحيح' };
+    }
+
+    try {
+        // قراءة بيانات الحركة
+        const lastCol = transactionsSheet.getLastColumn();
+        const rowData = transactionsSheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+
+        // التحقق من وجود بيانات
+        if (!rowData[0] && !rowData[1]) {
+            return { success: false, error: 'الصف فارغ أو لا يحتوي على بيانات' };
+        }
+
+        // إعداد بيانات الأرشيف
+        const archiveColumns = REJECTED_ARCHIVE_COLUMNS;
+        const archiveData = new Array(Object.keys(archiveColumns).length).fill('');
+
+        // نسخ البيانات الأساسية (أعمدة دفتر الحركات الرئيسي)
+        archiveData[archiveColumns.ORIGINAL_ID.index - 1] = rowData[0];      // رقم الحركة (A)
+        archiveData[archiveColumns.ORIGINAL_DATE.index - 1] = rowData[1];    // التاريخ (B)
+        archiveData[archiveColumns.NATURE.index - 1] = rowData[2];           // طبيعة الحركة (C)
+        archiveData[archiveColumns.PROJECT_NAME.index - 1] = rowData[5];     // المشروع (F)
+        archiveData[archiveColumns.ITEM.index - 1] = rowData[6];             // البند (G)
+        archiveData[archiveColumns.PARTY_NAME.index - 1] = rowData[8];       // الطرف (I)
+        archiveData[archiveColumns.AMOUNT.index - 1] = rowData[9];           // المبلغ (J)
+        archiveData[archiveColumns.CURRENCY.index - 1] = rowData[10];        // العملة (K)
+        archiveData[archiveColumns.DETAILS.index - 1] = rowData[7];          // التفاصيل (H)
+
+        // مصدر الإدخال (عمود AB = 28)
+        if (rowData.length >= 28) {
+            archiveData[archiveColumns.INPUT_SOURCE.index - 1] = rowData[27];
+        }
+
+        // بيانات الرفض
+        archiveData[archiveColumns.REJECTION_REASON.index - 1] = reason || 'لم يُحدد سبب';
+        archiveData[archiveColumns.REJECTION_DATE.index - 1] = new Date();
+        archiveData[archiveColumns.REJECTED_BY.index - 1] = Session.getActiveUser().getEmail() || 'غير معروف';
+
+        // رابط المرفق إذا كان موجوداً (عمود Y = 25 في الشيت القديم، يختلف حسب البنية)
+        // سنبحث عن عمود يحتوي على رابط Drive
+        for (let i = 0; i < rowData.length; i++) {
+            const cellValue = String(rowData[i] || '');
+            if (cellValue.includes('drive.google.com') || cellValue.includes('docs.google.com')) {
+                archiveData[archiveColumns.ATTACHMENT_URL.index - 1] = cellValue;
+                break;
+            }
+        }
+
+        // إضافة الحركة للأرشيف
+        const archiveLastRow = archiveSheet.getLastRow();
+        archiveSheet.getRange(archiveLastRow + 1, 1, 1, archiveData.length).setValues([archiveData]);
+
+        // حذف الحركة من دفتر الحركات الرئيسي
+        transactionsSheet.deleteRow(rowNumber);
+
+        Logger.log('✅ تم رفض الحركة ونقلها للأرشيف: ' + rowData[0]);
+
+        return {
+            success: true,
+            transactionId: rowData[0],
+            message: 'تم رفض الحركة ونقلها لأرشيف المرفوضات'
+        };
+
+    } catch (error) {
+        Logger.log('❌ خطأ في رفض الحركة: ' + error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * ⭐ واجهة رفض الحركة المحددة (من القائمة)
+ * يرفض الحركة في الصف المحدد حالياً
+ */
+function rejectSelectedTransactionUI() {
+    const ui = SpreadsheetApp.getUi();
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const activeSheet = ss.getActiveSheet();
+
+    // التحقق من أننا في شيت الحركات
+    if (activeSheet.getName() !== CONFIG.SHEETS.TRANSACTIONS) {
+        ui.alert(
+            '⚠️ تنبيه',
+            'يجب أن تكون في شيت "دفتر الحركات المالية" لرفض حركة.\n\n' +
+            'الشيت الحالي: ' + activeSheet.getName(),
+            ui.ButtonSet.OK
+        );
+        return;
+    }
+
+    // الحصول على الصف المحدد
+    const selection = ss.getSelection();
+    const activeRange = selection.getActiveRange();
+    const rowNumber = activeRange.getRow();
+
+    if (rowNumber < 2) {
+        ui.alert('⚠️ تنبيه', 'يرجى تحديد صف حركة (وليس صف العناوين)', ui.ButtonSet.OK);
+        return;
+    }
+
+    // قراءة بيانات الحركة للعرض
+    const rowData = activeSheet.getRange(rowNumber, 1, 1, 10).getValues()[0];
+    const transactionId = rowData[0] || 'غير محدد';
+    const date = rowData[1] || '';
+    const nature = rowData[2] || '';
+    const amount = rowData[9] || 0;
+
+    // طلب سبب الرفض
+    const reasonResponse = ui.prompt(
+        '❌ رفض الحركة',
+        'الحركة: ' + transactionId + '\n' +
+        'التاريخ: ' + date + '\n' +
+        'النوع: ' + nature + '\n' +
+        'المبلغ: ' + amount + '\n\n' +
+        'أدخل سبب الرفض:',
+        ui.ButtonSet.OK_CANCEL
+    );
+
+    if (reasonResponse.getSelectedButton() !== ui.Button.OK) {
+        return;
+    }
+
+    const reason = reasonResponse.getResponseText().trim();
+
+    if (!reason) {
+        ui.alert('⚠️ تنبيه', 'يجب إدخال سبب الرفض', ui.ButtonSet.OK);
+        return;
+    }
+
+    // تأكيد الرفض
+    const confirmResult = ui.alert(
+        '⚠️ تأكيد الرفض',
+        'سيتم رفض الحركة ونقلها إلى أرشيف المرفوضات.\n\n' +
+        'الحركة: ' + transactionId + '\n' +
+        'السبب: ' + reason + '\n\n' +
+        'هل أنت متأكد؟',
+        ui.ButtonSet.YES_NO
+    );
+
+    if (confirmResult !== ui.Button.YES) {
+        return;
+    }
+
+    // تنفيذ الرفض
+    const result = rejectTransaction(rowNumber, reason);
+
+    if (result.success) {
+        ui.alert(
+            '✅ تم الرفض',
+            'تم رفض الحركة (' + result.transactionId + ') ونقلها إلى أرشيف المرفوضات.\n\n' +
+            'السبب: ' + reason,
+            ui.ButtonSet.OK
+        );
+
+        // TODO: إرسال إشعار للمستخدم عبر البوت إذا كانت الحركة من البوت
+
+    } else {
+        ui.alert('❌ خطأ', 'فشل رفض الحركة:\n' + result.error, ui.ButtonSet.OK);
+    }
+}
+
+// ==================== دوال تحديث شيت حركات البوت (قديم - للتوافقية) ====================
 
 /**
  * ⭐ إضافة عمود "عدد الوحدات" لشيت حركات البوت
