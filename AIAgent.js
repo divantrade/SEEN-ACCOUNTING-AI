@@ -1061,6 +1061,11 @@ function buildTransactionSummary(transaction) {
         summary += `⏰ *شرط الدفع:* ${termDisplay}\n`;
     }
 
+    // عرض عدد الوحدات إذا موجود
+    if (transaction.unit_count && transaction.unit_count > 0) {
+        summary += `📊 *عدد الوحدات:* ${transaction.unit_count}\n`;
+    }
+
     if (transaction.details) {
         summary += `📝 *التفاصيل:* ${transaction.details}\n`;
     }
