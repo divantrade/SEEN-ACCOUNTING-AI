@@ -12080,6 +12080,7 @@ function getSmartFormData() {
 
 /**
  * جلب قائمة المستخدمين النشطين للنموذج
+ * ⭐ محدّث للهيكل الجديد مع Checkboxes
  * @returns {Array} قائمة المستخدمين
  */
 function getActiveUsersForForm() {
@@ -12099,12 +12100,13 @@ function getActiveUsersForForm() {
       const row = data[i];
       const name = row[columns.NAME.index - 1];
       const email = row[columns.EMAIL.index - 1];
-      const userType = row[columns.USER_TYPE.index - 1];
-      const isActive = row[columns.IS_ACTIVE.index - 1];
 
-      // فقط المستخدمين النشطين الذين لديهم صلاحية شيت أو كلاهما
-      if (name && isActive === 'نعم' &&
-          (userType === BOT_CONFIG.USER_TYPES.SHEET || userType === BOT_CONFIG.USER_TYPES.BOTH)) {
+      // ⭐ الهيكل الجديد: Checkboxes بدلاً من نص
+      const permSheet = row[columns.PERM_SHEET.index - 1];  // صلاحية الشيت (checkbox)
+      const isActive = row[columns.IS_ACTIVE.index - 1];    // نشط (checkbox)
+
+      // فقط المستخدمين النشطين الذين لديهم صلاحية الشيت
+      if (name && isActive === true && permSheet === true) {
         users.push({
           name: name,
           email: email || '',
