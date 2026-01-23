@@ -14998,50 +14998,57 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
       return;
     }
 
-    // قراءة كل البيانات
-    const headers = transSheet.getRange(1, 1, 1, 20).getValues()[0];
-    const data = transSheet.getRange(2, 1, lastRow - 1, 20).getValues();
+    // قراءة كل البيانات (نحتاج 28 عمود على الأقل)
+    const headers = transSheet.getRange(1, 1, 1, 28).getValues()[0];
+    const data = transSheet.getRange(2, 1, lastRow - 1, 28).getValues();
 
-    // تحديد أعمدة مهمة
+    // ═══════════════════════════════════════════════════════════════
+    // تحديد أعمدة البيانات حسب الهيكل الفعلي لشيت الحركات
+    // ═══════════════════════════════════════════════════════════════
     const colMap = {
-      transNo: headers.indexOf('رقم الحركة'),
-      date: headers.indexOf('التاريخ'),
-      nature: headers.indexOf('طبيعة الحركة'),
-      classification: headers.indexOf('التصنيف'),
-      project: headers.indexOf('المشروع'),
-      item: headers.indexOf('البند'),
-      party: headers.indexOf('الطرف'),
-      amount: headers.indexOf('المبلغ'),
-      currency: headers.indexOf('العملة'),
-      paymentMethod: headers.indexOf('طريقة الدفع'),
-      details: headers.indexOf('التفاصيل'),
-      dueDate: headers.indexOf('تاريخ الاستحقاق')
+      transNo: 0,           // A: رقم الحركة
+      date: 1,              // B: التاريخ
+      nature: 2,            // C: طبيعة الحركة
+      classification: 3,    // D: تصنيف الحركة
+      projectCode: 4,       // E: كود المشروع
+      projectName: 5,       // F: اسم المشروع
+      item: 6,              // G: البند
+      details: 7,           // H: التفاصيل
+      party: 8,             // I: اسم المورد/الجهة
+      amountOriginal: 9,    // J: المبلغ بالعملة الأصلية
+      currency: 10,         // K: العملة
+      exchangeRate: 11,     // L: سعر الصرف
+      amountUSD: 12,        // M: القيمة بالدولار ⭐ (هذا هو المهم)
+      movementType: 13,     // N: نوع الحركة
+      balance: 14,          // O: الرصيد
+      reference: 15,        // P: رقم مرجعي
+      paymentMethod: 16,    // Q: طريقة الدفع
+      paymentTermType: 17,  // R: نوع شرط الدفع
+      paymentWeeks: 18,     // S: عدد الأسابيع
+      customDate: 19,       // T: تاريخ مخصص
+      dueDate: 20,          // U: تاريخ الاستحقاق
+      paymentStatus: 21,    // V: حالة السداد
+      month: 22,            // W: الشهر
+      notes: 23,            // X: ملاحظات
+      statementLink: 24,    // Y: كشف
+      orderNo: 25,          // Z: رقم الأوردر
+      unitCount: 26         // AA: عدد الوحدات
     };
 
-    // إذا لم نجد الأعمدة الأساسية، نستخدم الترتيب الافتراضي
-    if (colMap.transNo === -1) colMap.transNo = 0;
-    if (colMap.date === -1) colMap.date = 1;
-    if (colMap.nature === -1) colMap.nature = 2;
-    if (colMap.classification === -1) colMap.classification = 3;
-    if (colMap.project === -1) colMap.project = 4;
-    if (colMap.item === -1) colMap.item = 5;
-    if (colMap.party === -1) colMap.party = 6;
-    if (colMap.amount === -1) colMap.amount = 7;
-    if (colMap.currency === -1) colMap.currency = 8;
-    if (colMap.paymentMethod === -1) colMap.paymentMethod = 9;
-    if (colMap.details === -1) colMap.details = 10;
-    if (colMap.dueDate === -1) colMap.dueDate = 12;
-
-    // فلترة البيانات
+    // ═══════════════════════════════════════════════════════════════
+    // فلترة البيانات وتجميع الإحصائيات
+    // ═══════════════════════════════════════════════════════════════
     const filteredData = [];
-    const totals = { USD: 0, TRY: 0, EGP: 0 };
+    let totalAmountUSD = 0;
+    const byClassification = {};  // تجميع حسب التصنيف
+    const byItem = {};            // تجميع حسب البند
+    const byParty = {};           // تجميع حسب الطرف
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
       const rowNature = row[colMap.nature];
       const rowDate = row[colMap.date];
-      const amount = parseFloat(row[colMap.amount]) || 0;
-      const currency = row[colMap.currency] || 'USD';
+      const amountUSD = parseFloat(row[colMap.amountUSD]) || 0;
 
       // فلترة حسب الطبيعة
       if (nature !== 'الكل' && rowNature !== nature) {
@@ -15057,28 +15064,42 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
         }
       }
 
+      // تجميع البيانات
+      const classification = row[colMap.classification] || 'غير مصنف';
+      const item = row[colMap.item] || 'غير محدد';
+      const party = row[colMap.party] || 'غير محدد';
+
       // إضافة للنتائج
       filteredData.push({
         transNo: row[colMap.transNo],
         date: row[colMap.date],
         nature: rowNature,
-        classification: row[colMap.classification],
-        project: row[colMap.project],
-        item: row[colMap.item],
-        party: row[colMap.party],
-        amount: amount,
-        currency: currency,
+        classification: classification,
+        projectName: row[colMap.projectName],
+        item: item,
+        party: party,
+        amountUSD: amountUSD,
+        currency: row[colMap.currency],
+        amountOriginal: row[colMap.amountOriginal],
         paymentMethod: row[colMap.paymentMethod],
         details: row[colMap.details],
         dueDate: row[colMap.dueDate]
       });
 
       // إضافة للمجاميع
-      if (totals.hasOwnProperty(currency)) {
-        totals[currency] += amount;
-      } else {
-        totals[currency] = amount;
-      }
+      totalAmountUSD += amountUSD;
+
+      // تجميع حسب التصنيف
+      if (!byClassification[classification]) byClassification[classification] = 0;
+      byClassification[classification] += amountUSD;
+
+      // تجميع حسب البند
+      if (!byItem[item]) byItem[item] = 0;
+      byItem[item] += amountUSD;
+
+      // تجميع حسب الطرف
+      if (!byParty[party]) byParty[party] = 0;
+      byParty[party] += amountUSD;
     }
 
     if (filteredData.length === 0) {
@@ -15086,7 +15107,9 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
       return;
     }
 
-    // إنشاء اسم الشيت
+    // ═══════════════════════════════════════════════════════════════
+    // إنشاء الشيت
+    // ═══════════════════════════════════════════════════════════════
     const fromStr = fromDate ? Utilities.formatDate(fromDate, 'GMT+3', 'yyyy-MM-dd') : 'البداية';
     const toStr = toDate ? Utilities.formatDate(toDate, 'GMT+3', 'yyyy-MM-dd') : 'الآن';
     const sheetName = 'تقرير ' + natureLabel + ' (' + fromStr + ' - ' + toStr + ')';
@@ -15099,131 +15122,229 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
 
     // إنشاء شيت جديد
     reportSheet = ss.insertSheet(sheetName);
+    let currentRow = 1;
 
     // ═══════════════════════════════════════════════════════════════
-    // كتابة العنوان
+    // 1️⃣ العنوان الرئيسي
     // ═══════════════════════════════════════════════════════════════
-    reportSheet.getRange('A1').setValue('📊 ' + sheetName);
-    reportSheet.getRange('A1:L1').merge()
-      .setFontSize(16)
+    reportSheet.getRange(currentRow, 1).setValue('📊 ' + sheetName);
+    reportSheet.getRange(currentRow, 1, 1, 10).merge()
+      .setFontSize(18)
       .setFontWeight('bold')
       .setHorizontalAlignment('center')
       .setBackground('#1a73e8')
       .setFontColor('#ffffff');
+    currentRow++;
 
-    // معلومات التقرير
-    reportSheet.getRange('A2').setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'GMT+3', 'yyyy-MM-dd HH:mm'));
-    reportSheet.getRange('A2:L2').merge()
+    // تاريخ التقرير
+    reportSheet.getRange(currentRow, 1).setValue('تاريخ إعداد التقرير: ' + Utilities.formatDate(new Date(), 'GMT+3', 'yyyy-MM-dd HH:mm'));
+    reportSheet.getRange(currentRow, 1, 1, 10).merge()
       .setFontSize(10)
       .setHorizontalAlignment('center')
       .setBackground('#e8f0fe');
+    currentRow += 2;
 
     // ═══════════════════════════════════════════════════════════════
-    // كتابة رؤوس الأعمدة
+    // 2️⃣ الملخص التنفيذي (في الأعلى)
     // ═══════════════════════════════════════════════════════════════
-    const reportHeaders = [
-      'رقم الحركة', 'التاريخ', 'طبيعة الحركة', 'التصنيف', 'المشروع',
-      'البند', 'الطرف', 'المبلغ', 'العملة', 'طريقة الدفع', 'التفاصيل', 'تاريخ الاستحقاق'
-    ];
+    reportSheet.getRange(currentRow, 1).setValue('📈 الملخص التنفيذي');
+    reportSheet.getRange(currentRow, 1, 1, 10).merge()
+      .setFontSize(14)
+      .setFontWeight('bold')
+      .setBackground('#34a853')
+      .setFontColor('#ffffff');
+    currentRow++;
 
-    reportSheet.getRange(4, 1, 1, reportHeaders.length).setValues([reportHeaders])
+    // صف فارغ
+    currentRow++;
+
+    // الإجمالي الكبير
+    reportSheet.getRange(currentRow, 1, 1, 2).setValues([['💰 إجمالي ' + natureLabel + ':', '']])
+      .setFontWeight('bold')
+      .setFontSize(12);
+    reportSheet.getRange(currentRow, 3).setValue(totalAmountUSD)
+      .setFontWeight('bold')
+      .setFontSize(14)
+      .setNumberFormat('$#,##0.00')
+      .setFontColor('#1a73e8');
+    currentRow++;
+
+    // عدد الحركات
+    reportSheet.getRange(currentRow, 1, 1, 2).setValues([['📋 عدد الحركات:', '']])
+      .setFontWeight('bold');
+    reportSheet.getRange(currentRow, 3).setValue(filteredData.length)
+      .setFontWeight('bold')
+      .setFontColor('#1a73e8');
+    currentRow++;
+
+    // الفترة
+    reportSheet.getRange(currentRow, 1, 1, 2).setValues([['📅 الفترة:', '']])
+      .setFontWeight('bold');
+    reportSheet.getRange(currentRow, 3).setValue(fromStr + ' إلى ' + toStr)
+      .setFontWeight('bold');
+    currentRow += 2;
+
+    // ═══════════════════════════════════════════════════════════════
+    // 3️⃣ ملخص حسب التصنيف
+    // ═══════════════════════════════════════════════════════════════
+    reportSheet.getRange(currentRow, 1).setValue('📊 توزيع حسب التصنيف');
+    reportSheet.getRange(currentRow, 1, 1, 4).merge()
+      .setFontSize(12)
       .setFontWeight('bold')
       .setBackground('#4285f4')
-      .setFontColor('#ffffff')
-      .setHorizontalAlignment('center');
+      .setFontColor('#ffffff');
+    currentRow++;
+
+    // هيدر جدول التصنيفات
+    reportSheet.getRange(currentRow, 1, 1, 3).setValues([['التصنيف', 'المبلغ ($)', 'النسبة']])
+      .setFontWeight('bold')
+      .setBackground('#e8f0fe');
+    currentRow++;
+
+    // بيانات التصنيفات (مرتبة تنازلياً)
+    const sortedClassifications = Object.entries(byClassification)
+      .sort((a, b) => b[1] - a[1]);
+
+    for (const [classification, amount] of sortedClassifications) {
+      const percentage = totalAmountUSD > 0 ? (amount / totalAmountUSD * 100).toFixed(1) + '%' : '0%';
+      reportSheet.getRange(currentRow, 1, 1, 3).setValues([[classification, amount, percentage]]);
+      reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
+      currentRow++;
+    }
+    currentRow++;
 
     // ═══════════════════════════════════════════════════════════════
-    // كتابة البيانات
+    // 4️⃣ أعلى 5 بنود
     // ═══════════════════════════════════════════════════════════════
+    reportSheet.getRange(currentRow, 1).setValue('🏷️ أعلى 5 بنود');
+    reportSheet.getRange(currentRow, 1, 1, 4).merge()
+      .setFontSize(12)
+      .setFontWeight('bold')
+      .setBackground('#fbbc04')
+      .setFontColor('#000000');
+    currentRow++;
+
+    reportSheet.getRange(currentRow, 1, 1, 3).setValues([['البند', 'المبلغ ($)', 'النسبة']])
+      .setFontWeight('bold')
+      .setBackground('#fef7e0');
+    currentRow++;
+
+    const sortedItems = Object.entries(byItem)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    for (const [item, amount] of sortedItems) {
+      const percentage = totalAmountUSD > 0 ? (amount / totalAmountUSD * 100).toFixed(1) + '%' : '0%';
+      reportSheet.getRange(currentRow, 1, 1, 3).setValues([[item, amount, percentage]]);
+      reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
+      currentRow++;
+    }
+    currentRow++;
+
+    // ═══════════════════════════════════════════════════════════════
+    // 5️⃣ أعلى 5 أطراف
+    // ═══════════════════════════════════════════════════════════════
+    reportSheet.getRange(currentRow, 1).setValue('👥 أعلى 5 أطراف');
+    reportSheet.getRange(currentRow, 1, 1, 4).merge()
+      .setFontSize(12)
+      .setFontWeight('bold')
+      .setBackground('#ea4335')
+      .setFontColor('#ffffff');
+    currentRow++;
+
+    reportSheet.getRange(currentRow, 1, 1, 3).setValues([['الطرف', 'المبلغ ($)', 'النسبة']])
+      .setFontWeight('bold')
+      .setBackground('#fce8e6');
+    currentRow++;
+
+    const sortedParties = Object.entries(byParty)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    for (const [party, amount] of sortedParties) {
+      const percentage = totalAmountUSD > 0 ? (amount / totalAmountUSD * 100).toFixed(1) + '%' : '0%';
+      reportSheet.getRange(currentRow, 1, 1, 3).setValues([[party, amount, percentage]]);
+      reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
+      currentRow++;
+    }
+    currentRow += 2;
+
+    // ═══════════════════════════════════════════════════════════════
+    // 6️⃣ التفاصيل (جدول الحركات)
+    // ═══════════════════════════════════════════════════════════════
+    const detailsStartRow = currentRow;
+
+    reportSheet.getRange(currentRow, 1).setValue('📋 تفاصيل الحركات');
+    reportSheet.getRange(currentRow, 1, 1, 10).merge()
+      .setFontSize(14)
+      .setFontWeight('bold')
+      .setBackground('#673ab7')
+      .setFontColor('#ffffff');
+    currentRow++;
+
+    // رؤوس جدول التفاصيل
+    const reportHeaders = [
+      'رقم', 'التاريخ', 'التصنيف', 'المشروع', 'البند',
+      'الطرف', 'المبلغ ($)', 'طريقة الدفع', 'التفاصيل', 'تاريخ الاستحقاق'
+    ];
+
+    reportSheet.getRange(currentRow, 1, 1, reportHeaders.length).setValues([reportHeaders])
+      .setFontWeight('bold')
+      .setBackground('#ede7f6')
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    // بيانات الحركات
     const reportData = filteredData.map(row => [
       row.transNo,
       row.date,
-      row.nature,
       row.classification,
-      row.project,
+      row.projectName,
       row.item,
       row.party,
-      row.amount,
-      row.currency,
+      row.amountUSD,
       row.paymentMethod,
       row.details,
       row.dueDate
     ]);
 
     if (reportData.length > 0) {
-      reportSheet.getRange(5, 1, reportData.length, reportHeaders.length).setValues(reportData);
-    }
+      reportSheet.getRange(currentRow, 1, reportData.length, reportHeaders.length).setValues(reportData);
 
-    // ═══════════════════════════════════════════════════════════════
-    // كتابة المجاميع
-    // ═══════════════════════════════════════════════════════════════
-    const summaryRow = 5 + reportData.length + 1;
+      // تنسيق عمود المبلغ
+      reportSheet.getRange(currentRow, 7, reportData.length, 1).setNumberFormat('$#,##0.00');
 
-    reportSheet.getRange(summaryRow, 1).setValue('📈 ملخص التقرير');
-    reportSheet.getRange(summaryRow, 1, 1, 12).merge()
-      .setFontWeight('bold')
-      .setBackground('#34a853')
-      .setFontColor('#ffffff')
-      .setFontSize(12);
-
-    let currentRow = summaryRow + 1;
-
-    reportSheet.getRange(currentRow, 1, 1, 4).setValues([['عدد الحركات:', filteredData.length, '', '']])
-      .setFontWeight('bold');
-    currentRow++;
-
-    // عرض المجاميع حسب العملة
-    for (const currency in totals) {
-      if (totals[currency] > 0) {
-        reportSheet.getRange(currentRow, 1, 1, 4).setValues([['إجمالي ' + currency + ':', totals[currency].toLocaleString(), currency, '']])
-          .setFontWeight('bold');
-        currentRow++;
-      }
+      // إضافة حدود للجدول
+      reportSheet.getRange(detailsStartRow + 1, 1, reportData.length + 1, reportHeaders.length)
+        .setBorder(true, true, true, true, true, true);
     }
 
     // ═══════════════════════════════════════════════════════════════
     // تنسيقات عامة
     // ═══════════════════════════════════════════════════════════════
-
-    // تعديل عرض الأعمدة
-    reportSheet.setColumnWidth(1, 100);  // رقم الحركة
+    reportSheet.setColumnWidth(1, 60);   // رقم
     reportSheet.setColumnWidth(2, 100);  // التاريخ
-    reportSheet.setColumnWidth(3, 120);  // طبيعة الحركة
-    reportSheet.setColumnWidth(4, 100);  // التصنيف
-    reportSheet.setColumnWidth(5, 150);  // المشروع
-    reportSheet.setColumnWidth(6, 120);  // البند
-    reportSheet.setColumnWidth(7, 150);  // الطرف
-    reportSheet.setColumnWidth(8, 100);  // المبلغ
-    reportSheet.setColumnWidth(9, 60);   // العملة
-    reportSheet.setColumnWidth(10, 100); // طريقة الدفع
-    reportSheet.setColumnWidth(11, 200); // التفاصيل
-    reportSheet.setColumnWidth(12, 100); // تاريخ الاستحقاق
+    reportSheet.setColumnWidth(3, 120);  // التصنيف
+    reportSheet.setColumnWidth(4, 150);  // المشروع
+    reportSheet.setColumnWidth(5, 120);  // البند
+    reportSheet.setColumnWidth(6, 150);  // الطرف
+    reportSheet.setColumnWidth(7, 100);  // المبلغ
+    reportSheet.setColumnWidth(8, 100);  // طريقة الدفع
+    reportSheet.setColumnWidth(9, 200);  // التفاصيل
+    reportSheet.setColumnWidth(10, 100); // تاريخ الاستحقاق
 
-    // تنسيق عمود المبلغ كأرقام
-    if (reportData.length > 0) {
-      reportSheet.getRange(5, 8, reportData.length, 1).setNumberFormat('#,##0.00');
-    }
-
-    // إضافة حدود للجدول
-    if (reportData.length > 0) {
-      reportSheet.getRange(4, 1, reportData.length + 1, reportHeaders.length)
-        .setBorder(true, true, true, true, true, true);
-    }
-
-    // تجميد الصف الأول
-    reportSheet.setFrozenRows(4);
+    // تجميد الصفوف العلوية
+    reportSheet.setFrozenRows(2);
 
     // تفعيل الشيت
     ss.setActiveSheet(reportSheet);
 
     // رسالة النجاح
     let successMsg = '✅ تم إنشاء التقرير بنجاح!\n\n';
-    successMsg += '• عدد الحركات: ' + filteredData.length + '\n';
-    for (const currency in totals) {
-      if (totals[currency] > 0) {
-        successMsg += '• إجمالي ' + currency + ': ' + totals[currency].toLocaleString() + '\n';
-      }
-    }
+    successMsg += '📊 ' + natureLabel + '\n';
+    successMsg += '📅 الفترة: ' + fromStr + ' إلى ' + toStr + '\n\n';
+    successMsg += '💰 الإجمالي: $' + totalAmountUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '\n';
+    successMsg += '📋 عدد الحركات: ' + filteredData.length;
 
     ui.alert('✅ نجاح', successMsg, ui.ButtonSet.OK);
 
