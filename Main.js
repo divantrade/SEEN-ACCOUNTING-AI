@@ -36,6 +36,8 @@ function onOpen() {
         .addItem('⏰ عرض الاستحقاقات (نافذة)', 'showUpcomingPayments')
         .addItem('📊 تقرير الاستحقاقات الشامل', 'generateDueReport')
         .addItem('📋 دفتر الأستاذ المساعد', 'generateDetailedPayablesReport')
+        .addSeparator()
+        .addItem('📊 تقرير الحركات بالفترة', 'showFilteredTransactionReportDialog')
     )
 
     // ═══════════════════════════════════════════════════════════
@@ -14849,5 +14851,384 @@ function generateUnitCostReport(projectCodes) {
   } catch (error) {
     console.error('خطأ في generateUnitCostReport:', error);
     SpreadsheetApp.getUi().alert('❌ خطأ', 'حدث خطأ: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+
+// ==================== تقرير الحركات المالية بالفترة ====================
+
+/**
+ * عرض نافذة اختيار نوع التقرير والفترة الزمنية
+ */
+function showFilteredTransactionReportDialog() {
+  const ui = SpreadsheetApp.getUi();
+
+  // الخطوة 1: اختيار طبيعة الحركة
+  const natureOptions =
+    'اختر طبيعة الحركة:\n\n' +
+    '1. مصروفات فعلية (دفعة مصروف)\n' +
+    '2. إيرادات فعلية (تحصيل إيراد)\n' +
+    '3. استحقاق مصروف\n' +
+    '4. استحقاق إيراد\n' +
+    '5. الكل\n\n' +
+    'أدخل الرقم:';
+
+  const natureResponse = ui.prompt('📊 تقرير الحركات بالفترة', natureOptions, ui.ButtonSet.OK_CANCEL);
+
+  if (natureResponse.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+
+  const natureChoice = parseInt(natureResponse.getResponseText().trim());
+  if (isNaN(natureChoice) || natureChoice < 1 || natureChoice > 5) {
+    ui.alert('⚠️ خطأ', 'اختيار غير صحيح. اختر رقماً من 1 إلى 5', ui.ButtonSet.OK);
+    return;
+  }
+
+  // تحديد طبيعة الحركة
+  const natureMap = {
+    1: 'دفعة مصروف',
+    2: 'تحصيل إيراد',
+    3: 'استحقاق مصروف',
+    4: 'استحقاق إيراد',
+    5: 'الكل'
+  };
+
+  const natureLabelMap = {
+    1: 'مصروفات فعلية',
+    2: 'إيرادات فعلية',
+    3: 'استحقاق مصروف',
+    4: 'استحقاق إيراد',
+    5: 'كل الحركات'
+  };
+
+  const selectedNature = natureMap[natureChoice];
+  const selectedLabel = natureLabelMap[natureChoice];
+
+  // الخطوة 2: إدخال تاريخ البداية
+  const fromDateResponse = ui.prompt(
+    '📅 تاريخ البداية',
+    'أدخل تاريخ البداية بصيغة: YYYY-MM-DD\n\nمثال: 2024-01-01\n\n(اتركه فارغاً لعدم تحديد بداية)',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (fromDateResponse.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+
+  const fromDateStr = fromDateResponse.getResponseText().trim();
+
+  // الخطوة 3: إدخال تاريخ النهاية
+  const toDateResponse = ui.prompt(
+    '📅 تاريخ النهاية',
+    'أدخل تاريخ النهاية بصيغة: YYYY-MM-DD\n\nمثال: 2024-12-31\n\n(اتركه فارغاً لعدم تحديد نهاية)',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (toDateResponse.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+
+  const toDateStr = toDateResponse.getResponseText().trim();
+
+  // التحقق من صحة التواريخ
+  let fromDate = null;
+  let toDate = null;
+
+  if (fromDateStr) {
+    fromDate = new Date(fromDateStr);
+    if (isNaN(fromDate.getTime())) {
+      ui.alert('⚠️ خطأ', 'تاريخ البداية غير صحيح.\nاستخدم صيغة: YYYY-MM-DD', ui.ButtonSet.OK);
+      return;
+    }
+  }
+
+  if (toDateStr) {
+    toDate = new Date(toDateStr);
+    if (isNaN(toDate.getTime())) {
+      ui.alert('⚠️ خطأ', 'تاريخ النهاية غير صحيح.\nاستخدم صيغة: YYYY-MM-DD', ui.ButtonSet.OK);
+      return;
+    }
+  }
+
+  if (fromDate && toDate && fromDate > toDate) {
+    ui.alert('⚠️ خطأ', 'تاريخ البداية يجب أن يكون قبل تاريخ النهاية', ui.ButtonSet.OK);
+    return;
+  }
+
+  // تأكيد الاختيارات
+  let confirmMessage = '📊 ملخص التقرير:\n\n';
+  confirmMessage += '• الطبيعة: ' + selectedLabel + '\n';
+  confirmMessage += '• من: ' + (fromDateStr || 'البداية') + '\n';
+  confirmMessage += '• إلى: ' + (toDateStr || 'الآن') + '\n\n';
+  confirmMessage += 'هل تريد إنشاء التقرير؟';
+
+  const confirmResponse = ui.alert('✅ تأكيد', confirmMessage, ui.ButtonSet.YES_NO);
+
+  if (confirmResponse !== ui.Button.YES) {
+    return;
+  }
+
+  // إنشاء التقرير
+  generateFilteredTransactionReport(selectedNature, selectedLabel, fromDate, toDate);
+}
+
+/**
+ * إنشاء تقرير الحركات المفلترة
+ * @param {string} nature - طبيعة الحركة (أو 'الكل')
+ * @param {string} natureLabel - اسم العرض للطبيعة
+ * @param {Date|null} fromDate - تاريخ البداية
+ * @param {Date|null} toDate - تاريخ النهاية
+ */
+function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate) {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  try {
+    // قراءة شيت الحركات
+    const transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+    if (!transSheet) {
+      ui.alert('⚠️ خطأ', 'لم يتم العثور على شيت الحركات', ui.ButtonSet.OK);
+      return;
+    }
+
+    const lastRow = transSheet.getLastRow();
+    if (lastRow < 2) {
+      ui.alert('ℹ️ تنبيه', 'لا توجد حركات في الشيت', ui.ButtonSet.OK);
+      return;
+    }
+
+    // قراءة كل البيانات
+    const headers = transSheet.getRange(1, 1, 1, 20).getValues()[0];
+    const data = transSheet.getRange(2, 1, lastRow - 1, 20).getValues();
+
+    // تحديد أعمدة مهمة
+    const colMap = {
+      transNo: headers.indexOf('رقم الحركة'),
+      date: headers.indexOf('التاريخ'),
+      nature: headers.indexOf('طبيعة الحركة'),
+      classification: headers.indexOf('التصنيف'),
+      project: headers.indexOf('المشروع'),
+      item: headers.indexOf('البند'),
+      party: headers.indexOf('الطرف'),
+      amount: headers.indexOf('المبلغ'),
+      currency: headers.indexOf('العملة'),
+      paymentMethod: headers.indexOf('طريقة الدفع'),
+      details: headers.indexOf('التفاصيل'),
+      dueDate: headers.indexOf('تاريخ الاستحقاق')
+    };
+
+    // إذا لم نجد الأعمدة الأساسية، نستخدم الترتيب الافتراضي
+    if (colMap.transNo === -1) colMap.transNo = 0;
+    if (colMap.date === -1) colMap.date = 1;
+    if (colMap.nature === -1) colMap.nature = 2;
+    if (colMap.classification === -1) colMap.classification = 3;
+    if (colMap.project === -1) colMap.project = 4;
+    if (colMap.item === -1) colMap.item = 5;
+    if (colMap.party === -1) colMap.party = 6;
+    if (colMap.amount === -1) colMap.amount = 7;
+    if (colMap.currency === -1) colMap.currency = 8;
+    if (colMap.paymentMethod === -1) colMap.paymentMethod = 9;
+    if (colMap.details === -1) colMap.details = 10;
+    if (colMap.dueDate === -1) colMap.dueDate = 12;
+
+    // فلترة البيانات
+    const filteredData = [];
+    const totals = { USD: 0, TRY: 0, EGP: 0 };
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const rowNature = row[colMap.nature];
+      const rowDate = row[colMap.date];
+      const amount = parseFloat(row[colMap.amount]) || 0;
+      const currency = row[colMap.currency] || 'USD';
+
+      // فلترة حسب الطبيعة
+      if (nature !== 'الكل' && rowNature !== nature) {
+        continue;
+      }
+
+      // فلترة حسب التاريخ
+      if (rowDate) {
+        const transDate = new Date(rowDate);
+        if (!isNaN(transDate.getTime())) {
+          if (fromDate && transDate < fromDate) continue;
+          if (toDate && transDate > toDate) continue;
+        }
+      }
+
+      // إضافة للنتائج
+      filteredData.push({
+        transNo: row[colMap.transNo],
+        date: row[colMap.date],
+        nature: rowNature,
+        classification: row[colMap.classification],
+        project: row[colMap.project],
+        item: row[colMap.item],
+        party: row[colMap.party],
+        amount: amount,
+        currency: currency,
+        paymentMethod: row[colMap.paymentMethod],
+        details: row[colMap.details],
+        dueDate: row[colMap.dueDate]
+      });
+
+      // إضافة للمجاميع
+      if (totals.hasOwnProperty(currency)) {
+        totals[currency] += amount;
+      } else {
+        totals[currency] = amount;
+      }
+    }
+
+    if (filteredData.length === 0) {
+      ui.alert('ℹ️ تنبيه', 'لا توجد حركات تطابق معايير البحث', ui.ButtonSet.OK);
+      return;
+    }
+
+    // إنشاء اسم الشيت
+    const fromStr = fromDate ? Utilities.formatDate(fromDate, 'GMT+3', 'yyyy-MM-dd') : 'البداية';
+    const toStr = toDate ? Utilities.formatDate(toDate, 'GMT+3', 'yyyy-MM-dd') : 'الآن';
+    const sheetName = 'تقرير ' + natureLabel + ' (' + fromStr + ' - ' + toStr + ')';
+
+    // حذف الشيت القديم إن وجد
+    let reportSheet = ss.getSheetByName(sheetName);
+    if (reportSheet) {
+      ss.deleteSheet(reportSheet);
+    }
+
+    // إنشاء شيت جديد
+    reportSheet = ss.insertSheet(sheetName);
+
+    // ═══════════════════════════════════════════════════════════════
+    // كتابة العنوان
+    // ═══════════════════════════════════════════════════════════════
+    reportSheet.getRange('A1').setValue('📊 ' + sheetName);
+    reportSheet.getRange('A1:L1').merge()
+      .setFontSize(16)
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center')
+      .setBackground('#1a73e8')
+      .setFontColor('#ffffff');
+
+    // معلومات التقرير
+    reportSheet.getRange('A2').setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'GMT+3', 'yyyy-MM-dd HH:mm'));
+    reportSheet.getRange('A2:L2').merge()
+      .setFontSize(10)
+      .setHorizontalAlignment('center')
+      .setBackground('#e8f0fe');
+
+    // ═══════════════════════════════════════════════════════════════
+    // كتابة رؤوس الأعمدة
+    // ═══════════════════════════════════════════════════════════════
+    const reportHeaders = [
+      'رقم الحركة', 'التاريخ', 'طبيعة الحركة', 'التصنيف', 'المشروع',
+      'البند', 'الطرف', 'المبلغ', 'العملة', 'طريقة الدفع', 'التفاصيل', 'تاريخ الاستحقاق'
+    ];
+
+    reportSheet.getRange(4, 1, 1, reportHeaders.length).setValues([reportHeaders])
+      .setFontWeight('bold')
+      .setBackground('#4285f4')
+      .setFontColor('#ffffff')
+      .setHorizontalAlignment('center');
+
+    // ═══════════════════════════════════════════════════════════════
+    // كتابة البيانات
+    // ═══════════════════════════════════════════════════════════════
+    const reportData = filteredData.map(row => [
+      row.transNo,
+      row.date,
+      row.nature,
+      row.classification,
+      row.project,
+      row.item,
+      row.party,
+      row.amount,
+      row.currency,
+      row.paymentMethod,
+      row.details,
+      row.dueDate
+    ]);
+
+    if (reportData.length > 0) {
+      reportSheet.getRange(5, 1, reportData.length, reportHeaders.length).setValues(reportData);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // كتابة المجاميع
+    // ═══════════════════════════════════════════════════════════════
+    const summaryRow = 5 + reportData.length + 1;
+
+    reportSheet.getRange(summaryRow, 1).setValue('📈 ملخص التقرير');
+    reportSheet.getRange(summaryRow, 1, 1, 12).merge()
+      .setFontWeight('bold')
+      .setBackground('#34a853')
+      .setFontColor('#ffffff')
+      .setFontSize(12);
+
+    let currentRow = summaryRow + 1;
+
+    reportSheet.getRange(currentRow, 1, 1, 4).setValues([['عدد الحركات:', filteredData.length, '', '']])
+      .setFontWeight('bold');
+    currentRow++;
+
+    // عرض المجاميع حسب العملة
+    for (const currency in totals) {
+      if (totals[currency] > 0) {
+        reportSheet.getRange(currentRow, 1, 1, 4).setValues([['إجمالي ' + currency + ':', totals[currency].toLocaleString(), currency, '']])
+          .setFontWeight('bold');
+        currentRow++;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // تنسيقات عامة
+    // ═══════════════════════════════════════════════════════════════
+
+    // تعديل عرض الأعمدة
+    reportSheet.setColumnWidth(1, 100);  // رقم الحركة
+    reportSheet.setColumnWidth(2, 100);  // التاريخ
+    reportSheet.setColumnWidth(3, 120);  // طبيعة الحركة
+    reportSheet.setColumnWidth(4, 100);  // التصنيف
+    reportSheet.setColumnWidth(5, 150);  // المشروع
+    reportSheet.setColumnWidth(6, 120);  // البند
+    reportSheet.setColumnWidth(7, 150);  // الطرف
+    reportSheet.setColumnWidth(8, 100);  // المبلغ
+    reportSheet.setColumnWidth(9, 60);   // العملة
+    reportSheet.setColumnWidth(10, 100); // طريقة الدفع
+    reportSheet.setColumnWidth(11, 200); // التفاصيل
+    reportSheet.setColumnWidth(12, 100); // تاريخ الاستحقاق
+
+    // تنسيق عمود المبلغ كأرقام
+    if (reportData.length > 0) {
+      reportSheet.getRange(5, 8, reportData.length, 1).setNumberFormat('#,##0.00');
+    }
+
+    // إضافة حدود للجدول
+    if (reportData.length > 0) {
+      reportSheet.getRange(4, 1, reportData.length + 1, reportHeaders.length)
+        .setBorder(true, true, true, true, true, true);
+    }
+
+    // تجميد الصف الأول
+    reportSheet.setFrozenRows(4);
+
+    // تفعيل الشيت
+    ss.setActiveSheet(reportSheet);
+
+    // رسالة النجاح
+    let successMsg = '✅ تم إنشاء التقرير بنجاح!\n\n';
+    successMsg += '• عدد الحركات: ' + filteredData.length + '\n';
+    for (const currency in totals) {
+      if (totals[currency] > 0) {
+        successMsg += '• إجمالي ' + currency + ': ' + totals[currency].toLocaleString() + '\n';
+      }
+    }
+
+    ui.alert('✅ نجاح', successMsg, ui.ButtonSet.OK);
+
+  } catch (error) {
+    console.error('خطأ في generateFilteredTransactionReport:', error);
+    ui.alert('❌ خطأ', 'حدث خطأ: ' + error.message, ui.ButtonSet.OK);
   }
 }
