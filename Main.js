@@ -14870,7 +14870,10 @@ function showFilteredTransactionReportDialog() {
     '2. إيرادات فعلية (تحصيل إيراد)\n' +
     '3. استحقاق مصروف\n' +
     '4. استحقاق إيراد\n' +
-    '5. الكل\n\n' +
+    '5. الكل\n' +
+    '─────────────────────\n' +
+    '6. 💰 كل التدفقات الداخلة (إيرادات + تمويل + استرداد تأمين)\n' +
+    '7. 💸 كل التدفقات الخارجة (مصروفات + سداد تمويل + تأمين مدفوع)\n\n' +
     'أدخل الرقم:';
 
   const natureResponse = ui.prompt('📊 تقرير الحركات بالفترة', natureOptions, ui.ButtonSet.OK_CANCEL);
@@ -14880,18 +14883,20 @@ function showFilteredTransactionReportDialog() {
   }
 
   const natureChoice = parseInt(natureResponse.getResponseText().trim());
-  if (isNaN(natureChoice) || natureChoice < 1 || natureChoice > 5) {
-    ui.alert('⚠️ خطأ', 'اختيار غير صحيح. اختر رقماً من 1 إلى 5', ui.ButtonSet.OK);
+  if (isNaN(natureChoice) || natureChoice < 1 || natureChoice > 7) {
+    ui.alert('⚠️ خطأ', 'اختيار غير صحيح. اختر رقماً من 1 إلى 7', ui.ButtonSet.OK);
     return;
   }
 
-  // تحديد طبيعة الحركة
+  // تحديد طبيعة الحركة (قد تكون قيمة واحدة أو مصفوفة)
   const natureMap = {
     1: 'دفعة مصروف',
     2: 'تحصيل إيراد',
     3: 'استحقاق مصروف',
     4: 'استحقاق إيراد',
-    5: 'الكل'
+    5: 'الكل',
+    6: ['تحصيل إيراد', 'استلام تمويل', 'استرداد تأمين من القناة'],  // التدفقات الداخلة
+    7: ['دفعة مصروف', 'سداد تمويل', 'تأمين مدفوع للقناة']           // التدفقات الخارجة
   };
 
   const natureLabelMap = {
@@ -14899,7 +14904,9 @@ function showFilteredTransactionReportDialog() {
     2: 'إيرادات فعلية',
     3: 'استحقاق مصروف',
     4: 'استحقاق إيراد',
-    5: 'كل الحركات'
+    5: 'كل الحركات',
+    6: 'التدفقات الداخلة',
+    7: 'التدفقات الخارجة'
   };
 
   const selectedNature = natureMap[natureChoice];
@@ -15043,6 +15050,7 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
     const byClassification = {};  // تجميع حسب التصنيف
     const byItem = {};            // تجميع حسب البند
     const byParty = {};           // تجميع حسب الطرف
+    const byNature = {};          // تجميع حسب طبيعة الحركة (للتدفقات)
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
@@ -15051,8 +15059,18 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
       const amountUSD = parseFloat(row[colMap.amountUSD]) || 0;
 
       // فلترة حسب الطبيعة
-      if (nature !== 'الكل' && rowNature !== nature) {
-        continue;
+      if (nature !== 'الكل') {
+        if (Array.isArray(nature)) {
+          // إذا كانت الطبيعة مصفوفة (التدفقات الداخلة/الخارجة)
+          if (!nature.includes(rowNature)) {
+            continue;
+          }
+        } else {
+          // إذا كانت الطبيعة قيمة واحدة
+          if (rowNature !== nature) {
+            continue;
+          }
+        }
       }
 
       // فلترة حسب التاريخ
@@ -15100,6 +15118,10 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
       // تجميع حسب الطرف
       if (!byParty[party]) byParty[party] = 0;
       byParty[party] += amountUSD;
+
+      // تجميع حسب طبيعة الحركة (مفيد لتقارير التدفقات)
+      if (!byNature[rowNature]) byNature[rowNature] = 0;
+      byNature[rowNature] += amountUSD;
     }
 
     if (filteredData.length === 0) {
@@ -15186,6 +15208,46 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
     reportSheet.getRange(currentRow, 3).setValue(fromStr + ' إلى ' + toStr)
       .setFontWeight('bold');
     currentRow += 2;
+
+    // ═══════════════════════════════════════════════════════════════
+    // 2.5️⃣ توزيع حسب نوع التدفق (فقط لتقارير التدفقات)
+    // ═══════════════════════════════════════════════════════════════
+    if (Array.isArray(nature)) {
+      reportSheet.getRange(currentRow, 1).setValue('🔄 توزيع حسب نوع التدفق');
+      reportSheet.getRange(currentRow, 1, 1, 4).merge()
+        .setFontSize(12)
+        .setFontWeight('bold')
+        .setBackground('#9c27b0')
+        .setFontColor('#ffffff');
+      currentRow++;
+
+      // هيدر
+      reportSheet.getRange(currentRow, 1, 1, 2).merge();
+      reportSheet.getRange(currentRow, 1).setValue('نوع التدفق')
+        .setFontWeight('bold')
+        .setBackground('#f3e5f5');
+      reportSheet.getRange(currentRow, 3).setValue('المبلغ ($)')
+        .setFontWeight('bold')
+        .setBackground('#f3e5f5');
+      reportSheet.getRange(currentRow, 4).setValue('النسبة')
+        .setFontWeight('bold')
+        .setBackground('#f3e5f5');
+      currentRow++;
+
+      // بيانات التدفقات (مرتبة تنازلياً)
+      const sortedNatures = Object.entries(byNature)
+        .sort((a, b) => b[1] - a[1]);
+
+      for (const [natureName, amount] of sortedNatures) {
+        const percentage = totalAmountUSD > 0 ? (amount / totalAmountUSD * 100).toFixed(1) + '%' : '0%';
+        reportSheet.getRange(currentRow, 1, 1, 2).merge();
+        reportSheet.getRange(currentRow, 1).setValue(natureName);
+        reportSheet.getRange(currentRow, 3).setValue(amount).setNumberFormat('$#,##0.00');
+        reportSheet.getRange(currentRow, 4).setValue(percentage);
+        currentRow++;
+      }
+      currentRow++;
+    }
 
     // ═══════════════════════════════════════════════════════════════
     // 3️⃣ ملخص حسب التصنيف
