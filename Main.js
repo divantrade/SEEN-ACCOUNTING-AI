@@ -15158,8 +15158,9 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
     // صف فارغ
     currentRow++;
 
-    // الإجمالي الكبير
-    reportSheet.getRange(currentRow, 1, 1, 2).setValues([['💰 إجمالي ' + natureLabel + ':', '']])
+    // الإجمالي الكبير (دمج A+B للتسمية)
+    reportSheet.getRange(currentRow, 1, 1, 2).merge();
+    reportSheet.getRange(currentRow, 1).setValue('💰 إجمالي ' + natureLabel + ':')
       .setFontWeight('bold')
       .setFontSize(12);
     reportSheet.getRange(currentRow, 3).setValue(totalAmountUSD)
@@ -15169,16 +15170,18 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
       .setFontColor('#1a73e8');
     currentRow++;
 
-    // عدد الحركات
-    reportSheet.getRange(currentRow, 1, 1, 2).setValues([['📋 عدد الحركات:', '']])
+    // عدد الحركات (دمج A+B للتسمية)
+    reportSheet.getRange(currentRow, 1, 1, 2).merge();
+    reportSheet.getRange(currentRow, 1).setValue('📋 عدد الحركات:')
       .setFontWeight('bold');
     reportSheet.getRange(currentRow, 3).setValue(filteredData.length)
       .setFontWeight('bold')
       .setFontColor('#1a73e8');
     currentRow++;
 
-    // الفترة
-    reportSheet.getRange(currentRow, 1, 1, 2).setValues([['📅 الفترة:', '']])
+    // الفترة (دمج A+B للتسمية)
+    reportSheet.getRange(currentRow, 1, 1, 2).merge();
+    reportSheet.getRange(currentRow, 1).setValue('📅 الفترة:')
       .setFontWeight('bold');
     reportSheet.getRange(currentRow, 3).setValue(fromStr + ' إلى ' + toStr)
       .setFontWeight('bold');
@@ -15195,8 +15198,15 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
       .setFontColor('#ffffff');
     currentRow++;
 
-    // هيدر جدول التصنيفات
-    reportSheet.getRange(currentRow, 1, 1, 3).setValues([['التصنيف', 'المبلغ ($)', 'النسبة']])
+    // هيدر جدول التصنيفات (دمج A+B للعمود الأول)
+    reportSheet.getRange(currentRow, 1, 1, 2).merge();
+    reportSheet.getRange(currentRow, 1).setValue('التصنيف')
+      .setFontWeight('bold')
+      .setBackground('#e8f0fe');
+    reportSheet.getRange(currentRow, 3).setValue('المبلغ ($)')
+      .setFontWeight('bold')
+      .setBackground('#e8f0fe');
+    reportSheet.getRange(currentRow, 4).setValue('النسبة')
       .setFontWeight('bold')
       .setBackground('#e8f0fe');
     currentRow++;
@@ -15207,8 +15217,10 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
 
     for (const [classification, amount] of sortedClassifications) {
       const percentage = totalAmountUSD > 0 ? (amount / totalAmountUSD * 100).toFixed(1) + '%' : '0%';
-      reportSheet.getRange(currentRow, 1, 1, 3).setValues([[classification, amount, percentage]]);
-      reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 1, 1, 2).merge();
+      reportSheet.getRange(currentRow, 1).setValue(classification);
+      reportSheet.getRange(currentRow, 3).setValue(amount).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 4).setValue(percentage);
       currentRow++;
     }
     currentRow++;
@@ -15224,7 +15236,15 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
       .setFontColor('#000000');
     currentRow++;
 
-    reportSheet.getRange(currentRow, 1, 1, 3).setValues([['البند', 'المبلغ ($)', 'النسبة']])
+    // هيدر (دمج A+B للعمود الأول)
+    reportSheet.getRange(currentRow, 1, 1, 2).merge();
+    reportSheet.getRange(currentRow, 1).setValue('البند')
+      .setFontWeight('bold')
+      .setBackground('#fef7e0');
+    reportSheet.getRange(currentRow, 3).setValue('المبلغ ($)')
+      .setFontWeight('bold')
+      .setBackground('#fef7e0');
+    reportSheet.getRange(currentRow, 4).setValue('النسبة')
       .setFontWeight('bold')
       .setBackground('#fef7e0');
     currentRow++;
@@ -15235,8 +15255,10 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
 
     for (const [item, amount] of sortedItems) {
       const percentage = totalAmountUSD > 0 ? (amount / totalAmountUSD * 100).toFixed(1) + '%' : '0%';
-      reportSheet.getRange(currentRow, 1, 1, 3).setValues([[item, amount, percentage]]);
-      reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 1, 1, 2).merge();
+      reportSheet.getRange(currentRow, 1).setValue(item);
+      reportSheet.getRange(currentRow, 3).setValue(amount).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 4).setValue(percentage);
       currentRow++;
     }
     currentRow++;
@@ -15252,7 +15274,15 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
       .setFontColor('#ffffff');
     currentRow++;
 
-    reportSheet.getRange(currentRow, 1, 1, 3).setValues([['الطرف', 'المبلغ ($)', 'النسبة']])
+    // هيدر (دمج A+B للعمود الأول)
+    reportSheet.getRange(currentRow, 1, 1, 2).merge();
+    reportSheet.getRange(currentRow, 1).setValue('الطرف')
+      .setFontWeight('bold')
+      .setBackground('#fce8e6');
+    reportSheet.getRange(currentRow, 3).setValue('المبلغ ($)')
+      .setFontWeight('bold')
+      .setBackground('#fce8e6');
+    reportSheet.getRange(currentRow, 4).setValue('النسبة')
       .setFontWeight('bold')
       .setBackground('#fce8e6');
     currentRow++;
@@ -15263,8 +15293,10 @@ function generateFilteredTransactionReport(nature, natureLabel, fromDate, toDate
 
     for (const [party, amount] of sortedParties) {
       const percentage = totalAmountUSD > 0 ? (amount / totalAmountUSD * 100).toFixed(1) + '%' : '0%';
-      reportSheet.getRange(currentRow, 1, 1, 3).setValues([[party, amount, percentage]]);
-      reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 1, 1, 2).merge();
+      reportSheet.getRange(currentRow, 1).setValue(party);
+      reportSheet.getRange(currentRow, 3).setValue(amount).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 4).setValue(percentage);
       currentRow++;
     }
     currentRow += 2;
