@@ -240,6 +240,11 @@ function handleAIMessage(message) {
             handlePaymentTermInput(chatId, text, session);
             break;
 
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_LOAN_DUE_DATE:
+            // ⭐ معالجة إدخال تاريخ استحقاق السلفة/التمويل
+            handleLoanDueDateInput(chatId, text, session);
+            break;
+
         // ⭐ حالات انتظار ضغط الأزرار - إذا أرسل المستخدم نص، نطلب منه الضغط على الزر
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PAYMENT_METHOD:
             Logger.log('⚠️ User sent text while waiting for payment method button');
@@ -450,6 +455,14 @@ function processNewTransaction(chatId, text, user) {
         if (result.validation && result.validation.needsPaymentTermDate) {
             Logger.log('✅ Needs payment term date');
             askPaymentTermDate(chatId, session);
+            return;
+        }
+
+        // ⭐ التحقق من تاريخ استحقاق السلفة/التمويل
+        Logger.log('📊 Checking needsLoanDueDate: ' + (result.validation ? result.validation.needsLoanDueDate : 'no validation'));
+        if (result.validation && result.validation.needsLoanDueDate) {
+            Logger.log('✅ Needs loan due date');
+            askLoanDueDate(chatId, session);
             return;
         }
 
@@ -964,6 +977,78 @@ function askPaymentTermDate(chatId, session) {
 }
 
 /**
+ * ⭐ السؤال عن تاريخ استحقاق السلفة/التمويل
+ */
+function askLoanDueDate(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_LOAN_DUE_DATE;
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, '📅 *متى موعد سداد هذه السلفة/التمويل؟*\n\nاكتب التاريخ (مثال: 15/3/2026 أو بعد شهر أو بعد 3 أشهر):', { parse_mode: 'Markdown' });
+}
+
+/**
+ * ⭐ معالجة إدخال تاريخ استحقاق السلفة
+ */
+function handleLoanDueDateInput(chatId, text, session) {
+    Logger.log('📥 Loan due date input: "' + text + '"');
+
+    // ⭐ تحويل الأرقام العربية للإنجليزية
+    const arabicNumerals = '٠١٢٣٤٥٦٧٨٩';
+    const englishNumerals = '0123456789';
+    let convertedText = text;
+    for (let i = 0; i < arabicNumerals.length; i++) {
+        convertedText = convertedText.replace(new RegExp(arabicNumerals[i], 'g'), englishNumerals[i]);
+    }
+
+    // تحويل النص إلى تاريخ
+    let dueDate = null;
+    const today = new Date();
+
+    // التعامل مع "بعد شهر" أو "بعد X أشهر"
+    const monthMatch = convertedText.match(/بعد\s*(\d+)?\s*(شهر|أشهر)/);
+    if (monthMatch) {
+        const months = monthMatch[1] ? parseInt(monthMatch[1]) : 1;
+        dueDate = new Date(today);
+        dueDate.setMonth(dueDate.getMonth() + months);
+    }
+
+    // التعامل مع "بعد X يوم"
+    const dayMatch = convertedText.match(/بعد\s*(\d+)\s*(يوم|أيام)/);
+    if (!dueDate && dayMatch) {
+        const days = parseInt(dayMatch[1]);
+        dueDate = new Date(today);
+        dueDate.setDate(dueDate.getDate() + days);
+    }
+
+    // التعامل مع تاريخ صريح
+    if (!dueDate) {
+        dueDate = parseArabicDate(convertedText);
+    }
+
+    if (!dueDate) {
+        sendAIMessage(chatId, '❌ لم أفهم التاريخ. يرجى كتابته بوضوح:\n• مثال: 15/3/2026\n• أو: بعد شهر\n• أو: بعد 3 أشهر');
+        return;
+    }
+
+    // حفظ تاريخ الاستحقاق
+    const formattedDate = Utilities.formatDate(dueDate, 'Asia/Istanbul', 'yyyy-MM-dd');
+    session.transaction.loan_due_date = formattedDate;
+
+    if (!session.validation.enriched) {
+        session.validation.enriched = {};
+    }
+    session.validation.enriched.loan_due_date = formattedDate;
+    session.validation.needsLoanDueDate = false;
+
+    saveAIUserSession(chatId, session);
+
+    const displayDate = Utilities.formatDate(dueDate, 'Asia/Istanbul', 'dd-MM-yyyy');
+    sendAIMessage(chatId, `✅ تم تحديد تاريخ السداد: *${displayDate}*`, { parse_mode: 'Markdown' });
+
+    continueValidation(chatId, session);
+}
+
+/**
  * ⭐ معالجة إدخال بيانات شرط الدفع (أسابيع أو تاريخ)
  */
 function handlePaymentTermInput(chatId, text, session) {
@@ -1071,6 +1156,12 @@ function continueValidation(chatId, session) {
     // التحقق من تاريخ الدفع المخصص
     if (session.validation.needsPaymentTermDate) {
         askPaymentTermDate(chatId, session);
+        return;
+    }
+
+    // ⭐ التحقق من تاريخ استحقاق السلفة/التمويل
+    if (session.validation.needsLoanDueDate) {
+        askLoanDueDate(chatId, session);
         return;
     }
 
@@ -1638,6 +1729,13 @@ function saveAITransaction(transaction, user, chatId) {
             ? transaction.due_date
             : new Date();
 
+        // ⭐ تجهيز التفاصيل مع تاريخ استحقاق السلفة إذا وجد
+        let details = transaction.details || '';
+        if (transaction.loan_due_date) {
+            const loanDueDateNote = `[تاريخ السداد: ${transaction.loan_due_date}]`;
+            details = details ? `${details} ${loanDueDateNote}` : loanDueDateNote;
+        }
+
         const transactionData = {
             date: transactionDate,
             nature: transaction.nature,
@@ -1645,7 +1743,7 @@ function saveAITransaction(transaction, user, chatId) {
             projectCode: transaction.project_code || '',
             projectName: transaction.project || '',
             item: transaction.item || '',
-            details: transaction.details || '',
+            details: details,
             partyName: transaction.party,
             amount: transaction.amount,
             currency: transaction.currency,
@@ -1653,7 +1751,7 @@ function saveAITransaction(transaction, user, chatId) {
             paymentMethod: transaction.payment_method || 'تحويل بنكي',
             paymentTermType: transaction.payment_term || 'فوري',
             weeks: transaction.payment_term_weeks || '',
-            customDate: transaction.payment_term_date || '',
+            customDate: transaction.payment_term_date || transaction.loan_due_date || '',
             telegramUser: userName,
             chatId: chatId,
             attachmentUrl: '',
