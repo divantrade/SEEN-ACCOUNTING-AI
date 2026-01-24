@@ -2945,7 +2945,7 @@ ${distributionText}
 }
 
 /**
- * ⭐ حفظ الأوردر المشترك (عدة حركات) - يستخدم addTransactionDirectly مثل الحركات العادية
+ * ⭐ حفظ الأوردر المشترك - سطر واحد مجمع للمورد
  */
 function saveSharedOrderFromAI(chatId, session) {
     Logger.log('═══════════════════════════════════════');
@@ -2961,14 +2961,8 @@ function saveSharedOrderFromAI(chatId, session) {
     }
 
     try {
-        // ⭐ تحميل قاعدة بيانات المشاريع للبحث الذكي
-        const context = loadAIContext();
-        const projectsList = context.projects || [];
-        Logger.log('📦 Loaded ' + projectsList.length + ' projects from database');
-
         const projects = order.projects;
         const items = order.items || [{ item: order.item, amount: order.total_amount || order.amount }];
-        const totalAppearances = order.total_appearances || projects.length;
         const totalGuests = order.total_guests || projects.reduce((sum, p) => sum + (p.guests || 0), 0);
 
         // تاريخ الحركة
@@ -2979,109 +2973,99 @@ function saveSharedOrderFromAI(chatId, session) {
         // إنشاء رقم الأوردر المشترك
         const sharedOrderId = 'SO-' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyyMMdd-HHmmss');
 
-        const savedTransactions = [];
-        let transactionCounter = 0;
+        // ⭐ حساب المبلغ الإجمالي
+        const totalAmount = items.reduce((sum, item) => sum + (item.amount || 0), 0);
 
-        // ⭐ حفظ حركة لكل مشروع ولكل بند باستخدام addTransactionDirectly
-        for (const itemObj of items) {
-            const itemName = itemObj.item || order.item || '';
-            const itemTotalAmount = itemObj.amount || 0;
-            const amountPerProject = Math.round((itemTotalAmount / totalAppearances) * 100) / 100;
-
-            for (const project of projects) {
-                transactionCounter++;
-                const guestNames = project.guest_names ? project.guest_names.join('، ') : '';
-                const guests = project.guests || 1;
-
-                // ⭐ البحث عن المشروع في قاعدة البيانات
-                let projectName = project.name;
-                let projectCode = project.code || '';
-
-                const projectMatch = matchProject(project.name, projectsList);
-                if (projectMatch.found) {
-                    projectName = projectMatch.match;
-                    projectCode = projectMatch.code || '';
-                    Logger.log(`✅ Project matched: "${project.name}" → "${projectName}" (${projectCode})`);
-                } else {
-                    Logger.log(`⚠️ Project not found in DB: "${project.name}" - using as-is`);
-                }
-
-                // ⭐ تفاصيل تتضمن أسماء الضيوف ورقم الأوردر
-                let details = `أوردر مشترك [${sharedOrderId}]`;
-                if (guestNames) {
-                    details += `: ${guestNames}`;
-                } else {
-                    details += `: ${guests}/${totalGuests} ضيف`;
-                }
-                if (order.details) {
-                    details += ` - ${order.details}`;
-                }
-
-                // ⭐ تجهيز البيانات بنفس صيغة الحركات العادية
-                const transactionData = {
-                    date: transactionDate,
-                    nature: order.nature || 'استحقاق مصروف',
-                    classification: order.classification || '',
-                    projectCode: projectCode,
-                    projectName: projectName,
-                    item: itemName,
-                    details: details,
-                    partyName: order.party || '',
-                    amount: amountPerProject,
-                    currency: order.currency || 'USD',
-                    exchangeRate: order.exchange_rate || 1,
-                    paymentMethod: order.payment_method || 'تحويل بنكي',
-                    paymentTermType: order.payment_term || 'فوري',
-                    weeks: order.payment_term_weeks || '',
-                    customDate: order.payment_term_date || '',
-                    telegramUser: userName,
-                    chatId: chatId,
-                    unitCount: guests,
-                    orderNumber: sharedOrderId,  // ⭐ رقم الأوردر المشترك في العامود Z
-                    statementMark: '📄',         // ⭐ علامة في العامود Y (كشف)
-                    notes: ''                    // الملاحظات ستحتوي فقط على اسم المُدخل
-                };
-
-                // ⭐ استخدام addTransactionDirectly للحفظ في دفتر الحركات مباشرة
-                const result = addTransactionDirectly(transactionData, '🤖 بوت ذكي - أوردر مشترك');
-
-                if (result.success) {
-                    savedTransactions.push({
-                        id: result.transactionId,
-                        project: projectName,
-                        code: projectCode,
-                        item: itemName,
-                        amount: amountPerProject,
-                        guests: guestNames || guests
-                    });
-                    Logger.log(`✅ Saved: ${projectName} (${projectCode}) - ${itemName} - ${amountPerProject} - Row: ${result.rowNumber}`);
-                } else {
-                    Logger.log(`❌ Failed to save: ${projectName} - ${result.error}`);
-                }
+        // ⭐ بناء وصف البنود
+        let itemsDescription = '';
+        if (items.length === 1) {
+            itemsDescription = items[0].item || '';
+        } else {
+            // تجميع البنود: "تصوير + لوكيشن" أو "يوم تصوير مع تكاليف اللوكيشن"
+            const itemNames = items.map(i => i.item).filter(Boolean);
+            if (itemNames.length > 0) {
+                itemsDescription = itemNames.join(' + ');
             }
         }
 
-        // إرسال رسالة النجاح
-        let successMessage = `✅ *تم حفظ الأوردر المشترك بنجاح!*\n\n`;
-        successMessage += `📦 *رقم الأوردر:* \`${sharedOrderId}\`\n`;
-        successMessage += `📊 *عدد الحركات:* ${savedTransactions.length}\n\n`;
-        successMessage += `*التفاصيل:*\n`;
+        // ⭐ بناء التفاصيل: أسماء الضيوف والوصف
+        let details = '';
 
-        savedTransactions.forEach(t => {
-            successMessage += `• ${t.project}`;
-            if (t.code) successMessage += ` (${t.code})`;
-            if (items.length > 1) successMessage += ` - ${t.item}`;
-            successMessage += `: ${t.amount.toLocaleString()} ${order.currency || 'USD'}\n`;
+        // جمع أسماء الضيوف من كل المشاريع
+        const allGuestNames = [];
+        projects.forEach(p => {
+            if (p.guest_names && p.guest_names.length > 0) {
+                p.guest_names.forEach(name => {
+                    if (!allGuestNames.includes(name)) {
+                        allGuestNames.push(name);
+                    }
+                });
+            }
         });
 
-        successMessage += `\n📋 *تم الحفظ في دفتر الحركات مباشرة.*`;
+        if (allGuestNames.length > 0) {
+            details = allGuestNames.join('، ');
+        } else {
+            details = `${totalGuests} ضيوف في ${projects.length} أفلام`;
+        }
 
-        sendAIMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+        // إضافة الوصف الإضافي إن وجد
+        if (order.details) {
+            details += ` - ${order.details}`;
+        }
 
-        // مسح الجلسة
-        resetAIUserSession(chatId);
+        // ⭐ تجهيز البيانات - سطر واحد مجمع
+        const transactionData = {
+            date: transactionDate,
+            nature: order.nature || 'استحقاق مصروف',
+            classification: order.classification || '',
+            projectCode: '',  // فارغ لأنه أوردر مشترك متعدد المشاريع
+            projectName: '',  // فارغ لأنه أوردر مشترك متعدد المشاريع
+            item: itemsDescription,
+            details: details,
+            partyName: order.party || '',
+            amount: totalAmount,
+            currency: order.currency || 'USD',
+            exchangeRate: order.exchange_rate || 1,
+            paymentMethod: order.payment_method || 'تحويل بنكي',
+            paymentTermType: order.payment_term || 'فوري',
+            weeks: order.payment_term_weeks || '',
+            customDate: order.payment_term_date || '',
+            telegramUser: userName,
+            chatId: chatId,
+            unitCount: totalGuests,
+            orderNumber: sharedOrderId,
+            statementMark: '📄',
+            notes: ''
+        };
 
-        return { success: true, orderId: sharedOrderId, count: savedTransactions.length };
+        // ⭐ حفظ سطر واحد مجمع
+        const result = addTransactionDirectly(transactionData, '🤖 بوت ذكي - أوردر مشترك');
+
+        if (result.success) {
+            Logger.log(`✅ Saved consolidated order: ${sharedOrderId} - ${totalAmount} ${order.currency || 'USD'} - Row: ${result.rowNumber}`);
+
+            // إرسال رسالة النجاح
+            let successMessage = `✅ *تم حفظ الأوردر المشترك بنجاح!*\n\n`;
+            successMessage += `📦 *رقم الأوردر:* \`${sharedOrderId}\`\n`;
+            successMessage += `👤 *المورد:* ${order.party || '-'}\n`;
+            successMessage += `💰 *المبلغ:* ${totalAmount.toLocaleString()} ${order.currency || 'USD'}\n`;
+            successMessage += `📝 *البنود:* ${itemsDescription}\n`;
+            successMessage += `👥 *الضيوف:* ${allGuestNames.length > 0 ? allGuestNames.join('، ') : totalGuests + ' ضيف'}\n`;
+            successMessage += `🎬 *المشاريع:* ${projects.length} مشاريع\n\n`;
+            successMessage += `📋 *تم الحفظ في دفتر الحركات.*`;
+
+            sendAIMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+
+            // مسح الجلسة
+            resetAIUserSession(chatId);
+
+            return { success: true, orderId: sharedOrderId, count: 1 };
+        } else {
+            Logger.log(`❌ Failed to save: ${result.error}`);
+            sendAIMessage(chatId, '❌ حدث خطأ أثناء الحفظ: ' + result.error, { parse_mode: 'Markdown' });
+            return { success: false, error: result.error };
+        }
 
     } catch (error) {
         Logger.log('❌ Error saving shared order: ' + error.message);
