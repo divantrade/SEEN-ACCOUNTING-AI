@@ -5197,10 +5197,13 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   );
 
   // ═══════════════════════════════════════════════════════════
-  // استخراج حركات الطرف (بدون فلتر طبيعة الحركة)
+  // استخراج حركات الطرف مع دمج الأوردرات المشتركة
   // ═══════════════════════════════════════════════════════════
   const data = transSheet.getDataRange().getValues();
-  const rows = [];
+
+  // ⭐ جمع الحركات العادية والأوردرات المشتركة
+  const regularRows = [];
+  const sharedOrders = {};  // تجميع الأوردرات المشتركة برقم الأوردر
 
   let totalDebit = 0, totalCredit = 0, balance = 0;
 
@@ -5218,6 +5221,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
     const date = row[1];       // B: التاريخ
     const project = row[5];    // F: اسم المشروع
+    const item = row[6];       // G: البند
     const details = row[7];    // H: التفاصيل
     const orderNumber = row[25] || '';  // Z: رقم الأوردر
 
@@ -5226,39 +5230,76 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     // استخدام includes للتعامل مع الإيموجي
     if (movementKind.includes(CONFIG.MOVEMENT.DEBIT) || movementKind.includes('مدين')) {
       debit = amountUsd;
-      balance += debit;
       totalDebit += debit;
     } else if (movementKind.includes(CONFIG.MOVEMENT.CREDIT) || movementKind.includes('دائن')) {
       credit = amountUsd;
-      balance -= credit;
       totalCredit += credit;
     }
 
-    rows.push([
-      date,
-      project || '',
-      orderNumber,
-      details || '',
-      debit || '',
-      credit || '',
-      Math.round(balance * 100) / 100
-    ]);
+    // ⭐ إذا كان هناك رقم أوردر مشترك (يبدأ بـ SO-)، يتم تجميعه
+    if (orderNumber && orderNumber.startsWith('SO-')) {
+      if (!sharedOrders[orderNumber]) {
+        sharedOrders[orderNumber] = {
+          date: date,
+          items: new Set(),
+          details: new Set(),
+          debit: 0,
+          credit: 0,
+          orderNumber: orderNumber
+        };
+      }
+      // إضافة البند والتفاصيل
+      if (item) sharedOrders[orderNumber].items.add(item);
+      if (details) sharedOrders[orderNumber].details.add(details);
+      sharedOrders[orderNumber].debit += debit;
+      sharedOrders[orderNumber].credit += credit;
+    } else {
+      // حركة عادية بدون أوردر مشترك
+      regularRows.push({
+        date: date,
+        project: project || '',
+        orderNumber: orderNumber,
+        details: details || '',
+        debit: debit,
+        credit: credit
+      });
+    }
   }
 
+  // ⭐ تحويل الأوردرات المشتركة إلى صفوف مدمجة
+  const sharedRows = Object.values(sharedOrders).map(order => ({
+    date: order.date,
+    project: '',  // فارغ لأنه متعدد المشاريع
+    orderNumber: order.orderNumber,
+    details: Array.from(order.items).join(' + ') + (order.details.size > 0 ? ' (' + Array.from(order.details).join('، ') + ')' : ''),
+    debit: order.debit,
+    credit: order.credit
+  }));
+
+  // ⭐ دمج الصفوف العادية والمشتركة
+  const allRows = [...regularRows, ...sharedRows];
+
   // ترتيب زمني
-  rows.sort((a, b) => {
-    const dateA = a[0] instanceof Date ? a[0].getTime() : new Date(a[0]).getTime();
-    const dateB = b[0] instanceof Date ? b[0].getTime() : new Date(b[0]).getTime();
+  allRows.sort((a, b) => {
+    const dateA = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
+    const dateB = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
     return dateA - dateB;
   });
 
-  // إعادة حساب الرصيد بعد الترتيب
+  // ⭐ تحويل إلى صيغة الصفوف مع حساب الرصيد
+  const rows = [];
   balance = 0;
-  for (let i = 0; i < rows.length; i++) {
-    const debit = rows[i][4] || 0;
-    const credit = rows[i][5] || 0;
-    balance += debit - credit;
-    rows[i][6] = Math.round(balance * 100) / 100;
+  for (const r of allRows) {
+    balance += (r.debit || 0) - (r.credit || 0);
+    rows.push([
+      r.date,
+      r.project,
+      r.orderNumber,
+      r.details,
+      r.debit || '',
+      r.credit || '',
+      Math.round(balance * 100) / 100
+    ]);
   }
 
   // ═══════════════════════════════════════════════════════════
