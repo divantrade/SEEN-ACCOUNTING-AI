@@ -2847,10 +2847,11 @@ function showSharedOrderConfirmation(chatId, order) {
     const projects = order.projects || [];
     const items = order.items || [{ item: order.item, amount: order.total_amount || order.amount }];
     const totalGuests = order.total_guests || projects.reduce((sum, p) => sum + (p.guests || 0), 0);
-    const totalAppearances = order.total_appearances || projects.length; // ⭐ عدد الظهورات = عدد المشاريع
+    // ⭐ عدد الظهورات = مجموع ضيوف كل المشاريع (وليس عدد المشاريع)
+    const totalAppearances = order.total_appearances || projects.reduce((sum, p) => sum + (p.guests || 1), 0);
     const currency = order.currency || 'USD';
 
-    // ⭐ حساب التوزيع بناءً على الظهورات وليس الضيوف
+    // ⭐ حساب التوزيع بناءً على الظهورات
     let distributionText = '';
     projects.forEach((project, index) => {
         const prefix = index === projects.length - 1 ? '└─' : '├─';
@@ -2869,11 +2870,12 @@ function showSharedOrderConfirmation(chatId, order) {
             project.code = projectCode;
         }
 
-        // حساب المبلغ لكل بند
+        // ⭐ حساب المبلغ لكل بند (مبلغ المشروع = مبلغ الظهور × عدد الضيوف)
         let amountsText = '';
         items.forEach((itemObj, i) => {
             const itemAmount = itemObj.amount || 0;
-            const projectAmount = Math.round((itemAmount / totalAppearances) * 100) / 100;
+            const amountPerAppearance = Math.round((itemAmount / totalAppearances) * 100) / 100;
+            const projectAmount = Math.round(amountPerAppearance * guests * 100) / 100;
             if (i > 0) amountsText += ' + ';
             amountsText += `${projectAmount.toLocaleString()} ${currency}`;
         });
@@ -2968,7 +2970,8 @@ function saveSharedOrderFromAI(chatId, session) {
 
         const projects = order.projects;
         const items = order.items || [{ item: order.item, amount: order.total_amount || order.amount }];
-        const totalAppearances = order.total_appearances || projects.length;
+        // ⭐ عدد الظهورات = مجموع ضيوف كل المشاريع (وليس عدد المشاريع)
+        const totalAppearances = order.total_appearances || projects.reduce((sum, p) => sum + (p.guests || 1), 0);
         const totalGuests = order.total_guests || projects.reduce((sum, p) => sum + (p.guests || 0), 0);
 
         // تاريخ الحركة
@@ -2983,15 +2986,19 @@ function saveSharedOrderFromAI(chatId, session) {
         let transactionCounter = 0;
 
         // ⭐ حفظ حركة لكل مشروع ولكل بند
+        // ⭐ المبلغ لكل ظهور (ضيف) = المبلغ الإجمالي ÷ عدد الظهورات
         for (const itemObj of items) {
             const itemName = itemObj.item || order.item || '';
             const itemTotalAmount = itemObj.amount || 0;
-            const amountPerProject = Math.round((itemTotalAmount / totalAppearances) * 100) / 100;
+            const amountPerAppearance = Math.round((itemTotalAmount / totalAppearances) * 100) / 100;
 
             for (const project of projects) {
                 transactionCounter++;
                 const guestNames = project.guest_names ? project.guest_names.join('، ') : '';
                 const guests = project.guests || 1;
+
+                // ⭐ المبلغ للمشروع = المبلغ لكل ظهور × عدد الضيوف في المشروع
+                const projectAmount = Math.round(amountPerAppearance * guests * 100) / 100;
 
                 // ⭐ البحث عن المشروع في قاعدة البيانات
                 let projectName = project.name;
@@ -3022,7 +3029,7 @@ function saveSharedOrderFromAI(chatId, session) {
                     item: itemName,
                     details: details,
                     partyName: order.party || '',
-                    amount: amountPerProject,
+                    amount: projectAmount,  // ⭐ المبلغ للمشروع (وليس لكل ظهور)
                     currency: order.currency || 'USD',
                     exchangeRate: order.exchange_rate || 1,
                     paymentMethod: order.payment_method || 'تحويل بنكي',
@@ -3045,10 +3052,10 @@ function saveSharedOrderFromAI(chatId, session) {
                         project: projectName,
                         code: projectCode,
                         item: itemName,
-                        amount: amountPerProject,
+                        amount: projectAmount,  // ⭐ المبلغ للمشروع (وليس لكل ظهور)
                         guests: guestNames || guests
                     });
-                    Logger.log(`✅ Saved: ${projectName} (${projectCode}) - ${itemName} - ${amountPerProject} - Row: ${result.rowNumber}`);
+                    Logger.log(`✅ Saved: ${projectName} (${projectCode}) - ${itemName} - ${projectAmount} - Row: ${result.rowNumber}`);
                 } else {
                     Logger.log(`❌ Failed to save: ${projectName} - ${result.error}`);
                 }
