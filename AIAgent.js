@@ -815,6 +815,17 @@ function validateTransaction(transaction, context) {
         validation.enriched.due_date = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd');
     }
 
+    // ⭐ التحقق من تاريخ استحقاق السلفة/التمويل
+    // إذا كانت الحركة تمويل (دخول قرض) أو سلفة، يجب السؤال عن تاريخ السداد
+    const classification = transaction.classification || '';
+    const isLoan = nature.includes('تمويل') || classification.includes('سلفة');
+    if (isLoan && !transaction.loan_due_date) {
+        validation.needsLoanDueDate = true;
+        validation.enriched.loan_due_date = null;
+    } else if (transaction.loan_due_date) {
+        validation.enriched.loan_due_date = transaction.loan_due_date;
+    }
+
     // ⭐ التحقق من طريقة الدفع (يجب أن تكون محددة)
     // القيم المسموحة: نقدي، تحويل بنكي، شيك، بطاقة، أخرى
     if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
@@ -868,6 +879,7 @@ function validateTransaction(transaction, context) {
     Logger.log('🔍 needsCurrency: ' + validation.needsCurrency);
     Logger.log('🔍 needsExchangeRate: ' + validation.needsExchangeRate);
     Logger.log('🔍 needsPartyConfirmation: ' + validation.needsPartyConfirmation);
+    Logger.log('🔍 needsLoanDueDate: ' + validation.needsLoanDueDate);
     Logger.log('═══════════════════════════════════════');
 
     return validation;
@@ -1059,6 +1071,11 @@ function buildTransactionSummary(transaction) {
             termDisplay = `تاريخ مخصص: ${transaction.payment_term_date}`;
         }
         summary += `⏰ *شرط الدفع:* ${termDisplay}\n`;
+    }
+
+    // ⭐ عرض تاريخ استحقاق السلفة/التمويل
+    if (transaction.loan_due_date) {
+        summary += `📆 *تاريخ السداد:* ${transaction.loan_due_date}\n`;
     }
 
     // عرض عدد الوحدات إذا موجود

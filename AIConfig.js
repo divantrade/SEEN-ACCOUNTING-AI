@@ -113,6 +113,7 @@ const AI_CONFIG = {
         WAITING_CURRENCY: 'ai_waiting_currency',                  // ⭐ انتظار العملة
         WAITING_EXCHANGE_RATE: 'ai_waiting_exchange_rate',        // ⭐ انتظار سعر الصرف
         WAITING_PAYMENT_TERM: 'ai_waiting_payment_term',          // ⭐ انتظار شرط الدفع
+        WAITING_LOAN_DUE_DATE: 'ai_waiting_loan_due_date',        // ⭐ انتظار تاريخ استحقاق السلفة
         WAITING_CONFIRMATION: 'ai_waiting_confirmation',
         WAITING_EDIT: 'ai_waiting_edit',
         CONFIRM_WAIT: 'ai_confirm_wait',
