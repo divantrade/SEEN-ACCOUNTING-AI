@@ -5267,14 +5267,39 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   }
 
   // ⭐ تحويل الأوردرات المشتركة إلى صفوف مدمجة
-  const sharedRows = Object.values(sharedOrders).map(order => ({
-    date: order.date,
-    project: '',  // فارغ لأنه متعدد المشاريع
-    orderNumber: order.orderNumber,
-    details: Array.from(order.items).join(' + ') + (order.details.size > 0 ? ' (' + Array.from(order.details).join('، ') + ')' : ''),
-    debit: order.debit,
-    credit: order.credit
-  }));
+  const sharedRows = Object.values(sharedOrders).map(order => {
+    // استخراج أسماء الضيوف من التفاصيل (الاسم قبل أول " - " إن وجد)
+    const guestNames = [];
+    for (const detail of order.details) {
+      if (detail) {
+        // الاسم هو الجزء الأول قبل " - " أو التفصيل كله إن لم يوجد
+        const namePart = detail.split(' - ')[0].trim();
+        if (namePart && !guestNames.includes(namePart)) {
+          guestNames.push(namePart);
+        }
+      }
+    }
+
+    // بناء التفاصيل المختصرة: البنود + عدد الضيوف + الأسماء
+    const itemsStr = Array.from(order.items).join(' + ');
+    const guestCount = guestNames.length || order.details.size;
+    let detailsStr = itemsStr;
+    if (guestCount > 0) {
+      detailsStr += ` - ${guestCount} ضيوف`;
+      if (guestNames.length > 0) {
+        detailsStr += `: ${guestNames.join('، ')}`;
+      }
+    }
+
+    return {
+      date: order.date,
+      project: '',  // فارغ لأنه متعدد المشاريع
+      orderNumber: order.orderNumber,
+      details: detailsStr,
+      debit: order.debit,
+      credit: order.credit
+    };
+  });
 
   // ⭐ دمج الصفوف العادية والمشتركة
   const allRows = [...regularRows, ...sharedRows];
