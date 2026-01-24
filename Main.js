@@ -5268,12 +5268,19 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
   // ⭐ تحويل الأوردرات المشتركة إلى صفوف مدمجة
   const sharedRows = Object.values(sharedOrders).map(order => {
-    // استخراج أسماء الضيوف من التفاصيل (الاسم قبل أول " - " إن وجد)
+    // استخراج أسماء الضيوف من التفاصيل
     const guestNames = [];
     for (const detail of order.details) {
       if (detail) {
-        // الاسم هو الجزء الأول قبل " - " أو التفصيل كله إن لم يوجد
-        const namePart = detail.split(' - ')[0].trim();
+        let namePart = '';
+        // صيغة جديدة: "مقابلة اسم (X من Y)"
+        const newFormatMatch = detail.match(/^مقابلة\s+(.+?)\s*\(\d+\s*من\s*\d+\)/);
+        if (newFormatMatch) {
+          namePart = newFormatMatch[1].trim();
+        } else {
+          // صيغة قديمة: "اسم - تفاصيل" أو النص كاملاً
+          namePart = detail.split(' - ')[0].trim();
+        }
         if (namePart && !guestNames.includes(namePart)) {
           guestNames.push(namePart);
         }
