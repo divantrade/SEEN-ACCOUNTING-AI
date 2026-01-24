@@ -3037,6 +3037,7 @@ function saveSharedOrderFromAI(chatId, session) {
                     telegramUser: userName,
                     chatId: chatId,
                     unitCount: guests,
+                    orderNumber: sharedOrderId,  // ⭐ رقم الأوردر المشترك في العامود Z
                     notes: `أوردر مشترك: ${sharedOrderId}`
                 };
 
