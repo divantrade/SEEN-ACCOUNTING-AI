@@ -2840,6 +2840,10 @@ function handleSharedOrder(chatId, transaction, user) {
  * ⭐ عرض ملخص الأوردر المشترك للتأكيد (نسخة ذكية محسنة)
  */
 function showSharedOrderConfirmation(chatId, order) {
+    // ⭐ تحميل قاعدة بيانات المشاريع للبحث الذكي
+    const context = loadAIContext();
+    const projectsList = context.projects || [];
+
     const projects = order.projects || [];
     const items = order.items || [{ item: order.item, amount: order.total_amount || order.amount }];
     const totalGuests = order.total_guests || projects.reduce((sum, p) => sum + (p.guests || 0), 0);
@@ -2853,6 +2857,18 @@ function showSharedOrderConfirmation(chatId, order) {
         const guestNames = project.guest_names ? project.guest_names.join('، ') : '';
         const guests = project.guests || 1;
 
+        // ⭐ البحث عن المشروع في قاعدة البيانات
+        let projectName = project.name;
+        let projectCode = project.code || '';
+        const projectMatch = matchProject(project.name, projectsList);
+        if (projectMatch.found) {
+            projectName = projectMatch.match;
+            projectCode = projectMatch.code || '';
+            // تحديث البيانات في order.projects للحفظ لاحقاً
+            project.name = projectName;
+            project.code = projectCode;
+        }
+
         // حساب المبلغ لكل بند
         let amountsText = '';
         items.forEach((itemObj, i) => {
@@ -2862,7 +2878,9 @@ function showSharedOrderConfirmation(chatId, order) {
             amountsText += `${projectAmount.toLocaleString()} ${currency}`;
         });
 
-        distributionText += `${prefix} *${project.name}*: ${guestNames || guests + ' ضيف'}`;
+        let projectDisplay = projectName;
+        if (projectCode) projectDisplay += ` (${projectCode})`;
+        distributionText += `${prefix} *${projectDisplay}*: ${guestNames || guests + ' ضيف'}`;
         distributionText += ` → ${amountsText}\n`;
     });
 
@@ -2943,6 +2961,11 @@ function saveSharedOrderFromAI(chatId, session) {
     }
 
     try {
+        // ⭐ تحميل قاعدة بيانات المشاريع للبحث الذكي
+        const context = loadAIContext();
+        const projectsList = context.projects || [];
+        Logger.log('📦 Loaded ' + projectsList.length + ' projects from database');
+
         const projects = order.projects;
         const items = order.items || [{ item: order.item, amount: order.total_amount || order.amount }];
         const totalAppearances = order.total_appearances || projects.length;
@@ -2970,6 +2993,19 @@ function saveSharedOrderFromAI(chatId, session) {
                 const guestNames = project.guest_names ? project.guest_names.join('، ') : '';
                 const guests = project.guests || 1;
 
+                // ⭐ البحث عن المشروع في قاعدة البيانات
+                let projectName = project.name;
+                let projectCode = project.code || '';
+
+                const projectMatch = matchProject(project.name, projectsList);
+                if (projectMatch.found) {
+                    projectName = projectMatch.match;
+                    projectCode = projectMatch.code || '';
+                    Logger.log(`✅ Project matched: "${project.name}" → "${projectName}" (${projectCode})`);
+                } else {
+                    Logger.log(`⚠️ Project not found in DB: "${project.name}" - using as-is`);
+                }
+
                 // ⭐ تفاصيل تتضمن أسماء الضيوف ورقم الأوردر
                 let details = `أوردر مشترك [${sharedOrderId}]`;
                 if (guestNames) {
@@ -2986,8 +3022,8 @@ function saveSharedOrderFromAI(chatId, session) {
                     date: transactionDate,
                     nature: order.nature || 'استحقاق مصروف',
                     classification: order.classification || '',
-                    projectCode: project.code || '',
-                    projectName: project.name,
+                    projectCode: projectCode,
+                    projectName: projectName,
                     item: itemName,
                     details: details,
                     partyName: order.party || '',
@@ -3001,6 +3037,7 @@ function saveSharedOrderFromAI(chatId, session) {
                     telegramUser: userName,
                     chatId: chatId,
                     unitCount: guests,
+                    orderNumber: sharedOrderId,  // ⭐ رقم الأوردر المشترك في العامود Z
                     notes: `أوردر مشترك: ${sharedOrderId}`
                 };
 
@@ -3010,14 +3047,15 @@ function saveSharedOrderFromAI(chatId, session) {
                 if (result.success) {
                     savedTransactions.push({
                         id: result.transactionId,
-                        project: project.name,
+                        project: projectName,
+                        code: projectCode,
                         item: itemName,
                         amount: amountPerProject,
                         guests: guestNames || guests
                     });
-                    Logger.log(`✅ Saved: ${project.name} - ${itemName} - ${amountPerProject} - Row: ${result.rowNumber}`);
+                    Logger.log(`✅ Saved: ${projectName} (${projectCode}) - ${itemName} - ${amountPerProject} - Row: ${result.rowNumber}`);
                 } else {
-                    Logger.log(`❌ Failed to save: ${project.name} - ${result.error}`);
+                    Logger.log(`❌ Failed to save: ${projectName} - ${result.error}`);
                 }
             }
         }
@@ -3030,7 +3068,8 @@ function saveSharedOrderFromAI(chatId, session) {
 
         savedTransactions.forEach(t => {
             successMessage += `• ${t.project}`;
-            if (items.length > 1) successMessage += ` (${t.item})`;
+            if (t.code) successMessage += ` (${t.code})`;
+            if (items.length > 1) successMessage += ` - ${t.item}`;
             successMessage += `: ${t.amount.toLocaleString()} ${order.currency || 'USD'}\n`;
         });
 
