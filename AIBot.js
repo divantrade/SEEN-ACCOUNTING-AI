@@ -2927,7 +2927,7 @@ ${distributionText}
 }
 
 /**
- * ⭐ حفظ الأوردر المشترك (عدة حركات) - نسخة ذكية محسنة
+ * ⭐ حفظ الأوردر المشترك (عدة حركات) - يستخدم addTransactionDirectly مثل الحركات العادية
  */
 function saveSharedOrderFromAI(chatId, session) {
     Logger.log('═══════════════════════════════════════');
@@ -2935,6 +2935,7 @@ function saveSharedOrderFromAI(chatId, session) {
 
     const order = session.sharedOrder;
     const user = session.user;
+    const userName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
 
     if (!order || !order.projects || order.projects.length === 0) {
         sendAIMessage(chatId, '❌ خطأ: بيانات الأوردر غير مكتملة', { parse_mode: 'Markdown' });
@@ -2942,35 +2943,23 @@ function saveSharedOrderFromAI(chatId, session) {
     }
 
     try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const sheetName = CONFIG.SHEETS.BOT_TRANSACTIONS;
-        let sheet = ss.getSheetByName(sheetName);
-
-        if (!sheet) {
-            Logger.log('⚠️ الشيت غير موجود، جاري إنشاؤه...');
-            sheet = ss.insertSheet(sheetName);
-            const headers = Object.values(BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS).map(col => col.name);
-            sheet.appendRow(headers);
-        }
-
         const projects = order.projects;
         const items = order.items || [{ item: order.item, amount: order.total_amount || order.amount }];
-        const totalAppearances = order.total_appearances || projects.length; // ⭐ عدد الظهورات
+        const totalAppearances = order.total_appearances || projects.length;
         const totalGuests = order.total_guests || projects.reduce((sum, p) => sum + (p.guests || 0), 0);
+
+        // تاريخ الحركة
+        const transactionDate = order.due_date && order.due_date !== 'TODAY'
+            ? order.due_date
+            : new Date();
 
         // إنشاء رقم الأوردر المشترك
         const sharedOrderId = 'SO-' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyyMMdd-HHmmss');
 
         const savedTransactions = [];
-        const now = new Date();
-        const timestamp = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd HH:mm:ss');
-        const dueDate = order.due_date && order.due_date !== 'TODAY' ? order.due_date : timestamp.split(' ')[0];
-        const month = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM');
-        const movementType = inferMovementType(order.nature || 'استحقاق مصروف');
-
         let transactionCounter = 0;
 
-        // ⭐ حفظ حركة لكل مشروع ولكل بند
+        // ⭐ حفظ حركة لكل مشروع ولكل بند باستخدام addTransactionDirectly
         for (const itemObj of items) {
             const itemName = itemObj.item || order.item || '';
             const itemTotalAmount = itemObj.amount || 0;
@@ -2981,19 +2970,8 @@ function saveSharedOrderFromAI(chatId, session) {
                 const guestNames = project.guest_names ? project.guest_names.join('، ') : '';
                 const guests = project.guests || 1;
 
-                // ⭐ المبلغ موزع بالتساوي على عدد الظهورات (المشاريع)
-                const projectAmount = amountPerProject;
-
-                // حساب القيمة بالدولار
-                let amountUSD = projectAmount;
-                if (order.currency !== 'USD' && order.exchange_rate) {
-                    amountUSD = projectAmount / order.exchange_rate;
-                }
-
-                const transactionId = sharedOrderId + '-' + transactionCounter;
-
-                // ⭐ تفاصيل أفضل تتضمن أسماء الضيوف
-                let details = `أوردر مشترك`;
+                // ⭐ تفاصيل تتضمن أسماء الضيوف ورقم الأوردر
+                let details = `أوردر مشترك [${sharedOrderId}]`;
                 if (guestNames) {
                     details += `: ${guestNames}`;
                 } else {
@@ -3003,62 +2981,51 @@ function saveSharedOrderFromAI(chatId, session) {
                     details += ` - ${order.details}`;
                 }
 
-                const rowData = [
-                    transactionId,                              // رقم الحركة
-                    dueDate,                                    // التاريخ
-                    order.nature || 'استحقاق مصروف',           // طبيعة الحركة
-                    order.classification || '',                 // تصنيف الحركة
-                    project.code || '',                         // كود المشروع
-                    project.name,                               // اسم المشروع
-                    itemName,                                   // البند
-                    details,                                    // التفاصيل
-                    order.party || '',                          // اسم المورد
-                    projectAmount,                              // المبلغ
-                    order.currency || 'USD',                    // العملة
-                    order.exchange_rate || 1,                   // سعر الصرف
-                    amountUSD,                                  // القيمة بالدولار
-                    movementType,                               // نوع الحركة
-                    '',                                         // الرصيد
-                    sharedOrderId,                              // رقم مرجعي (رقم الأوردر المشترك)
-                    order.payment_method || 'تحويل بنكي',      // طريقة الدفع
-                    order.payment_term || 'فوري',              // نوع شرط الدفع
-                    order.payment_term_weeks || '',             // عدد الأسابيع
-                    order.payment_term_date || '',              // تاريخ مخصص
-                    order.payment_term_date || dueDate,         // تاريخ الاستحقاق
-                    'معلق',                                     // حالة السداد
-                    month,                                      // الشهر
-                    order.originalText || '',                   // ملاحظات
-                    '',                                         // كشف
-                    CONFIG.TELEGRAM_BOT.REVIEW_STATUS.PENDING,  // حالة المراجعة
-                    `${user.first_name || ''} ${user.last_name || ''}`.trim(), // المُدخل
-                    chatId,                                     // معرّف المحادثة
-                    timestamp,                                  // تاريخ الإدخال
-                    '',                                         // المُراجع
-                    '',                                         // تاريخ المراجعة
-                    '',                                         // ملاحظات المراجعة
-                    '',                                         // رابط المرفق
-                    'لا',                                       // طرف جديد؟
-                    'بوت ذكي - أوردر مشترك',                   // مصدر الإدخال
-                    guests                                      // عدد الوحدات
-                ];
-
-                sheet.appendRow(rowData);
-                savedTransactions.push({
-                    id: transactionId,
-                    project: project.name,
+                // ⭐ تجهيز البيانات بنفس صيغة الحركات العادية
+                const transactionData = {
+                    date: transactionDate,
+                    nature: order.nature || 'استحقاق مصروف',
+                    classification: order.classification || '',
+                    projectCode: project.code || '',
+                    projectName: project.name,
                     item: itemName,
-                    amount: projectAmount,
-                    guests: guestNames || guests
-                });
+                    details: details,
+                    partyName: order.party || '',
+                    amount: amountPerProject,
+                    currency: order.currency || 'USD',
+                    exchangeRate: order.exchange_rate || 1,
+                    paymentMethod: order.payment_method || 'تحويل بنكي',
+                    paymentTermType: order.payment_term || 'فوري',
+                    weeks: order.payment_term_weeks || '',
+                    customDate: order.payment_term_date || '',
+                    telegramUser: userName,
+                    chatId: chatId,
+                    unitCount: guests,
+                    notes: `أوردر مشترك: ${sharedOrderId}`
+                };
 
-                Logger.log(`✅ Saved: ${project.name} - ${itemName} - ${projectAmount}`);
+                // ⭐ استخدام addTransactionDirectly للحفظ في دفتر الحركات مباشرة
+                const result = addTransactionDirectly(transactionData, '🤖 بوت ذكي - أوردر مشترك');
+
+                if (result.success) {
+                    savedTransactions.push({
+                        id: result.transactionId,
+                        project: project.name,
+                        item: itemName,
+                        amount: amountPerProject,
+                        guests: guestNames || guests
+                    });
+                    Logger.log(`✅ Saved: ${project.name} - ${itemName} - ${amountPerProject} - Row: ${result.rowNumber}`);
+                } else {
+                    Logger.log(`❌ Failed to save: ${project.name} - ${result.error}`);
+                }
             }
         }
 
         // إرسال رسالة النجاح
         let successMessage = `✅ *تم حفظ الأوردر المشترك بنجاح!*\n\n`;
         successMessage += `📦 *رقم الأوردر:* \`${sharedOrderId}\`\n`;
-        successMessage += `📊 *عدد الحركات:* ${transactionCounter}\n\n`;
+        successMessage += `📊 *عدد الحركات:* ${savedTransactions.length}\n\n`;
         successMessage += `*التفاصيل:*\n`;
 
         savedTransactions.forEach(t => {
@@ -3067,14 +3034,14 @@ function saveSharedOrderFromAI(chatId, session) {
             successMessage += `: ${t.amount.toLocaleString()} ${order.currency || 'USD'}\n`;
         });
 
-        successMessage += `\n⏳ الحركات في انتظار المراجعة والاعتماد.`;
+        successMessage += `\n📋 *تم الحفظ في دفتر الحركات مباشرة.*`;
 
         sendAIMessage(chatId, successMessage, { parse_mode: 'Markdown' });
 
         // مسح الجلسة
         resetAIUserSession(chatId);
 
-        return { success: true, orderId: sharedOrderId, count: transactionCounter };
+        return { success: true, orderId: sharedOrderId, count: savedTransactions.length };
 
     } catch (error) {
         Logger.log('❌ Error saving shared order: ' + error.message);
