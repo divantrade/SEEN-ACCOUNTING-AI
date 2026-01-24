@@ -1203,7 +1203,7 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
             '',                                         // V: حالة السداد - سيُحسب
             '',                                         // W: الشهر - سيُحسب
             notes,                                      // X: ملاحظات
-            '',                                         // Y: كشف
+            transactionData.statementMark || '',        // Y: كشف
             transactionData.orderNumber || '',          // Z: رقم الأوردر
             transactionData.unitCount || '',            // AA: عدد الوحدات
             inputSource                                 // AB: مصدر الإدخال

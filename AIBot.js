@@ -3038,7 +3038,8 @@ function saveSharedOrderFromAI(chatId, session) {
                     chatId: chatId,
                     unitCount: guests,
                     orderNumber: sharedOrderId,  // ⭐ رقم الأوردر المشترك في العامود Z
-                    notes: `أوردر مشترك: ${sharedOrderId}`
+                    statementMark: '📄',         // ⭐ علامة في العامود Y (كشف)
+                    notes: ''                    // الملاحظات ستحتوي فقط على اسم المُدخل
                 };
 
                 // ⭐ استخدام addTransactionDirectly للحفظ في دفتر الحركات مباشرة
