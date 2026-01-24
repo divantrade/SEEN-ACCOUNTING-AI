@@ -1271,6 +1271,26 @@ function handleAICallback(callbackQuery) {
             parse_mode: 'Markdown',
             reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
         });
+    } else if (data.startsWith('ai_editnature_')) {
+        // ✅ اختيار طبيعة الحركة أثناء التعديل
+        const nature = data.replace('ai_editnature_', '');
+        session.transaction.nature = nature;
+        // مسح التصنيف لأنه قد لا يتوافق مع الطبيعة الجديدة
+        session.transaction.classification = '';
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, `✅ تم تغيير طبيعة الحركة إلى: ${nature}\n\n⚠️ يرجى تحديث التصنيف ليتوافق مع الطبيعة الجديدة\n\nهل تريد تعديل حقل آخر؟`, {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+        });
+    } else if (data.startsWith('ai_editclass_')) {
+        // ✅ اختيار التصنيف أثناء التعديل
+        const classification = data.replace('ai_editclass_', '');
+        session.transaction.classification = classification;
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, `✅ تم تغيير التصنيف إلى: ${classification}\n\nهل تريد تعديل حقل آخر؟`, {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+        });
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
     } else if (data === 'ai_skip_project') {
@@ -1301,7 +1321,17 @@ function handleAICallback(callbackQuery) {
     } else if (data.startsWith('ai_currency_')) {
         // ⭐ معالجة اختيار العملة
         const currency = data.replace('ai_currency_', '');
-        handleAICurrencySelection(chatId, currency, session);
+        // ✅ التحقق من وضع التعديل
+        if (session.state === AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT && session.editingField === 'currency') {
+            session.transaction.currency = currency;
+            saveAIUserSession(chatId, session);
+            sendAIMessage(chatId, `✅ تم تغيير العملة إلى: ${currency}\n\nهل تريد تعديل حقل آخر؟`, {
+                parse_mode: 'Markdown',
+                reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+            });
+        } else {
+            handleAICurrencySelection(chatId, currency, session);
+        }
     } else if (data.startsWith('ai_term_')) {
         // ⭐ معالجة اختيار شرط الدفع
         const term = data.replace('ai_term_', '');
@@ -1732,15 +1762,98 @@ function handleEditRequest(chatId, data, session, messageId) {
 
     session.editingField = field;
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT;
+    saveAIUserSession(chatId, session);
 
+    // ⭐ عرض لوحات مفاتيح للحقول التي تحتاج اختيار
+    if (field === 'currency') {
+        // عرض لوحة مفاتيح العملات
+        sendAIMessage(chatId, '💱 اختر العملة الجديدة:', {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.CURRENCY)
+        });
+        return;
+    }
+
+    if (field === 'nature') {
+        // عرض لوحة مفاتيح طبيعة الحركة
+        const natureKeyboard = {
+            inline_keyboard: [
+                [
+                    { text: '📤 استحقاق مصروف', callback_data: 'ai_editnature_استحقاق مصروف' },
+                    { text: '💸 دفعة مصروف', callback_data: 'ai_editnature_دفعة مصروف' }
+                ],
+                [
+                    { text: '📥 استحقاق إيراد', callback_data: 'ai_editnature_استحقاق إيراد' },
+                    { text: '💰 تحصيل إيراد', callback_data: 'ai_editnature_تحصيل إيراد' }
+                ],
+                [
+                    { text: '🏦 تمويل (دخول قرض)', callback_data: 'ai_editnature_تمويل (دخول قرض)' },
+                    { text: '💳 سداد تمويل', callback_data: 'ai_editnature_سداد تمويل' }
+                ],
+                [
+                    { text: '🔒 تأمين مدفوع', callback_data: 'ai_editnature_تأمين مدفوع للقناة' },
+                    { text: '🔓 استرداد تأمين', callback_data: 'ai_editnature_استرداد تأمين من القناة' }
+                ],
+                [
+                    { text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }
+                ]
+            ]
+        };
+        sendAIMessage(chatId, '📤 اختر طبيعة الحركة الجديدة:', {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(natureKeyboard)
+        });
+        return;
+    }
+
+    if (field === 'classification') {
+        // عرض التصنيفات بناءً على طبيعة الحركة الحالية
+        const nature = session.transaction.nature || '';
+        let classificationKeyboard;
+
+        if (nature.includes('مصروف')) {
+            classificationKeyboard = {
+                inline_keyboard: [
+                    [{ text: '🎬 إنتاجي', callback_data: 'ai_editclass_إنتاجي' }],
+                    [{ text: '🏢 إداري وعمومي', callback_data: 'ai_editclass_إداري وعمومي' }],
+                    [{ text: '📢 تسويقي', callback_data: 'ai_editclass_تسويقي' }],
+                    [{ text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }]
+                ]
+            };
+        } else if (nature.includes('إيراد')) {
+            classificationKeyboard = {
+                inline_keyboard: [
+                    [{ text: '🎬 إيراد إنتاجي', callback_data: 'ai_editclass_إيراد إنتاجي' }],
+                    [{ text: '📺 إيراد قناة', callback_data: 'ai_editclass_إيراد قناة' }],
+                    [{ text: '💼 إيراد آخر', callback_data: 'ai_editclass_إيراد آخر' }],
+                    [{ text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }]
+                ]
+            };
+        } else {
+            classificationKeyboard = {
+                inline_keyboard: [
+                    [{ text: '🎬 إنتاجي', callback_data: 'ai_editclass_إنتاجي' }],
+                    [{ text: '🏢 إداري وعمومي', callback_data: 'ai_editclass_إداري وعمومي' }],
+                    [{ text: '📢 تسويقي', callback_data: 'ai_editclass_تسويقي' }],
+                    [{ text: '📺 إيراد قناة', callback_data: 'ai_editclass_إيراد قناة' }],
+                    [{ text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }]
+                ]
+            };
+        }
+
+        sendAIMessage(chatId, '📊 اختر التصنيف الجديد:', {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(classificationKeyboard)
+        });
+        return;
+    }
+
+    // باقي الحقول تحتاج إدخال نصي
     const fieldMessages = {
-        'nature': '📤 اختر طبيعة الحركة الجديدة:',
-        'classification': '📊 اختر التصنيف الجديد:',
         'project': '🎬 اكتب اسم المشروع:',
         'item': '📁 اكتب اسم البند:',
         'party': '👤 اكتب اسم الطرف:',
         'amount': '💰 اكتب المبلغ الجديد:',
-        'currency': '💱 اختر العملة:',
         'date': '📅 اكتب التاريخ (مثال: 15/01/2025):',
         'details': '📝 اكتب التفاصيل:'
     };
@@ -1759,9 +1872,18 @@ function handleEditInput(chatId, text, session) {
     // تحديث الحقل
     switch (field) {
         case 'amount':
-            const amount = parseFloat(text.replace(/[^0-9.]/g, ''));
-            if (isNaN(amount)) {
-                sendAIMessage(chatId, '❌ المبلغ غير صحيح. اكتب رقماً صحيحاً:');
+            // ⭐ تحويل الأرقام العربية إلى إنجليزية
+            const arabicToEnglish = {
+                '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+                '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9'
+            };
+            let normalizedText = text;
+            for (const [arabic, english] of Object.entries(arabicToEnglish)) {
+                normalizedText = normalizedText.replace(new RegExp(arabic, 'g'), english);
+            }
+            const amount = parseFloat(normalizedText.replace(/[^0-9.]/g, ''));
+            if (isNaN(amount) || amount <= 0) {
+                sendAIMessage(chatId, '❌ المبلغ غير صحيح. اكتب رقماً صحيحاً (مثال: 2000 أو ٢٠٠٠):');
                 return;
             }
             session.transaction.amount = amount;
