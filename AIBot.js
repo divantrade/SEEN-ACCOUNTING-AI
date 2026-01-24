@@ -1242,6 +1242,35 @@ function handleAICallback(callbackQuery) {
     // معالجة حسب نوع الـ callback
     if (data.startsWith('ai_confirm')) {
         handleAIConfirmation(chatId, session, user);
+    } else if (data.startsWith('ai_edit_item_')) {
+        // ✅ اختيار بند من الاقتراحات أثناء التعديل
+        const item = data.replace('ai_edit_item_', '');
+        session.transaction.item = item;
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, `✅ تم اختيار البند: ${item}\n\nهل تريد تعديل حقل آخر؟`, {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+        });
+    } else if (data.startsWith('ai_edit_project_')) {
+        // ✅ اختيار مشروع من الاقتراحات أثناء التعديل
+        const project = data.replace('ai_edit_project_', '');
+        const context = loadAIContext();
+        const projMatch = context.projects.find(p =>
+            (typeof p === 'object' ? p.name : p) === project
+        );
+        session.transaction.project = project;
+        session.transaction.project_code = projMatch && typeof projMatch === 'object' ? projMatch.code : '';
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, `✅ تم اختيار المشروع: ${project}\n\nهل تريد تعديل حقل آخر؟`, {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+        });
+    } else if (data === 'ai_edit_cancel') {
+        // ✅ إلغاء اقتراح التعديل
+        sendAIMessage(chatId, '❌ تم الإلغاء\n\nهل تريد تعديل حقل آخر؟', {
+            parse_mode: 'Markdown',
+            reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+        });
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
     } else if (data === 'ai_skip_project') {
@@ -1743,9 +1772,109 @@ function handleEditInput(chatId, text, session) {
             session.transaction.due_date = parseArabicDate(text);
             break;
 
+        case 'item':
+            // البحث الذكي عن البند
+            const context = loadAIContext();
+            const itemMatch = matchItem(text, context.items);
+
+            if (itemMatch.found && itemMatch.score >= 0.8) {
+                // تطابق عالي - نقبله مباشرة
+                session.transaction.item = itemMatch.match;
+                saveAIUserSession(chatId, session);
+                sendAIMessage(chatId, '✅ تم التحديث!\n\nهل تريد تعديل حقل آخر؟', {
+                    parse_mode: 'Markdown',
+                    reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+                });
+            } else if (itemMatch.found && itemMatch.score >= 0.4) {
+                // تطابق متوسط - نعرض اقتراحات
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: `✅ ${itemMatch.match}`, callback_data: `ai_edit_item_${itemMatch.match}` }]
+                    ]
+                };
+
+                // إضافة البدائل
+                if (itemMatch.alternatives && itemMatch.alternatives.length > 0) {
+                    itemMatch.alternatives.slice(0, 2).forEach(alt => {
+                        keyboard.inline_keyboard.push([
+                            { text: `📁 ${alt}`, callback_data: `ai_edit_item_${alt}` }
+                        ]);
+                    });
+                }
+
+                // إضافة خيار الإلغاء
+                keyboard.inline_keyboard.push([
+                    { text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }
+                ]);
+
+                sendAIMessage(chatId, `🔍 هل تقصد أحد هذه البنود؟`, {
+                    parse_mode: 'Markdown',
+                    reply_markup: JSON.stringify(keyboard)
+                });
+            } else {
+                // لم نجد تطابق - نقبل كما هو مع تحذير
+                session.transaction.item = text;
+                saveAIUserSession(chatId, session);
+                sendAIMessage(chatId, `⚠️ تم حفظ البند: "${text}"\n(لم نجد تطابق في قاعدة البيانات)\n\nهل تريد تعديل حقل آخر؟`, {
+                    parse_mode: 'Markdown',
+                    reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+                });
+            }
+            return; // نخرج هنا لأننا عالجنا الأمر
+
+        case 'project':
+            // البحث الذكي عن المشروع
+            const ctx = loadAIContext();
+            const projMatch = matchProject(text, ctx.projects);
+
+            if (projMatch.found && projMatch.score >= 0.8) {
+                session.transaction.project = projMatch.match;
+                session.transaction.project_code = projMatch.code || '';
+                saveAIUserSession(chatId, session);
+                sendAIMessage(chatId, '✅ تم التحديث!\n\nهل تريد تعديل حقل آخر؟', {
+                    parse_mode: 'Markdown',
+                    reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+                });
+            } else if (projMatch.found && projMatch.score >= 0.4) {
+                const keyboard = {
+                    inline_keyboard: [
+                        [{ text: `✅ ${projMatch.match}`, callback_data: `ai_edit_project_${projMatch.match}` }]
+                    ]
+                };
+
+                if (projMatch.alternatives && projMatch.alternatives.length > 0) {
+                    projMatch.alternatives.slice(0, 2).forEach(alt => {
+                        keyboard.inline_keyboard.push([
+                            { text: `🎬 ${alt}`, callback_data: `ai_edit_project_${alt}` }
+                        ]);
+                    });
+                }
+
+                keyboard.inline_keyboard.push([
+                    { text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }
+                ]);
+
+                sendAIMessage(chatId, `🔍 هل تقصد أحد هذه المشاريع؟`, {
+                    parse_mode: 'Markdown',
+                    reply_markup: JSON.stringify(keyboard)
+                });
+            } else {
+                session.transaction.project = text;
+                session.transaction.project_code = '';
+                saveAIUserSession(chatId, session);
+                sendAIMessage(chatId, `⚠️ تم حفظ المشروع: "${text}"\n(لم نجد تطابق في قاعدة البيانات)\n\nهل تريد تعديل حقل آخر؟`, {
+                    parse_mode: 'Markdown',
+                    reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+                });
+            }
+            return;
+
         default:
             session.transaction[field] = text;
     }
+
+    // ✅ حفظ الجلسة بعد التعديل
+    saveAIUserSession(chatId, session);
 
     // العودة لعرض قائمة التعديل
     sendAIMessage(chatId, '✅ تم التحديث!\n\nهل تريد تعديل حقل آخر؟', {
