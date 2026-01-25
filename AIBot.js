@@ -1905,39 +1905,21 @@ function handleEditRequest(chatId, data, session, messageId) {
     }
 
     if (field === 'classification') {
-        // عرض التصنيفات بناءً على طبيعة الحركة الحالية
-        const nature = session.transaction.nature || '';
-        let classificationKeyboard;
+        // ⭐ تحميل التصنيفات ديناميكياً من قاعدة البيانات
+        const context = loadAIContext();
+        const classifications = context.classifications || [];
 
-        if (nature.includes('مصروف')) {
-            classificationKeyboard = {
-                inline_keyboard: [
-                    [{ text: '🎬 إنتاجي', callback_data: 'ai_editclass_إنتاجي' }],
-                    [{ text: '🏢 إداري وعمومي', callback_data: 'ai_editclass_إداري وعمومي' }],
-                    [{ text: '📢 تسويقي', callback_data: 'ai_editclass_تسويقي' }],
-                    [{ text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }]
-                ]
-            };
-        } else if (nature.includes('إيراد')) {
-            classificationKeyboard = {
-                inline_keyboard: [
-                    [{ text: '🎬 إيراد إنتاجي', callback_data: 'ai_editclass_إيراد إنتاجي' }],
-                    [{ text: '📺 إيراد قناة', callback_data: 'ai_editclass_إيراد قناة' }],
-                    [{ text: '💼 إيراد آخر', callback_data: 'ai_editclass_إيراد آخر' }],
-                    [{ text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }]
-                ]
-            };
-        } else {
-            classificationKeyboard = {
-                inline_keyboard: [
-                    [{ text: '🎬 إنتاجي', callback_data: 'ai_editclass_إنتاجي' }],
-                    [{ text: '🏢 إداري وعمومي', callback_data: 'ai_editclass_إداري وعمومي' }],
-                    [{ text: '📢 تسويقي', callback_data: 'ai_editclass_تسويقي' }],
-                    [{ text: '📺 إيراد قناة', callback_data: 'ai_editclass_إيراد قناة' }],
-                    [{ text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }]
-                ]
-            };
-        }
+        // بناء الكيبورد ديناميكياً من التصنيفات المتاحة
+        const buttons = classifications.map(cls => {
+            return [{ text: '📊 ' + cls, callback_data: 'ai_editclass_' + cls }];
+        });
+
+        // إضافة زر الإلغاء
+        buttons.push([{ text: '❌ إلغاء', callback_data: 'ai_edit_cancel' }]);
+
+        const classificationKeyboard = {
+            inline_keyboard: buttons
+        };
 
         sendAIMessage(chatId, '📊 اختر التصنيف الجديد:', {
             parse_mode: 'Markdown',
