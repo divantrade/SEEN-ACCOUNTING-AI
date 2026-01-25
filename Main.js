@@ -5270,6 +5270,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const sharedRows = Object.values(sharedOrders).map(order => {
     // استخراج أسماء الضيوف من التفاصيل
     const guestNames = [];
+    let totalGuestsFromDetails = 0;  // ⭐ عدد الضيوف من التفاصيل
+
     for (const detail of order.details) {
       if (detail) {
         let namePart = '';
@@ -5281,15 +5283,29 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
           // صيغة قديمة: "اسم - تفاصيل" أو النص كاملاً
           namePart = detail.split(' - ')[0].trim();
         }
-        if (namePart && !guestNames.includes(namePart)) {
-          guestNames.push(namePart);
+
+        // ⭐ استخراج عدد الضيوف من التفاصيل إن وجد (مثل "تصوير 4 ضيوف في 4 أفلام")
+        const guestCountMatch = detail.match(/(\d+)\s*ضي[وف]/);
+        if (guestCountMatch && totalGuestsFromDetails === 0) {
+          totalGuestsFromDetails = parseInt(guestCountMatch[1]);
+        }
+
+        // ⭐ فصل الأسماء المتعددة المفصولة بفواصل (، أو ,)
+        if (namePart) {
+          const names = namePart.split(/[،,]/).map(n => n.trim()).filter(n => n);
+          for (const name of names) {
+            if (name && !guestNames.includes(name)) {
+              guestNames.push(name);
+            }
+          }
         }
       }
     }
 
     // بناء التفاصيل المختصرة: البنود + عدد الضيوف + الأسماء
     const itemsStr = Array.from(order.items).join(' + ');
-    const guestCount = guestNames.length || order.details.size;
+    // ⭐ استخدام العدد من التفاصيل إن وجد، وإلا عدد الأسماء المستخرجة
+    const guestCount = totalGuestsFromDetails || guestNames.length || order.details.size;
     let detailsStr = itemsStr;
     if (guestCount > 0) {
       detailsStr += ` - ${guestCount} ضيوف`;
