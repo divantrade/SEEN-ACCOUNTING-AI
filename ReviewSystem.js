@@ -460,7 +460,7 @@ function approveTransaction(rowNumber) {
         Logger.log('Main Sheet Last Row: ' + mainLastRow);
         Logger.log('New Row Number: ' + newRow);
 
-        // إعداد بيانات الصف الجديد (25 عمود فقط - بدون أعمدة البوت)
+        // إعداد بيانات الصف الجديد (28 عمود - مع أعمدة Y, Z, AA, AB)
         const mainRowData = [
             newRow - 1, // رقم الحركة
             rowData[columns.DATE.index - 1],
@@ -486,12 +486,15 @@ function approveTransaction(rowNumber) {
             '', // حالة السداد - سيُحسب بالصيغة
             '', // الشهر - سيُحسب بالصيغة
             rowData[columns.NOTES.index - 1] || `(من البوت: ${rowData[columns.TELEGRAM_USER.index - 1]})`,
-            '' // كشف
+            '',                                          // Y: كشف
+            '',                                          // Z: رقم الأوردر
+            rowData[columns.UNIT_COUNT.index - 1] || '', // AA: عدد الوحدات
+            `(من البوت: ${rowData[columns.TELEGRAM_USER.index - 1] || ''})` // AB: مصدر الإدخال
         ];
 
         // إضافة الصف
         Logger.log('📝 جاري كتابة البيانات في الصف ' + newRow);
-        mainSheet.getRange(newRow, 1, 1, 25).setValues([mainRowData]);
+        mainSheet.getRange(newRow, 1, 1, 28).setValues([mainRowData]);
         Logger.log('✅ تم كتابة البيانات بنجاح!');
 
         // Force flush to ensure data is written
@@ -1000,14 +1003,17 @@ function manualApproveWithDetails() {
             rowData[columns.CUSTOM_DATE.index - 1] || '',
             '', '', '', // تاريخ استحقاق، حالة سداد، شهر
             rowData[columns.NOTES.index - 1] || `(من البوت)`,
-            '📄'
+            '',                                          // Y: كشف
+            '',                                          // Z: رقم الأوردر
+            rowData[columns.UNIT_COUNT.index - 1] || '', // AA: عدد الوحدات
+            `(من البوت: ${rowData[columns.TELEGRAM_USER.index - 1] || ''})` // AB: مصدر الإدخال
         ];
 
         Logger.log('البيانات للإدخال: ' + JSON.stringify(mainRowData));
         Logger.log('عدد الأعمدة: ' + mainRowData.length);
 
         // الإدخال
-        mainSheet.getRange(newRow, 1, 1, mainRowData.length).setValues([mainRowData]);
+        mainSheet.getRange(newRow, 1, 1, 28).setValues([mainRowData]);
 
         // ⭐ حساب الأعمدة التلقائية (M, U, O, V) - لأن setValues لا يُفعّل onEdit
         const ss = SpreadsheetApp.getActiveSpreadsheet();
