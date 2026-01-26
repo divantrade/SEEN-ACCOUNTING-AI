@@ -368,6 +368,23 @@ function processNewTransaction(chatId, text, user) {
         // ⭐ التحقق من الأوردر المشترك
         if (result.transaction && result.transaction.is_shared_order) {
             Logger.log('✅ Detected SHARED ORDER');
+
+            // ⭐ التحقق من الطرف أولاً - هل موجود في قاعدة البيانات؟
+            if (result.validation && result.validation.needsPartyConfirmation) {
+                Logger.log('⚠️ Shared order needs party confirmation first');
+                // حفظ الأوردر المشترك في الجلسة للمتابعة بعد إضافة الطرف
+                const session = getAIUserSession(chatId);
+                session.sharedOrder = result.transaction;
+                session.transaction = result.transaction;
+                session.validation = result.validation;
+                session.user = user;
+                saveAIUserSession(chatId, session);
+
+                // طلب تأكيد إضافة الطرف الجديد
+                askNewPartyConfirmation(chatId, session);
+                return;
+            }
+
             handleSharedOrder(chatId, result.transaction, user);
             return;
         }
@@ -1172,6 +1189,19 @@ function continueValidation(chatId, session) {
     }
 
     // كل شيء تمام - عرض التأكيد
+    // ⭐ التحقق من الأوردر المشترك - إذا كان موجود، عرض تأكيد الأوردر المشترك
+    if (session.sharedOrder) {
+        Logger.log('✅ Continuing with shared order after party confirmation');
+        // تحديث اسم الطرف في الأوردر المشترك
+        if (session.validation && session.validation.enriched && session.validation.enriched.party) {
+            session.sharedOrder.party = session.validation.enriched.party;
+        }
+        session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_SHARED_ORDER_CONFIRMATION;
+        saveAIUserSession(chatId, session);
+        showSharedOrderConfirmation(chatId, session.sharedOrder);
+        return;
+    }
+
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT;
     saveAIUserSession(chatId, session);
     showTransactionConfirmation(chatId, session);
