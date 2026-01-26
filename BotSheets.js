@@ -1234,8 +1234,26 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
 
         // تسجيل النشاط
         if (typeof logActivity === 'function') {
-            logActivity('إضافة حركة من البوت', CONFIG.SHEETS.TRANSACTIONS, newRow,
-                transactionId, 'مصدر: ' + inputSource);
+            logActivity(
+                'إضافة حركة من البوت',
+                CONFIG.SHEETS.TRANSACTIONS,
+                newRow,
+                transactionId,
+                (transactionData.partyName || 'غير محدد') + ' - ' + amount + ' ' + currency,
+                {
+                    projectCode: transactionData.projectCode,
+                    projectName: transactionData.projectName,
+                    item: transactionData.item,
+                    partyName: transactionData.partyName,
+                    amount: amount,
+                    currency: currency,
+                    amountUsd: amountUSD,
+                    movementType: movementType,
+                    nature: nature,
+                    inputSource: inputSource,
+                    telegramUser: transactionData.telegramUser || ''
+                }
+            );
         }
 
         Logger.log('✅ تمت إضافة الحركة بنجاح - رقم: ' + transactionId);
