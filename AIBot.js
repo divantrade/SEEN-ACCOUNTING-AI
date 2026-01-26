@@ -1787,6 +1787,8 @@ function saveAITransaction(transaction, user, chatId) {
             attachmentUrl: '',
             isNewParty: transaction.isNewParty,
             unitCount: transaction.unit_count || transaction.unitCount || '',
+            statementMark: '',                              // Y: كشف
+            orderNumber: '',                                // Z: رقم الأوردر
             notes: transaction.originalText ? `النص الأصلي: ${transaction.originalText}` : ''
         };
 

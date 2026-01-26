@@ -2127,6 +2127,8 @@ function saveTransaction(chatId, session) {
             attachmentUrl: data.attachmentUrl,
             isNewParty: data.isNewParty,
             unitCount: data.unitCount || 0,
+            statementMark: '',                              // Y: كشف
+            orderNumber: '',                                // Z: رقم الأوردر
             notes: data.attachmentUrl ? `📎 مرفق: ${data.attachmentUrl}` : ''
         };
 
