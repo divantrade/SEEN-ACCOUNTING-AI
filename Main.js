@@ -744,6 +744,17 @@ function sortTransactionsByDate() {
   const dataX = validRows.map(function (row) { return [row[23] || '']; });
   sheet.getRange(2, 24, numRows, 1).setValues(dataX);
 
+  // Y-AB (indexes 24-27, columns 25-28) - كشف، رقم الأوردر، عدد الوحدات، مصدر الإدخال
+  const dataYtoAB = validRows.map(function (row) {
+    return [
+      row[24] || '',  // Y: كشف
+      row[25] || '',  // Z: رقم الأوردر
+      row[26] || '',  // AA: عدد الوحدات
+      row[27] || ''   // AB: مصدر الإدخال
+    ];
+  });
+  sheet.getRange(2, 25, numRows, 4).setValues(dataYtoAB);
+
   // ═══════════════════════════════════════════════════════════
   // 6. إعادة بناء معادلات الأعمدة: A, P, W
   // ═══════════════════════════════════════════════════════════
