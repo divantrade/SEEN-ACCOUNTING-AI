@@ -5112,15 +5112,16 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   sheet.setRightToLeft(true);
 
   // ═══════════════════════════════════════════════════════════
-  // عرض الأعمدة (7 أعمدة مع رقم الأوردر)
+  // عرض الأعمدة (8 أعمدة مع تاريخ الاستحقاق ورقم الأوردر)
   // ═══════════════════════════════════════════════════════════
-  sheet.setColumnWidth(1, 110);  // التاريخ
-  sheet.setColumnWidth(2, 160);  // المشروع
-  sheet.setColumnWidth(3, 130);  // رقم الأوردر
-  sheet.setColumnWidth(4, 220);  // التفاصيل
-  sheet.setColumnWidth(5, 120);  // مدين
-  sheet.setColumnWidth(6, 120);  // دائن
-  sheet.setColumnWidth(7, 120);  // الرصيد
+  sheet.setColumnWidth(1, 100);  // تاريخ التسجيل
+  sheet.setColumnWidth(2, 100);  // تاريخ الاستحقاق
+  sheet.setColumnWidth(3, 140);  // المشروع
+  sheet.setColumnWidth(4, 120);  // رقم الأوردر
+  sheet.setColumnWidth(5, 200);  // التفاصيل
+  sheet.setColumnWidth(6, 110);  // مدين
+  sheet.setColumnWidth(7, 110);  // دائن
+  sheet.setColumnWidth(8, 110);  // الرصيد
 
   // ═══════════════════════════════════════════════════════════
   // بيانات الطرف من القاعدة
@@ -5130,7 +5131,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   // ═══════════════════════════════════════════════════════════
   // العنوان الرئيسي
   // ═══════════════════════════════════════════════════════════
-  sheet.getRange('A1:G1').merge();
+  sheet.getRange('A1:H1').merge();
   sheet.getRange('A1')
     .setValue('📊 ' + titlePrefix)
     .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
@@ -5183,34 +5184,34 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const cardHeaderRow = 3 + logoRowOffset;
   const cardDataStartRow = cardHeaderRow + 1;
 
-  sheet.getRange('A' + cardHeaderRow + ':G' + cardHeaderRow).merge()
+  sheet.getRange('A' + cardHeaderRow + ':H' + cardHeaderRow).merge()
     .setValue('بيانات ' + partyType)
     .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  sheet.getRange('A' + cardDataStartRow + ':G' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+  sheet.getRange('A' + cardDataStartRow + ':H' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
   sheet.getRange('A' + cardDataStartRow).setValue('الاسم:').setFontWeight('bold');
   sheet.getRange('B' + cardDataStartRow + ':D' + cardDataStartRow).merge().setValue(partyName);
 
-  sheet.getRange('E' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
-  sheet.getRange('F' + cardDataStartRow + ':G' + cardDataStartRow).merge().setValue(partyData.specialization || '');
+  sheet.getRange('F' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
+  sheet.getRange('G' + cardDataStartRow + ':H' + cardDataStartRow).merge().setValue(partyData.specialization || '');
 
   sheet.getRange('A' + (cardDataStartRow + 1)).setValue('الهاتف:').setFontWeight('bold');
   sheet.getRange('B' + (cardDataStartRow + 1) + ':D' + (cardDataStartRow + 1)).merge().setValue(partyData.phone || '');
 
-  sheet.getRange('E' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
-  sheet.getRange('F' + (cardDataStartRow + 1) + ':G' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
+  sheet.getRange('F' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
+  sheet.getRange('G' + (cardDataStartRow + 1) + ':H' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
 
   sheet.getRange('A' + (cardDataStartRow + 2)).setValue('البنك:').setFontWeight('bold');
-  sheet.getRange('B' + (cardDataStartRow + 2) + ':G' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
+  sheet.getRange('B' + (cardDataStartRow + 2) + ':H' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
 
   sheet.getRange('A' + (cardDataStartRow + 3)).setValue('ملاحظات:').setFontWeight('bold');
-  sheet.getRange('B' + (cardDataStartRow + 3) + ':G' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
+  sheet.getRange('B' + (cardDataStartRow + 3) + ':H' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
 
-  sheet.getRange('A' + cardDataStartRow + ':G' + (cardDataStartRow + 3)).setBorder(
+  sheet.getRange('A' + cardDataStartRow + ':H' + (cardDataStartRow + 3)).setBorder(
     true, true, true, true, true, true,
     '#1565c0', SpreadsheetApp.BorderStyle.SOLID
   );
@@ -5238,7 +5239,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     // تجاهل الحركات بدون مبلغ
     if (!amountUsd) continue;
 
-    const date = row[1];       // B: التاريخ
+    const date = row[1];       // B: تاريخ التسجيل
+    const dueDate = row[20];   // U: تاريخ الاستحقاق
     const project = row[5];    // F: اسم المشروع
     const item = row[6];       // G: البند
     const details = row[7];    // H: التفاصيل
@@ -5260,6 +5262,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
       if (!sharedOrders[orderNumber]) {
         sharedOrders[orderNumber] = {
           date: date,
+          dueDate: (debit > 0 && dueDate) ? dueDate : '',
           items: new Set(),
           details: new Set(),
           debit: 0,
@@ -5272,10 +5275,15 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
       if (details) sharedOrders[orderNumber].details.add(details);
       sharedOrders[orderNumber].debit += debit;
       sharedOrders[orderNumber].credit += credit;
+      // تحديث تاريخ الاستحقاق إذا كان متاحاً
+      if (debit > 0 && dueDate && !sharedOrders[orderNumber].dueDate) {
+        sharedOrders[orderNumber].dueDate = dueDate;
+      }
     } else {
       // حركة عادية بدون أوردر مشترك
       regularRows.push({
         date: date,
+        dueDate: (debit > 0 && dueDate) ? dueDate : '',
         project: project || '',
         orderNumber: orderNumber,
         details: details || '',
@@ -5335,6 +5343,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
     return {
       date: order.date,
+      dueDate: order.dueDate || '',
       project: '',  // فارغ لأنه متعدد المشاريع
       orderNumber: order.orderNumber,
       details: detailsStr,
@@ -5360,6 +5369,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     balance += (r.debit || 0) - (r.credit || 0);
     rows.push([
       r.date,
+      r.dueDate || '',
       r.project,
       r.orderNumber,
       r.details,
@@ -5375,20 +5385,20 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const summaryHeaderRow = cardDataStartRow + 5;
   const summaryDataStartRow = summaryHeaderRow + 1;
 
-  sheet.getRange('A' + summaryHeaderRow + ':G' + summaryHeaderRow).merge()
+  sheet.getRange('A' + summaryHeaderRow + ':H' + summaryHeaderRow).merge()
     .setValue('الملخص المالي')
     .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  sheet.getRange('A' + summaryDataStartRow + ':G' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+  sheet.getRange('A' + summaryDataStartRow + ':H' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
   sheet.getRange('A' + summaryDataStartRow).setValue('إجمالي المدين:').setFontWeight('bold');
   sheet.getRange('B' + summaryDataStartRow).setValue(totalDebit).setNumberFormat('$#,##0.00');
 
-  sheet.getRange('D' + summaryDataStartRow).setValue('إجمالي الدائن:').setFontWeight('bold');
-  sheet.getRange('E' + summaryDataStartRow).setValue(totalCredit).setNumberFormat('$#,##0.00');
+  sheet.getRange('E' + summaryDataStartRow).setValue('إجمالي الدائن:').setFontWeight('bold');
+  sheet.getRange('F' + summaryDataStartRow).setValue(totalCredit).setNumberFormat('$#,##0.00');
 
   sheet.getRange('A' + (summaryDataStartRow + 1)).setValue('الرصيد الحالي:').setFontWeight('bold');
   sheet.getRange('B' + (summaryDataStartRow + 1)).setValue(balance).setNumberFormat('$#,##0.00')
@@ -5398,7 +5408,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   sheet.getRange('E' + (summaryDataStartRow + 1)).setValue('عدد الحركات:').setFontWeight('bold');
   sheet.getRange('F' + (summaryDataStartRow + 1)).setValue(rows.length);
 
-  sheet.getRange('A' + summaryDataStartRow + ':G' + (summaryDataStartRow + 1)).setBorder(
+  sheet.getRange('A' + summaryDataStartRow + ':H' + (summaryDataStartRow + 1)).setBorder(
     true, true, true, true, true, true,
     '#1565c0', SpreadsheetApp.BorderStyle.SOLID
   );
@@ -5408,7 +5418,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   // ═══════════════════════════════════════════════════════════
   const tableHeaderRow = summaryDataStartRow + 3;
   const headers = [
-    '📅 التاريخ',
+    '📅 تاريخ التسجيل',
+    '⏰ تاريخ الاستحقاق',
     '🎬 المشروع',
     '📦 رقم الأوردر',
     '📝 التفاصيل',
@@ -5431,8 +5442,9 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
   if (rows.length > 0) {
     sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
-    sheet.getRange(dataStartRow, 1, rows.length, 1).setNumberFormat('dd/mm/yyyy');
-    sheet.getRange(dataStartRow, 5, rows.length, 3).setNumberFormat('$#,##0.00');
+    sheet.getRange(dataStartRow, 1, rows.length, 1).setNumberFormat('dd/mm/yyyy');  // تاريخ التسجيل
+    sheet.getRange(dataStartRow, 2, rows.length, 1).setNumberFormat('dd/mm/yyyy');  // تاريخ الاستحقاق
+    sheet.getRange(dataStartRow, 6, rows.length, 3).setNumberFormat('$#,##0.00');
 
     // تلوين متناوب للصفوف
     for (let i = 0; i < rows.length; i++) {
@@ -5455,10 +5467,10 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   // ═══════════════════════════════════════════════════════════
   const footerStart = dataStartRow + Math.max(rows.length, 1) + 3;
 
-  sheet.getRange(footerStart, 1, 1, 7).merge()
+  sheet.getRange(footerStart, 1, 1, 8).merge()
     .setBackground(CONFIG.COLORS.HEADER.DASHBOARD);
 
-  sheet.getRange(footerStart + 1, 1, 3, 7).merge()
+  sheet.getRange(footerStart + 1, 1, 3, 8).merge()
     .setValue(
       "Seen Film\n" +
       "info@seenfilm.net | www.seenfilm.net\n" +
