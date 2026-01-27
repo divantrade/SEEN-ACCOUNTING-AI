@@ -734,9 +734,12 @@ function validateTransaction(transaction, context) {
     if (transaction.project && context.projects) {
         const projectMatch = matchProject(transaction.project, context.projects);
         if (projectMatch.found) {
+            // ⭐ دائماً نستخدم الاسم والكود من قاعدة البيانات (أحدث نسخة)
             validation.enriched.project = projectMatch.match;
-            validation.enriched.project_code = projectMatch.code || transaction.project_code || '';
+            // الكود من قاعدة البيانات له الأولوية المطلقة (حتى لو كان فارغ)
+            validation.enriched.project_code = (projectMatch.code != null && projectMatch.code !== undefined) ? projectMatch.code : (transaction.project_code || '');
             validation.enriched.projectScore = projectMatch.score;
+            Logger.log('✅ مشروع من قاعدة البيانات: ' + projectMatch.match + ' (كود: ' + validation.enriched.project_code + ')');
             if (projectMatch.score < 0.9) {
                 validation.warnings.push({
                     field: 'project',
