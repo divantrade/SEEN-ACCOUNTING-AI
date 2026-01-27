@@ -1248,9 +1248,24 @@ function addNewParty(name, type) {
  * عرض ملخص الحركة للتأكيد
  */
 function showTransactionConfirmation(chatId, session) {
+    // ⭐ تحديث بيانات المشروع من قاعدة البيانات (لضمان أحدث اسم وكود)
+    if (session.transaction && session.transaction.project) {
+        try {
+            var ctx = loadAIContext();
+            var freshProjectMatch = matchProject(session.transaction.project, ctx.projects);
+            if (freshProjectMatch.found) {
+                session.transaction.project = freshProjectMatch.match;
+                session.transaction.project_code = freshProjectMatch.code || '';
+            }
+        } catch (e) {
+            Logger.log('⚠️ فشل تحديث المشروع قبل التأكيد: ' + e.message);
+        }
+    }
+
     const summary = buildTransactionSummary(session.transaction);
 
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_CONFIRMATION;
+    saveAIUserSession(chatId, session);
 
     sendAIMessage(chatId, summary, {
         parse_mode: 'Markdown',
@@ -1696,6 +1711,26 @@ function handleAIConfirmation(chatId, session, user) {
         if (!session.transaction) {
             sendAIMessage(chatId, '❌ عذراً، لم أجد بيانات الحركة لتأكيدها. يرجى إعادة المحاولة.');
             return;
+        }
+
+        // ⭐ إعادة التحقق من بيانات المشروع من قاعدة البيانات (لضمان أحدث اسم وكود)
+        if (session.transaction.project) {
+            try {
+                var context = loadAIContext();
+                var freshMatch = matchProject(session.transaction.project, context.projects);
+                if (freshMatch.found) {
+                    if (session.transaction.project !== freshMatch.match) {
+                        Logger.log('🔄 تحديث اسم المشروع: "' + session.transaction.project + '" → "' + freshMatch.match + '"');
+                    }
+                    if (session.transaction.project_code !== freshMatch.code) {
+                        Logger.log('🔄 تحديث كود المشروع: "' + session.transaction.project_code + '" → "' + freshMatch.code + '"');
+                    }
+                    session.transaction.project = freshMatch.match;
+                    session.transaction.project_code = freshMatch.code || '';
+                }
+            } catch (refreshError) {
+                Logger.log('⚠️ فشل تحديث بيانات المشروع: ' + refreshError.message);
+            }
         }
 
         // حفظ الحركة
@@ -2269,19 +2304,48 @@ function findClosestProjects(searchText, projectsList, limit) {
  * معالجة callback المشروع
  */
 function handleProjectCallback(chatId, project, session) {
-    session.transaction.project = project;
-
-    // ⭐ جلب كود المشروع من قاعدة البيانات
+    // ⭐ جلب كود المشروع من قاعدة البيانات (بحث مطبّع + ذكي)
     const context = loadAIContext();
-    const projectData = context.projects.find(p => {
-        const name = typeof p === 'object' ? p.name : p;
+
+    // أولاً: بحث مطابق تماماً
+    var projectData = context.projects.find(function(p) {
+        var name = typeof p === 'object' ? p.name : p;
         return name === project;
     });
 
-    if (projectData && typeof projectData === 'object' && projectData.code) {
-        session.transaction.project_code = projectData.code;
-        Logger.log('✅ Project code found: ' + projectData.code);
+    // ثانياً: بحث بالنص المطبّع (يتعامل مع اختلافات الهمزات والمسافات)
+    if (!projectData) {
+        var normalizedProject = normalizeArabicText(project);
+        projectData = context.projects.find(function(p) {
+            var name = typeof p === 'object' ? p.name : p;
+            return normalizeArabicText(name) === normalizedProject;
+        });
+        if (projectData) {
+            Logger.log('✅ Project found via normalized match: ' + (typeof projectData === 'object' ? projectData.name : projectData));
+        }
+    }
+
+    // ثالثاً: بحث ذكي (fuzzy) كحل أخير
+    if (!projectData) {
+        var matchResult = matchProject(project, context.projects);
+        if (matchResult.found && matchResult.score >= 0.7) {
+            projectData = context.projects.find(function(p) {
+                var name = typeof p === 'object' ? p.name : p;
+                return name === matchResult.match;
+            });
+            if (projectData) {
+                Logger.log('✅ Project found via fuzzy match (score: ' + matchResult.score + '): ' + matchResult.match);
+            }
+        }
+    }
+
+    if (projectData && typeof projectData === 'object') {
+        // ⭐ استخدام أحدث اسم وكود من قاعدة البيانات
+        session.transaction.project = projectData.name;
+        session.transaction.project_code = projectData.code || '';
+        Logger.log('✅ Project from DB: ' + projectData.name + ' (' + projectData.code + ')');
     } else {
+        session.transaction.project = project;
         session.transaction.project_code = '';
         Logger.log('⚠️ No project code found for: ' + project);
     }

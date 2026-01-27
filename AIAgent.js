@@ -701,6 +701,20 @@ function validateTransaction(transaction, context) {
         });
     }
 
+    // ⭐ تصحيح مبكر للتصنيف: المرتبات والرواتب = مصروفات عمومية (قبل فحص المشروع)
+    var salaryKeywordsEarly = ['مرتبات', 'مرتب', 'راتب', 'رواتب', 'أجور', 'أجر', 'مكافأة', 'مكافآت', 'حوافز', 'بدلات'];
+    var itemTextEarly = (transaction.item || '');
+    var detailsTextEarly = (transaction.details || '');
+    var isSalaryEarly = salaryKeywordsEarly.some(function(keyword) {
+        return itemTextEarly.includes(keyword) || detailsTextEarly.includes(keyword);
+    });
+
+    if (isSalaryEarly && transaction.classification === 'مصروفات مباشرة') {
+        Logger.log('⚠️ تصحيح مبكر: المرتبات/الرواتب → مصروفات عمومية');
+        transaction.classification = 'مصروفات عمومية';
+        validation.enriched.classification = 'مصروفات عمومية';
+    }
+
     // التحقق من المشروع للمصروفات المباشرة والإيرادات
     // ⭐ المشروع اختياري - نسأل عنه لكن يمكن التخطي
     const needsProject = ['مصروفات مباشرة', 'ايراد'].includes(transaction.classification);
@@ -720,9 +734,12 @@ function validateTransaction(transaction, context) {
     if (transaction.project && context.projects) {
         const projectMatch = matchProject(transaction.project, context.projects);
         if (projectMatch.found) {
+            // ⭐ دائماً نستخدم الاسم والكود من قاعدة البيانات (أحدث نسخة)
             validation.enriched.project = projectMatch.match;
-            validation.enriched.project_code = projectMatch.code || transaction.project_code || '';
+            // الكود من قاعدة البيانات له الأولوية المطلقة (حتى لو كان فارغ)
+            validation.enriched.project_code = (projectMatch.code != null && projectMatch.code !== undefined) ? projectMatch.code : (transaction.project_code || '');
             validation.enriched.projectScore = projectMatch.score;
+            Logger.log('✅ مشروع من قاعدة البيانات: ' + projectMatch.match + ' (كود: ' + validation.enriched.project_code + ')');
             if (projectMatch.score < 0.9) {
                 validation.warnings.push({
                     field: 'project',
