@@ -701,6 +701,20 @@ function validateTransaction(transaction, context) {
         });
     }
 
+    // ⭐ تصحيح مبكر للتصنيف: المرتبات والرواتب = مصروفات عمومية (قبل فحص المشروع)
+    var salaryKeywordsEarly = ['مرتبات', 'مرتب', 'راتب', 'رواتب', 'أجور', 'أجر', 'مكافأة', 'مكافآت', 'حوافز', 'بدلات'];
+    var itemTextEarly = (transaction.item || '');
+    var detailsTextEarly = (transaction.details || '');
+    var isSalaryEarly = salaryKeywordsEarly.some(function(keyword) {
+        return itemTextEarly.includes(keyword) || detailsTextEarly.includes(keyword);
+    });
+
+    if (isSalaryEarly && transaction.classification === 'مصروفات مباشرة') {
+        Logger.log('⚠️ تصحيح مبكر: المرتبات/الرواتب → مصروفات عمومية');
+        transaction.classification = 'مصروفات عمومية';
+        validation.enriched.classification = 'مصروفات عمومية';
+    }
+
     // التحقق من المشروع للمصروفات المباشرة والإيرادات
     // ⭐ المشروع اختياري - نسأل عنه لكن يمكن التخطي
     const needsProject = ['مصروفات مباشرة', 'ايراد'].includes(transaction.classification);
