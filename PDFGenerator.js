@@ -541,20 +541,21 @@ function generateStatementForBot_(ss, partyName, partyType) {
     sheet.setRightToLeft(true);
 
     // ═══════════════════════════════════════════════════════════
-    // عرض الأعمدة (6 أعمدة)
+    // عرض الأعمدة (7 أعمدة - مع تاريخ الاستحقاق)
     // ═══════════════════════════════════════════════════════════
-    sheet.setColumnWidth(1, 110);  // التاريخ
-    sheet.setColumnWidth(2, 160);  // المشروع
-    sheet.setColumnWidth(3, 250);  // التفاصيل
-    sheet.setColumnWidth(4, 130);  // مدين
-    sheet.setColumnWidth(5, 130);  // دائن
-    sheet.setColumnWidth(6, 130);  // الرصيد
+    sheet.setColumnWidth(1, 100);  // تاريخ التسجيل
+    sheet.setColumnWidth(2, 100);  // تاريخ الاستحقاق
+    sheet.setColumnWidth(3, 140);  // المشروع
+    sheet.setColumnWidth(4, 210);  // التفاصيل
+    sheet.setColumnWidth(5, 110);  // مدين
+    sheet.setColumnWidth(6, 110);  // دائن
+    sheet.setColumnWidth(7, 110);  // الرصيد
 
     // ═══════════════════════════════════════════════════════════
     // Header الشركة في أعلى التقرير
     // ═══════════════════════════════════════════════════════════
     // صف 1: اسم الشركة (بولد، خط كبير)
-    sheet.getRange('A1:F1').merge();
+    sheet.getRange('A1:G1').merge();
     sheet.getRange('A1')
         .setValue('START SCENE MEDIA PRODUKSIYON LIMITED')
         .setFontWeight('bold')
@@ -563,7 +564,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
         .setVerticalAlignment('middle');
 
     // صف 2: العنوان
-    sheet.getRange('A2:F2').merge();
+    sheet.getRange('A2:G2').merge();
     sheet.getRange('A2')
         .setValue('212 My Office - Office No177 - Istanbul - Bagcilar')
         .setFontSize(10)
@@ -571,7 +572,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
         .setVerticalAlignment('middle');
 
     // صف 3: البريد والموقع
-    sheet.getRange('A3:F3').merge();
+    sheet.getRange('A3:G3').merge();
     sheet.getRange('A3')
         .setValue('Finance@seenfilm.net  |  www.seenfilm.net')
         .setFontSize(10)
@@ -584,7 +585,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // ═══════════════════════════════════════════════════════════
     // العنوان الرئيسي (كشف مورد/عميل/ممول)
     // ═══════════════════════════════════════════════════════════
-    sheet.getRange('A5:F5').merge();
+    sheet.getRange('A5:G5').merge();
     sheet.getRange('A5')
         .setValue(titlePrefix)
         .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
@@ -600,34 +601,34 @@ function generateStatementForBot_(ss, partyName, partyType) {
     const cardHeaderRow = 7;
     const cardDataStartRow = cardHeaderRow + 1;
 
-    sheet.getRange('A' + cardHeaderRow + ':F' + cardHeaderRow).merge()
+    sheet.getRange('A' + cardHeaderRow + ':G' + cardHeaderRow).merge()
         .setValue('بيانات ' + partyType)
         .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
         .setFontColor(CONFIG.COLORS.TEXT.WHITE)
         .setFontWeight('bold')
         .setHorizontalAlignment('center');
 
-    sheet.getRange('A' + cardDataStartRow + ':F' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+    sheet.getRange('A' + cardDataStartRow + ':G' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
     sheet.getRange('A' + cardDataStartRow).setValue('الاسم:').setFontWeight('bold');
     sheet.getRange('B' + cardDataStartRow + ':C' + cardDataStartRow).merge().setValue(partyName);
 
-    sheet.getRange('D' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
-    sheet.getRange('E' + cardDataStartRow + ':F' + cardDataStartRow).merge().setValue(partyData.specialization || '');
+    sheet.getRange('E' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
+    sheet.getRange('F' + cardDataStartRow + ':G' + cardDataStartRow).merge().setValue(partyData.specialization || '');
 
     sheet.getRange('A' + (cardDataStartRow + 1)).setValue('الهاتف:').setFontWeight('bold');
     sheet.getRange('B' + (cardDataStartRow + 1) + ':C' + (cardDataStartRow + 1)).merge().setValue(partyData.phone || '');
 
-    sheet.getRange('D' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
-    sheet.getRange('E' + (cardDataStartRow + 1) + ':F' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
+    sheet.getRange('E' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
+    sheet.getRange('F' + (cardDataStartRow + 1) + ':G' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
 
     sheet.getRange('A' + (cardDataStartRow + 2)).setValue('البنك:').setFontWeight('bold');
-    sheet.getRange('B' + (cardDataStartRow + 2) + ':F' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
+    sheet.getRange('B' + (cardDataStartRow + 2) + ':G' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
 
     sheet.getRange('A' + (cardDataStartRow + 3)).setValue('ملاحظات:').setFontWeight('bold');
-    sheet.getRange('B' + (cardDataStartRow + 3) + ':F' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
+    sheet.getRange('B' + (cardDataStartRow + 3) + ':G' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
 
-    sheet.getRange('A' + cardDataStartRow + ':F' + (cardDataStartRow + 3)).setBorder(
+    sheet.getRange('A' + cardDataStartRow + ':G' + (cardDataStartRow + 3)).setBorder(
         true, true, true, true, true, true,
         '#1565c0', SpreadsheetApp.BorderStyle.SOLID
     );
@@ -652,7 +653,8 @@ function generateStatementForBot_(ss, partyName, partyType) {
         // تجاهل الحركات بدون مبلغ
         if (!amountUsd) continue;
 
-        const date = row[1];       // B: التاريخ
+        const date = row[1];       // B: تاريخ التسجيل
+        const dueDate = row[20];   // U: تاريخ الاستحقاق
         const project = row[5];    // F: اسم المشروع
         const details = row[7];    // H: التفاصيل
 
@@ -671,6 +673,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
 
         rows.push([
             date,
+            (debit > 0 && dueDate) ? dueDate : '',  // تاريخ الاستحقاق فقط للمدين
             project || '',
             details || '',
             debit || '',
@@ -689,10 +692,10 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // إعادة حساب الرصيد بعد الترتيب
     balance = 0;
     for (let i = 0; i < rows.length; i++) {
-        const debit = rows[i][3] || 0;
-        const credit = rows[i][4] || 0;
+        const debit = rows[i][4] || 0;
+        const credit = rows[i][5] || 0;
         balance += debit - credit;
-        rows[i][5] = Math.round(balance * 100) / 100;
+        rows[i][6] = Math.round(balance * 100) / 100;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -701,30 +704,30 @@ function generateStatementForBot_(ss, partyName, partyType) {
     const summaryHeaderRow = cardDataStartRow + 5;
     const summaryDataStartRow = summaryHeaderRow + 1;
 
-    sheet.getRange('A' + summaryHeaderRow + ':F' + summaryHeaderRow).merge()
+    sheet.getRange('A' + summaryHeaderRow + ':G' + summaryHeaderRow).merge()
         .setValue('الملخص المالي')
         .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
         .setFontColor(CONFIG.COLORS.TEXT.WHITE)
         .setFontWeight('bold')
         .setHorizontalAlignment('center');
 
-    sheet.getRange('A' + summaryDataStartRow + ':F' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+    sheet.getRange('A' + summaryDataStartRow + ':G' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
     sheet.getRange('A' + summaryDataStartRow).setValue('إجمالي المدين:').setFontWeight('bold');
     sheet.getRange('B' + summaryDataStartRow).setValue(totalDebit).setNumberFormat('$#,##0.00');
 
-    sheet.getRange('D' + summaryDataStartRow).setValue('إجمالي الدائن:').setFontWeight('bold');
-    sheet.getRange('E' + summaryDataStartRow).setValue(totalCredit).setNumberFormat('$#,##0.00');
+    sheet.getRange('E' + summaryDataStartRow).setValue('إجمالي الدائن:').setFontWeight('bold');
+    sheet.getRange('F' + summaryDataStartRow).setValue(totalCredit).setNumberFormat('$#,##0.00');
 
     sheet.getRange('A' + (summaryDataStartRow + 1)).setValue('الرصيد الحالي:').setFontWeight('bold');
     sheet.getRange('B' + (summaryDataStartRow + 1)).setValue(balance).setNumberFormat('$#,##0.00')
         .setFontWeight('bold')
         .setBackground(balance > 0 ? '#ffcdd2' : '#c8e6c9');
 
-    sheet.getRange('D' + (summaryDataStartRow + 1)).setValue('عدد الحركات:').setFontWeight('bold');
-    sheet.getRange('E' + (summaryDataStartRow + 1)).setValue(rows.length);
+    sheet.getRange('E' + (summaryDataStartRow + 1)).setValue('عدد الحركات:').setFontWeight('bold');
+    sheet.getRange('F' + (summaryDataStartRow + 1)).setValue(rows.length);
 
-    sheet.getRange('A' + summaryDataStartRow + ':F' + (summaryDataStartRow + 1)).setBorder(
+    sheet.getRange('A' + summaryDataStartRow + ':G' + (summaryDataStartRow + 1)).setBorder(
         true, true, true, true, true, true,
         '#1565c0', SpreadsheetApp.BorderStyle.SOLID
     );
@@ -734,7 +737,8 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // ═══════════════════════════════════════════════════════════
     const tableHeaderRow = summaryDataStartRow + 3;
     const headers = [
-        'التاريخ',
+        'تاريخ التسجيل',
+        'تاريخ الاستحقاق',
         'المشروع',
         'التفاصيل',
         'مدين (USD)',
@@ -756,8 +760,9 @@ function generateStatementForBot_(ss, partyName, partyType) {
 
     if (rows.length > 0) {
         sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
-        sheet.getRange(dataStartRow, 1, rows.length, 1).setNumberFormat('dd/mm/yyyy');
-        sheet.getRange(dataStartRow, 4, rows.length, 3).setNumberFormat('$#,##0.00');
+        sheet.getRange(dataStartRow, 1, rows.length, 1).setNumberFormat('dd/mm/yyyy');  // تاريخ التسجيل
+        sheet.getRange(dataStartRow, 2, rows.length, 1).setNumberFormat('dd/mm/yyyy');  // تاريخ الاستحقاق
+        sheet.getRange(dataStartRow, 5, rows.length, 3).setNumberFormat('$#,##0.00');
 
         // تلوين متناوب للصفوف (أبيض و أزرق فاتح) - نفس Main.js
         for (let i = 0; i < rows.length; i++) {
@@ -777,7 +782,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // تذييل التقرير
     // ═══════════════════════════════════════════════════════════
     const footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
-    sheet.getRange('A' + footerRow + ':F' + footerRow).merge()
+    sheet.getRange('A' + footerRow + ':G' + footerRow).merge()
         .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm') + ' | حقوق النظام محفوظة لـ ديوان للحسابات aldewan.net')
         .setHorizontalAlignment('center')
         .setFontSize(9)
