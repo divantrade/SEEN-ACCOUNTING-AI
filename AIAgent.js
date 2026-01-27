@@ -136,7 +136,11 @@ function callGemini(userMessage, context) {
  * بناء الـ prompt الكامل مع السياق
  */
 function buildFullPrompt(userMessage, context) {
-    let prompt = AI_CONFIG.SYSTEM_PROMPT + '\n\n';
+    // ⭐ استبدال تواريخ ديناميكية في البرومبت
+    let systemPrompt = AI_CONFIG.SYSTEM_PROMPT;
+    systemPrompt = systemPrompt.replace('__DATE_SECTION__', generateDateSection_());
+
+    let prompt = systemPrompt + '\n\n';
 
     // ⭐ إضافة قوائم طبيعة الحركة والتصنيف (إلزامية من شيت البنود)
     if (context.natures && context.natures.length > 0) {
@@ -195,6 +199,73 @@ function buildFullPrompt(userMessage, context) {
 }
 
 /**
+ * ⭐ توليد قسم التواريخ الديناميكي للبرومبت
+ * يحسب التواريخ بناءً على اليوم الحالي
+ */
+function generateDateSection_() {
+    const now = new Date();
+    const tz = 'Asia/Istanbul';
+
+    // تنسيق التاريخ بـ YYYY-MM-DD
+    function fmt(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + day;
+    }
+
+    function addDays(d, days) {
+        const r = new Date(d);
+        r.setDate(r.getDate() + days);
+        return r;
+    }
+
+    function lastDayOfMonth(d) {
+        return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    }
+
+    function firstDayNextMonth(d) {
+        return new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+
+    function lastDayNextMonth(d) {
+        return new Date(d.getFullYear(), d.getMonth() + 2, 0);
+    }
+
+    const dayNames = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const dayName = dayNames[now.getDay()];
+    const today = fmt(now);
+    const year = now.getFullYear();
+
+    let section = '';
+    section += `- اليوم الحالي: ${today} (${dayName})\n`;
+    section += '- حوّل الأرقام العربية (٠١٢٣٤٥٦٧٨٩) إلى إنجليزية (0123456789)\n\n';
+
+    section += '- **تواريخ ماضية (للحقل due_date):**\n';
+    section += `  - "اليوم" أو "النهارده" = ${today}\n`;
+    section += `  - "أمس" أو "امبارح" = ${fmt(addDays(now, -1))}\n`;
+    section += `  - "قبل يومين" = ${fmt(addDays(now, -2))}\n`;
+    section += `  - "قبل أسبوع" = ${fmt(addDays(now, -7))}\n\n`;
+
+    section += '- **⭐ تواريخ مستقبلية (للحقل payment_term_date) - مهم جداً!:**\n';
+    section += `  - "بعد شهر" = ${fmt(addDays(now, 30))} (اليوم + 30 يوم)\n`;
+    section += `  - "بعد شهرين" = ${fmt(addDays(now, 60))} (اليوم + 60 يوم)\n`;
+    section += `  - "بعد 60 يوم" أو "بعد ٦٠ يوم" = ${fmt(addDays(now, 60))} (اليوم + 60 يوم)\n`;
+    section += `  - "بعد أسبوع" = ${fmt(addDays(now, 7))} (اليوم + 7 أيام)\n`;
+    section += `  - "بعد أسبوعين" = ${fmt(addDays(now, 14))} (اليوم + 14 يوم)\n`;
+    section += `  - "بعد 15 يوم" = ${fmt(addDays(now, 15))} (اليوم + 15 يوم)\n`;
+    section += `  - "نهاية الشهر" = ${fmt(lastDayOfMonth(now))}\n`;
+    section += `  - "نهاية الشهر الجاي" = ${fmt(lastDayNextMonth(now))}\n`;
+    section += `  - "أول الشهر الجاي" = ${fmt(firstDayNextMonth(now))}\n\n`;
+
+    section += '- **تواريخ محددة:**\n';
+    section += '  - حوّل أي تاريخ مذكور إلى صيغة YYYY-MM-DD\n';
+    section += `  - السنة الحالية: ${year}\n`;
+
+    return section;
+}
+
+/**
  * تحليل رد Gemini واستخراج JSON
  */
 function parseGeminiResponse(text) {
@@ -238,6 +309,9 @@ function parseGeminiResponse(text) {
         jsonStr = jsonStr.substring(startIndex, endIndex + 1);
         Logger.log('📋 JSON to parse (first 300 chars): ' + jsonStr.substring(0, 300));
 
+        // ⭐ تنظيف JSON من المشاكل الشائعة قبل التحليل
+        jsonStr = cleanJsonString_(jsonStr);
+
         const parsed = JSON.parse(jsonStr);
         Logger.log('✅ JSON parsed successfully');
         return parsed;
@@ -245,12 +319,179 @@ function parseGeminiResponse(text) {
     } catch (error) {
         Logger.log('❌ JSON Parse Error: ' + error.message);
         Logger.log('Raw text (first 500 chars): ' + (text || '').substring(0, 500));
+
+        // ⭐ محاولة إصلاح متقدمة للـ JSON
+        try {
+            const fixedJson = advancedJsonFix_(text);
+            if (fixedJson) {
+                Logger.log('✅ JSON fixed and parsed successfully (advanced fix)');
+                return fixedJson;
+            }
+        } catch (fixError) {
+            Logger.log('❌ Advanced JSON fix also failed: ' + fixError.message);
+        }
+
         return {
             success: false,
             error: 'فشل في تحليل رد AI: ' + error.message,
             rawResponse: (text || '').substring(0, 200)
         };
     }
+}
+
+/**
+ * ⭐ تنظيف JSON من المشاكل الشائعة التي ينتجها AI
+ */
+function cleanJsonString_(jsonStr) {
+    if (!jsonStr) return jsonStr;
+
+    // 1. إزالة الأحرف غير المرئية (control characters)
+    jsonStr = jsonStr.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+
+    // 2. إزالة الفواصل الزائدة قبل } أو ] (السبب الأكثر شيوعاً للخطأ)
+    // مثل: [1, 2, 3,] أو {"a": 1,}
+    jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
+
+    // 3. إزالة تعليقات JavaScript خارج النصوص فقط
+    // نزيل فقط التعليقات التي تبدأ من بداية السطر أو بعد مسافة (ليست داخل نصوص)
+    jsonStr = jsonStr.replace(/^\s*\/\/[^\n]*/gm, '');
+    jsonStr = jsonStr.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // 4. إعادة إزالة الفواصل الزائدة (قد تظهر بعد إزالة التعليقات)
+    jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
+
+    return jsonStr;
+}
+
+/**
+ * ⭐ محاولة إصلاح متقدمة للـ JSON الفاسد
+ */
+function advancedJsonFix_(text) {
+    if (!text) return null;
+
+    let jsonStr = text;
+
+    // استخراج JSON من markdown
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+    }
+
+    // البحث عن أول { وآخر }
+    const startIndex = jsonStr.indexOf('{');
+    const endIndex = jsonStr.lastIndexOf('}');
+    if (startIndex === -1 || endIndex === -1) return null;
+
+    jsonStr = jsonStr.substring(startIndex, endIndex + 1);
+
+    // تنظيف أساسي
+    jsonStr = cleanJsonString_(jsonStr);
+
+    // محاولة 1: حذف آخر عنصر في المصفوفة المسببة للمشكلة
+    // إذا كان الخطأ في مصفوفة، نحاول إغلاقها
+    let attempts = [
+        jsonStr,
+        // محاولة 2: إغلاق أي مصفوفات أو كائنات مفتوحة
+        jsonStr.replace(/,\s*$/, '') + '}',
+        // محاولة 3: إصلاح النصوص غير المكتملة
+        fixUnclosedStrings_(jsonStr)
+    ];
+
+    for (let attempt of attempts) {
+        try {
+            if (attempt) {
+                // موازنة الأقواس
+                attempt = balanceBrackets_(attempt);
+                const result = JSON.parse(attempt);
+                return result;
+            }
+        } catch (e) {
+            continue;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * ⭐ إصلاح النصوص غير المغلقة في JSON
+ */
+function fixUnclosedStrings_(jsonStr) {
+    if (!jsonStr) return jsonStr;
+
+    let result = '';
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < jsonStr.length; i++) {
+        const ch = jsonStr[i];
+
+        if (escaped) {
+            result += ch;
+            escaped = false;
+            continue;
+        }
+
+        if (ch === '\\' && inString) {
+            result += ch;
+            escaped = true;
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = !inString;
+            result += ch;
+            continue;
+        }
+
+        // إذا وجدنا سطر جديد داخل نص مفتوح، نغلقه ونفتح واحد جديد
+        if (inString && (ch === '\n' || ch === '\r')) {
+            result += ' ';
+            continue;
+        }
+
+        result += ch;
+    }
+
+    // إذا النص لا يزال مفتوحاً، أغلقه
+    if (inString) {
+        result += '"';
+    }
+
+    return result;
+}
+
+/**
+ * ⭐ موازنة الأقواس في JSON
+ */
+function balanceBrackets_(jsonStr) {
+    if (!jsonStr) return jsonStr;
+
+    let openBraces = 0;
+    let openBrackets = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < jsonStr.length; i++) {
+        const ch = jsonStr[i];
+
+        if (escaped) { escaped = false; continue; }
+        if (ch === '\\' && inString) { escaped = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+
+        if (ch === '{') openBraces++;
+        else if (ch === '}') openBraces--;
+        else if (ch === '[') openBrackets++;
+        else if (ch === ']') openBrackets--;
+    }
+
+    // إضافة الأقواس الناقصة
+    let result = jsonStr;
+    while (openBrackets > 0) { result += ']'; openBrackets--; }
+    while (openBraces > 0) { result += '}'; openBraces--; }
+
+    return result;
 }
 
 
