@@ -713,6 +713,22 @@ function addBotParty(partyData) {
  * @param {string} permissionType - نوع الصلاحية المطلوبة: 'traditional_bot' | 'ai_bot' | 'sheet' | 'review'
  */
 function checkUserAuthorization(phoneNumber, chatId, username, permissionType = 'traditional_bot') {
+    // ⚡ تحسين: فحص Cache أولاً (لتجنب قراءة الشيت مع كل رسالة)
+    const cache = CacheService.getScriptCache();
+    const cacheKey = 'AUTH_' + (chatId || '') + '_' + permissionType;
+    const cachedResult = cache.get(cacheKey);
+    if (cachedResult) {
+        try {
+            const parsed = JSON.parse(cachedResult);
+            // نرجع النتيجة من Cache فقط إذا كانت مخزنة بشكل صحيح
+            if (parsed && typeof parsed.authorized !== 'undefined') {
+                return parsed;
+            }
+        } catch (e) {
+            // Cache تالف - نتجاهله
+        }
+    }
+
     const sheet = getBotUsersSheet();
     const columns = BOT_CONFIG.BOT_USERS_COLUMNS;
 
@@ -800,7 +816,7 @@ function checkUserAuthorization(phoneNumber, chatId, username, permissionType = 
                 sheet.getRange(i + 1, columns.TELEGRAM_USERNAME.index).setValue(username);
             }
 
-            return {
+            var authResult = {
                 authorized: true,
                 name: row[columns.NAME.index - 1],
                 permissions: {
@@ -810,11 +826,58 @@ function checkUserAuthorization(phoneNumber, chatId, username, permissionType = 
                     review: permReview
                 }
             };
+
+            // ⚡ حفظ النتيجة في Cache لمدة ساعة
+            try {
+                cache.put(cacheKey, JSON.stringify(authResult), 3600);
+            } catch (e) { /* تجاهل خطأ Cache */ }
+
+            return authResult;
         }
     }
 
     Logger.log('No match found - User not authorized');
-    return { authorized: false };
+
+    // ⚡ حفظ نتيجة عدم الصلاحية أيضاً في Cache (لمدة 5 دقائق فقط - أقصر لأنه قد يكون مستخدم جديد يُضاف قريباً)
+    var notAuthResult = { authorized: false };
+    try {
+        cache.put(cacheKey, JSON.stringify(notAuthResult), 300);
+    } catch (e) { /* تجاهل خطأ Cache */ }
+
+    return notAuthResult;
+}
+
+/**
+ * ⚡ مسح Cache صلاحيات المستخدمين - شغّل هذه الدالة بعد تعديل شيت المستخدمين
+ */
+function refreshUsersCache() {
+    try {
+        const sheet = getBotUsersSheet();
+        const columns = BOT_CONFIG.BOT_USERS_COLUMNS;
+        const data = sheet.getDataRange().getValues();
+        const cache = CacheService.getScriptCache();
+
+        var keysToRemove = [];
+        for (var i = 1; i < data.length; i++) {
+            var chatId = String(data[i][columns.TELEGRAM_CHAT_ID.index - 1] || '');
+            if (chatId) {
+                keysToRemove.push('AUTH_' + chatId + '_traditional_bot');
+                keysToRemove.push('AUTH_' + chatId + '_ai_bot');
+                keysToRemove.push('AUTH_' + chatId + '_sheet');
+                keysToRemove.push('AUTH_' + chatId + '_review');
+            }
+        }
+
+        if (keysToRemove.length > 0) {
+            cache.removeAll(keysToRemove);
+        }
+
+        Logger.log('✅ تم مسح Cache الصلاحيات لـ ' + Math.floor(keysToRemove.length / 4) + ' مستخدم');
+        Logger.log('ℹ️ سيتم إعادة قراءة الصلاحيات من الشيت مع أول رسالة من كل مستخدم');
+
+    } catch (error) {
+        Logger.log('❌ خطأ في مسح Cache الصلاحيات: ' + error.message);
+    }
 }
 
 /**
