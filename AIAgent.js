@@ -498,7 +498,72 @@ function balanceBrackets_(jsonStr) {
 // ==================== تحميل السياق ====================
 
 /**
+ * ⚡ Cache ذكي مقسّم حسب نوع البيانات
+ * المشاريع + البنود + التصنيفات + الطبيعة → Cache لمدة 30 دقيقة (نادراً ما تتغير)
+ * الأطراف → بدون Cache (تتغير مع كل حركة جديدة بطرف جديد)
+ */
+var _AI_CONTEXT_CACHE_TTL = 1800; // 30 دقيقة بالثواني
+
+/**
+ * تحميل المشاريع مع Cache
+ */
+function loadProjectsCached() {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = 'AI_CTX_PROJECTS';
+    const cached = cache.get(cacheKey);
+
+    if (cached) {
+        try {
+            return JSON.parse(cached);
+        } catch (e) {
+            // Cache تالف - نتجاهله ونقرأ من الشيت
+        }
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const projects = loadProjects(ss);
+
+    try {
+        cache.put(cacheKey, JSON.stringify(projects), _AI_CONTEXT_CACHE_TTL);
+    } catch (e) {
+        // فشل الحفظ في Cache (ربما حجم البيانات كبير) - لا مشكلة
+        Logger.log('⚠️ Cache put failed for projects: ' + e.message);
+    }
+
+    return projects;
+}
+
+/**
+ * تحميل البنود + الطبيعة + التصنيفات مع Cache
+ */
+function loadItemsCached() {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = 'AI_CTX_ITEMS';
+    const cached = cache.get(cacheKey);
+
+    if (cached) {
+        try {
+            return JSON.parse(cached);
+        } catch (e) {
+            // Cache تالف
+        }
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const itemsData = loadItems(ss);
+
+    try {
+        cache.put(cacheKey, JSON.stringify(itemsData), _AI_CONTEXT_CACHE_TTL);
+    } catch (e) {
+        Logger.log('⚠️ Cache put failed for items: ' + e.message);
+    }
+
+    return itemsData;
+}
+
+/**
  * تحميل السياق الكامل (المشاريع، البنود، الأطراف، الأنواع، التصنيفات)
+ * ⚡ تحسين: المشاريع + البنود + التصنيفات من Cache، الأطراف دائماً من الشيت
  */
 function loadAIContext() {
     const context = {
@@ -510,18 +575,17 @@ function loadAIContext() {
     };
 
     try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        // ⚡ المشاريع من Cache (نادراً ما تتغير)
+        context.projects = loadProjectsCached();
 
-        // تحميل المشاريع
-        context.projects = loadProjects(ss);
-
-        // تحميل البنود + الأنواع + التصنيفات من شيت البنود
-        const itemsData = loadItems(ss);
+        // ⚡ البنود + الأنواع + التصنيفات من Cache (نادراً ما تتغير)
+        const itemsData = loadItemsCached();
         context.items = itemsData.items;
         context.natures = itemsData.natures;
         context.classifications = itemsData.classifications;
 
-        // تحميل الأطراف
+        // ⚠️ الأطراف دائماً من الشيت مباشرة (تتغير بشكل متكرر مع إضافة أطراف جديدة)
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
         context.parties = loadParties(ss);
 
         Logger.log('✅ AI Context loaded: ' + context.projects.length + ' projects, ' +
@@ -533,6 +597,15 @@ function loadAIContext() {
     }
 
     return context;
+}
+
+/**
+ * ⚡ مسح Cache السياق يدوياً - استخدمها بعد تعديل المشاريع أو البنود
+ */
+function clearAIContextCache() {
+    const cache = CacheService.getScriptCache();
+    cache.removeAll(['AI_CTX_PROJECTS', 'AI_CTX_ITEMS']);
+    Logger.log('✅ تم مسح Cache السياق (المشاريع والبنود)');
 }
 
 /**

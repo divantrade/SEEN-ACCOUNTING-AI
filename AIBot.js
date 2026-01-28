@@ -15,13 +15,17 @@ const aiUserSessions = {};
  */
 function processAIBotUpdates() {
     // استخدام Lock لمنع التنفيذ المتزامن
+    // ⚡ تحسين: ينتظر 20 ثانية بدل 1 ثانية لتقليل الفجوة بين الحلقات
     const lock = LockService.getScriptLock();
-    const hasLock = lock.tryLock(1000);
+    const hasLock = lock.tryLock(20000);
 
     if (!hasLock) {
         Logger.log('⏭️ AI Bot: Instance أخرى تعمل - تخطي');
         return;
     }
+
+    // ⚡ تعريف خارج try لضمان الوصول إليه في catch (حفظ احتياطي عند الخطأ)
+    var currentUpdateId = 0;
 
     try {
         // التحقق من إعداد البوت
@@ -33,54 +37,65 @@ function processAIBotUpdates() {
 
         const token = getAIBotToken();
         const startTime = Date.now();
-        const MAX_TIME = 55000; // 55 ثانية
+        // ⚡ تحسين: 45 ثانية بدل 55 - يترك 15 ثانية هامش للـ Trigger التالي للحصول على الـ Lock
+        const MAX_TIME = 45000;
 
-        Logger.log('🤖 البوت الذكي يعمل...');
+        // ⚡ تحسين: قراءة lastUpdateId مرة واحدة من Properties عند بدء الحلقة
+        currentUpdateId = getAILastUpdateId();
 
-        // حلقة polling لمدة 55 ثانية
+        Logger.log('🤖 البوت الذكي يعمل... (offset: ' + currentUpdateId + ')');
+
+        // حلقة polling لمدة 45 ثانية
         while (Date.now() - startTime < MAX_TIME) {
-            const lastUpdateId = getAILastUpdateId();
 
-            // جلب التحديثات مع timeout قصير
-            const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${lastUpdateId + 1}&timeout=5`;
+            try {
+                // ⚡ تحسين: timeout=3 بدل 5 - استجابة أسرع (0-3 ثوان بدل 0-5)
+                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${currentUpdateId + 1}&timeout=3`;
 
-            const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-            const data = JSON.parse(response.getContentText());
+                const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+                const data = JSON.parse(response.getContentText());
 
-            if (!data.ok) {
-                Logger.log('AI Bot Error: ' + JSON.stringify(data));
-                Utilities.sleep(1000);
-                continue;
-            }
+                if (!data.ok) {
+                    Logger.log('AI Bot Error: ' + JSON.stringify(data));
+                    Utilities.sleep(1000);
+                    continue;
+                }
 
-            const updates = data.result;
+                const updates = data.result;
 
-            if (updates.length > 0) {
-                Logger.log('📥 استلام ' + updates.length + ' تحديث');
+                if (updates.length > 0) {
+                    Logger.log('📥 استلام ' + updates.length + ' تحديث');
 
-                // معالجة كل تحديث
-                updates.forEach(update => {
-                    try {
-                        if (update.message) {
-                            handleAIMessage(update.message);
-                        } else if (update.callback_query) {
-                            handleAICallback(update.callback_query);
+                    // معالجة كل تحديث
+                    updates.forEach(update => {
+                        try {
+                            if (update.message) {
+                                handleAIMessage(update.message);
+                            } else if (update.callback_query) {
+                                handleAICallback(update.callback_query);
+                            }
+                        } catch (error) {
+                            Logger.log('Update Processing Error: ' + error.message);
                         }
-                    } catch (error) {
-                        Logger.log('Update Processing Error: ' + error.message);
-                    }
-                });
+                    });
 
-                // حفظ آخر update_id
-                const lastId = updates[updates.length - 1].update_id;
-                setAILastUpdateId(lastId);
+                    // ⚡ تحسين: تحديث في الذاكرة فقط (بدون Properties في كل دورة)
+                    currentUpdateId = updates[updates.length - 1].update_id;
+                }
+            } catch (fetchError) {
+                Logger.log('🔥 Polling fetch error: ' + fetchError.message);
+                Utilities.sleep(1000);
             }
         }
 
-        Logger.log('⏹️ انتهى وقت البوت');
+        // ⚡ حفظ lastUpdateId في Properties مرة واحدة عند نهاية الحلقة
+        setAILastUpdateId(currentUpdateId);
+        Logger.log('⏹️ انتهى وقت البوت (saved offset: ' + currentUpdateId + ')');
 
     } catch (error) {
         Logger.log('AI Bot Main Error: ' + error.message);
+        // ⚡ حفظ احتياطي للـ offset في حالة حدوث خطأ غير متوقع (لمنع إعادة معالجة الرسائل)
+        try { setAILastUpdateId(currentUpdateId); } catch (e) { /* ignore */ }
     } finally {
         lock.releaseLock();
     }
@@ -1249,10 +1264,11 @@ function addNewParty(name, type) {
  */
 function showTransactionConfirmation(chatId, session) {
     // ⭐ تحديث بيانات المشروع من قاعدة البيانات (لضمان أحدث اسم وكود)
+    // ⚡ تحسين: نستخدم loadProjectsCached بدل loadAIContext الكامل (نحتاج المشاريع فقط هنا)
     if (session.transaction && session.transaction.project) {
         try {
-            var ctx = loadAIContext();
-            var freshProjectMatch = matchProject(session.transaction.project, ctx.projects);
+            var projects = loadProjectsCached();
+            var freshProjectMatch = matchProject(session.transaction.project, projects);
             if (freshProjectMatch.found) {
                 session.transaction.project = freshProjectMatch.match;
                 session.transaction.project_code = freshProjectMatch.code || '';
@@ -1714,10 +1730,11 @@ function handleAIConfirmation(chatId, session, user) {
         }
 
         // ⭐ إعادة التحقق من بيانات المشروع من قاعدة البيانات (لضمان أحدث اسم وكود)
+        // ⚡ تحسين: نستخدم loadProjectsCached بدل loadAIContext الكامل (نحتاج المشاريع فقط هنا)
         if (session.transaction.project) {
             try {
-                var context = loadAIContext();
-                var freshMatch = matchProject(session.transaction.project, context.projects);
+                var projects = loadProjectsCached();
+                var freshMatch = matchProject(session.transaction.project, projects);
                 if (freshMatch.found) {
                     if (session.transaction.project !== freshMatch.match) {
                         Logger.log('🔄 تحديث اسم المشروع: "' + session.transaction.project + '" → "' + freshMatch.match + '"');
