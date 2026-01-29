@@ -2717,16 +2717,19 @@ function generateDueReport() {
   const data = transSheet.getDataRange().getValues();
   const today = new Date();
 
-  // تجميع الأرصدة حسب الطرف والمشروع (مدين استحقاق - دائن دفعة)
+  // تجميع الحركات حسب الطرف مع تتبع كل استحقاق على حدة
   const partyData = {};
 
   for (let i = 1; i < data.length; i++) {
+    const rowNum = i + 1;  // رقم الصف في الشيت
     const movementKind = String(data[i][13] || ''); // N - نوع الحركة
     const party = String(data[i][8] || '').trim();  // I - الطرف
     const project = String(data[i][5] || '').trim(); // F - المشروع
     const amountUsd = Number(data[i][12]) || 0;     // M - المبلغ بالدولار
     const dueDate = data[i][20];                    // U - تاريخ الاستحقاق
     const natureType = String(data[i][2] || '');    // C - طبيعة الحركة
+    const transDate = data[i][1];                   // B - تاريخ الحركة
+    const details = String(data[i][7] || '');       // H - التفاصيل
 
     if (!party || amountUsd <= 0) continue;
 
@@ -2738,39 +2741,31 @@ function generateDueReport() {
 
     if (!partyData[party]) {
       partyData[party] = {
-        totalDebit: 0,
         totalCredit: 0,
         nature: natureType,
-        projectBalances: {},  // أرصدة كل مشروع
-        earliestDueDate: null,
-        earliestDueDateProject: null  // المشروع صاحب أقدم تاريخ استحقاق
+        debits: []  // قائمة كل الاستحقاقات مع تواريخها ومبالغها
       };
     }
 
-    // تتبع الرصيد لكل مشروع
     const projectKey = project || 'بدون مشروع';
-    if (!partyData[party].projectBalances[projectKey]) {
-      partyData[party].projectBalances[projectKey] = { debit: 0, credit: 0 };
-    }
 
     if (isDebitAccrual) {
-      partyData[party].totalDebit += amountUsd;
-      partyData[party].projectBalances[projectKey].debit += amountUsd;
-      // حفظ أقرب تاريخ استحقاق مع اسم المشروع
-      if (dueDate) {
-        const dueDateObj = new Date(dueDate);
-        if (!partyData[party].earliestDueDate || dueDateObj < partyData[party].earliestDueDate) {
-          partyData[party].earliestDueDate = dueDateObj;
-          partyData[party].earliestDueDateProject = projectKey;
-        }
-      }
+      // حفظ كل استحقاق مع تاريخه ومبلغه ومشروعه
+      partyData[party].debits.push({
+        rowNum: rowNum,
+        amount: amountUsd,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        transDate: transDate ? new Date(transDate) : new Date(),
+        project: projectKey,
+        details: details,
+        nature: natureType
+      });
     } else if (isCreditPayment) {
       partyData[party].totalCredit += amountUsd;
-      partyData[party].projectBalances[projectKey].credit += amountUsd;
     }
   }
 
-  // تصنيف الأطراف حسب الرصيد المتبقي وتاريخ الاستحقاق
+  // تصنيف الحركات غير المسددة (FIFO) - كل حركة على حدة
   const overdue = [];      // متأخرة
   const thisWeek = [];     // هذا الأسبوع
   const thisMonth = [];    // هذا الشهر
@@ -2787,59 +2782,63 @@ function generateDueReport() {
 
   for (const party in partyData) {
     const pd = partyData[party];
-    const balance = pd.totalDebit - pd.totalCredit;
 
-    // تجاهل الأطراف الذين رصيدهم صفر أو سالب
-    if (balance <= 0.01) continue;
+    // ترتيب الاستحقاقات حسب تاريخ الحركة (الأقدم أولاً) لتطبيق FIFO
+    pd.debits.sort((a, b) => a.transDate - b.transDate);
 
-    // تحديد إذا كان إيراد أو مصروف
-    const isRevenue = pd.nature && (pd.nature.includes('إيراد') || pd.nature.includes('تحصيل'));
+    // تطبيق المدفوعات على الاستحقاقات الأقدم أولاً (FIFO)
+    let remainingCredit = pd.totalCredit;
 
-    // حساب المشاريع التي لها رصيد متبقي
-    const projectsWithBalance = [];
-    for (const projectName in pd.projectBalances) {
-      const pb = pd.projectBalances[projectName];
-      const projectBalance = pb.debit - pb.credit;
-      if (projectBalance > 0.01) {
-        projectsWithBalance.push({ name: projectName, balance: projectBalance });
+    for (const debit of pd.debits) {
+      if (remainingCredit >= debit.amount) {
+        // هذا الاستحقاق مسدد بالكامل - تجاهله
+        remainingCredit -= debit.amount;
+        continue;
       }
-    }
-    // ترتيب المشاريع حسب الرصيد (الأكبر أولاً)
-    projectsWithBalance.sort((a, b) => b.balance - a.balance);
 
-    // إنشاء نص المشاريع مع أرصدتها
-    const projectsText = projectsWithBalance.length > 0
-      ? projectsWithBalance.map(p => p.name + ' ($' + p.balance.toFixed(0) + ')').join(' | ')
-      : pd.earliestDueDateProject || 'غير محدد';
+      // حساب المبلغ غير المسدد (جزئي أو كلي)
+      const unpaidAmount = debit.amount - remainingCredit;
+      remainingCredit = 0;  // استنفدت كل الدفعات
 
-    if (isRevenue) {
-      // إيرادات مستحقة التحصيل
-      receivables.push({ party, amount: balance, project: projectsText, daysLeft: 0 });
-      totalReceivables += balance;
-    } else {
-      // مستحقات علينا - تصنيف حسب تاريخ الاستحقاق
-      const item = { party, project: projectsText, amount: balance, dueDate: pd.earliestDueDate, daysLeft: null };
+      // تحديد إذا كان إيراد أو مصروف
+      const isRevenue = debit.nature && (debit.nature.includes('إيراد') || debit.nature.includes('تحصيل'));
 
-      if (!pd.earliestDueDate) {
-        // بدون تاريخ استحقاق
-        noDate.push(item);
-        totalNoDate += balance;
+      const item = {
+        party: party,
+        project: debit.project,
+        amount: unpaidAmount,
+        dueDate: debit.dueDate,
+        daysLeft: null,
+        details: debit.details,
+        rowNum: debit.rowNum
+      };
+
+      if (isRevenue) {
+        // إيرادات مستحقة التحصيل
+        receivables.push(item);
+        totalReceivables += unpaidAmount;
       } else {
-        const daysLeft = Math.ceil((pd.earliestDueDate - today) / (1000 * 60 * 60 * 24));
-        item.daysLeft = daysLeft;
-
-        if (daysLeft < 0) {
-          overdue.push(item);
-          totalOverdue += balance;
-        } else if (daysLeft <= 7) {
-          thisWeek.push(item);
-          totalThisWeek += balance;
-        } else if (daysLeft <= 30) {
-          thisMonth.push(item);
-          totalThisMonth += balance;
+        // مستحقات علينا - تصنيف حسب تاريخ الاستحقاق
+        if (!debit.dueDate) {
+          noDate.push(item);
+          totalNoDate += unpaidAmount;
         } else {
-          later.push(item);
-          totalLater += balance;
+          const daysLeft = Math.ceil((debit.dueDate - today) / (1000 * 60 * 60 * 24));
+          item.daysLeft = daysLeft;
+
+          if (daysLeft < 0) {
+            overdue.push(item);
+            totalOverdue += unpaidAmount;
+          } else if (daysLeft <= 7) {
+            thisWeek.push(item);
+            totalThisWeek += unpaidAmount;
+          } else if (daysLeft <= 30) {
+            thisMonth.push(item);
+            totalThisMonth += unpaidAmount;
+          } else {
+            later.push(item);
+            totalLater += unpaidAmount;
+          }
         }
       }
     }
@@ -3026,10 +3025,10 @@ function generateDueReport() {
 
   // تنسيق الأعمدة
   reportSheet.setColumnWidth(1, 40);   // #
-  reportSheet.setColumnWidth(2, 150);  // الطرف
-  reportSheet.setColumnWidth(3, 350);  // المشاريع (موسع لعرض كل المشاريع وأرصدتها)
-  reportSheet.setColumnWidth(4, 100);  // المبلغ
-  reportSheet.setColumnWidth(5, 90);   // الأيام
+  reportSheet.setColumnWidth(2, 140);  // الطرف
+  reportSheet.setColumnWidth(3, 160);  // المشروع
+  reportSheet.setColumnWidth(4, 90);   // المبلغ
+  reportSheet.setColumnWidth(5, 85);   // الأيام
 
   // تجميد الصفوف العلوية
   reportSheet.setFrozenRows(2);
