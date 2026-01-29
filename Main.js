@@ -2717,14 +2717,14 @@ function generateDueReport() {
   const data = transSheet.getDataRange().getValues();
   const today = new Date();
 
-  // تجميع الأرصدة حسب الطرف (مدين استحقاق - دائن دفعة)
+  // تجميع الأرصدة حسب الطرف والمشروع (مدين استحقاق - دائن دفعة)
   const partyData = {};
 
   for (let i = 1; i < data.length; i++) {
     const movementKind = String(data[i][13] || ''); // N - نوع الحركة
     const party = String(data[i][8] || '').trim();  // I - الطرف
-    const project = String(data[i][5] || '');       // F - المشروع
-    const amountUsd = Number(data[i][12]) || 0;     // M - المبلغ
+    const project = String(data[i][5] || '').trim(); // F - المشروع
+    const amountUsd = Number(data[i][12]) || 0;     // M - المبلغ بالدولار
     const dueDate = data[i][20];                    // U - تاريخ الاستحقاق
     const natureType = String(data[i][2] || '');    // C - طبيعة الحركة
 
@@ -2741,22 +2741,32 @@ function generateDueReport() {
         totalDebit: 0,
         totalCredit: 0,
         nature: natureType,
-        project: project,
-        earliestDueDate: null
+        projectBalances: {},  // أرصدة كل مشروع
+        earliestDueDate: null,
+        earliestDueDateProject: null  // المشروع صاحب أقدم تاريخ استحقاق
       };
+    }
+
+    // تتبع الرصيد لكل مشروع
+    const projectKey = project || 'بدون مشروع';
+    if (!partyData[party].projectBalances[projectKey]) {
+      partyData[party].projectBalances[projectKey] = { debit: 0, credit: 0 };
     }
 
     if (isDebitAccrual) {
       partyData[party].totalDebit += amountUsd;
-      // حفظ أقرب تاريخ استحقاق
+      partyData[party].projectBalances[projectKey].debit += amountUsd;
+      // حفظ أقرب تاريخ استحقاق مع اسم المشروع
       if (dueDate) {
         const dueDateObj = new Date(dueDate);
         if (!partyData[party].earliestDueDate || dueDateObj < partyData[party].earliestDueDate) {
           partyData[party].earliestDueDate = dueDateObj;
+          partyData[party].earliestDueDateProject = projectKey;
         }
       }
     } else if (isCreditPayment) {
       partyData[party].totalCredit += amountUsd;
+      partyData[party].projectBalances[projectKey].credit += amountUsd;
     }
   }
 
@@ -2785,13 +2795,30 @@ function generateDueReport() {
     // تحديد إذا كان إيراد أو مصروف
     const isRevenue = pd.nature && (pd.nature.includes('إيراد') || pd.nature.includes('تحصيل'));
 
+    // حساب المشاريع التي لها رصيد متبقي
+    const projectsWithBalance = [];
+    for (const projectName in pd.projectBalances) {
+      const pb = pd.projectBalances[projectName];
+      const projectBalance = pb.debit - pb.credit;
+      if (projectBalance > 0.01) {
+        projectsWithBalance.push({ name: projectName, balance: projectBalance });
+      }
+    }
+    // ترتيب المشاريع حسب الرصيد (الأكبر أولاً)
+    projectsWithBalance.sort((a, b) => b.balance - a.balance);
+
+    // إنشاء نص المشاريع مع أرصدتها
+    const projectsText = projectsWithBalance.length > 0
+      ? projectsWithBalance.map(p => p.name + ' ($' + p.balance.toFixed(0) + ')').join(' | ')
+      : pd.earliestDueDateProject || 'غير محدد';
+
     if (isRevenue) {
       // إيرادات مستحقة التحصيل
-      receivables.push({ party, amount: balance, project: pd.project, daysLeft: 0 });
+      receivables.push({ party, amount: balance, project: projectsText, daysLeft: 0 });
       totalReceivables += balance;
     } else {
       // مستحقات علينا - تصنيف حسب تاريخ الاستحقاق
-      const item = { party, project: pd.project, amount: balance, dueDate: pd.earliestDueDate, daysLeft: null };
+      const item = { party, project: projectsText, amount: balance, dueDate: pd.earliestDueDate, daysLeft: null };
 
       if (!pd.earliestDueDate) {
         // بدون تاريخ استحقاق
@@ -2999,10 +3026,10 @@ function generateDueReport() {
 
   // تنسيق الأعمدة
   reportSheet.setColumnWidth(1, 40);   // #
-  reportSheet.setColumnWidth(2, 180);  // الطرف
-  reportSheet.setColumnWidth(3, 150);  // المشروع
-  reportSheet.setColumnWidth(4, 120);  // المبلغ
-  reportSheet.setColumnWidth(5, 100);  // الأيام
+  reportSheet.setColumnWidth(2, 150);  // الطرف
+  reportSheet.setColumnWidth(3, 350);  // المشاريع (موسع لعرض كل المشاريع وأرصدتها)
+  reportSheet.setColumnWidth(4, 100);  // المبلغ
+  reportSheet.setColumnWidth(5, 90);   // الأيام
 
   // تجميد الصفوف العلوية
   reportSheet.setFrozenRows(2);
