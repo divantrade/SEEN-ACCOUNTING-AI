@@ -843,6 +843,7 @@ function sortTransactionsByDate() {
     let status = '';
     const natureType = String(row[2] || '').trim(); // C: طبيعة الحركة
     const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
+    const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;  // ✅ تأمين مدفوع للقناة
 
     if (party && amountUsd > 0) {
       if (!partyBalances[party]) {
@@ -853,7 +854,8 @@ function sortTransactionsByDate() {
         partyBalances[party] += amountUsd;
       } else if (movementKind === 'دائن دفعة') {
         // ✅ تمويل = دائن دفعة لكن يزيد رصيد الممول (التزام علينا)
-        if (isFundingIn) {
+        // ✅ تأمين مدفوع = دائن دفعة لكن يزيد رصيد القناة (مستحق لنا)
+        if (isFundingIn || isInsurancePaid) {
           partyBalances[party] += amountUsd;
         } else {
           partyBalances[party] -= amountUsd;
@@ -1515,6 +1517,7 @@ function refreshValueAndBalanceFormulas() {
     let status = '';
     const natureType = String(row[2] || '').trim(); // C: طبيعة الحركة
     const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
+    const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;  // ✅ تأمين مدفوع للقناة
 
     if (party && amountUsd > 0) {
       if (!partyBalances[party]) {
@@ -1525,7 +1528,8 @@ function refreshValueAndBalanceFormulas() {
         partyBalances[party] += amountUsd;
       } else if (movementKind === 'دائن دفعة') {
         // ✅ تمويل = دائن دفعة لكن يزيد رصيد الممول (التزام علينا)
-        if (isFundingIn) {
+        // ✅ تأمين مدفوع = دائن دفعة لكن يزيد رصيد القناة (مستحق لنا)
+        if (isFundingIn || isInsurancePaid) {
           partyBalances[party] += amountUsd;
         } else {
           partyBalances[party] -= amountUsd;
@@ -2737,6 +2741,9 @@ function generateDueReport() {
     const isDebitAccrual = movementKind.indexOf('مدين استحقاق') !== -1;
     const isCreditPayment = movementKind.indexOf('دائن دفعة') !== -1;
 
+    // ✅ تأمين مدفوع = دائن دفعة لكن يُعامل كاستحقاق (القناة تدين لنا)
+    const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
+
     if (!isDebitAccrual && !isCreditPayment) continue;
 
     if (!partyData[party]) {
@@ -2749,8 +2756,8 @@ function generateDueReport() {
 
     const projectKey = project || 'بدون مشروع';
 
-    if (isDebitAccrual) {
-      // حفظ كل استحقاق مع تاريخه ومبلغه ومشروعه
+    if (isDebitAccrual || isInsurancePaid) {
+      // ✅ مدين استحقاق أو تأمين مدفوع = حفظ كاستحقاق مستحق لنا
       partyData[party].debits.push({
         rowNum: rowNum,
         amount: amountUsd,
@@ -8534,7 +8541,8 @@ function recalculatePartyBalance_(sheet, editedRow) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
 
-  // قراءة كل البيانات مرة واحدة (I, M, N)
+  // قراءة كل البيانات مرة واحدة (C, I, M, N)
+  const natureData = sheet.getRange(2, 3, lastRow - 1, 1).getValues(); // C: طبيعة الحركة
   const allData = sheet.getRange(2, 9, lastRow - 1, 6).getValues(); // I to N (columns 9-14)
   // allData[i][0] = I (الطرف), index 9
   // allData[i][4] = M (القيمة بالدولار), index 13
@@ -8549,6 +8557,11 @@ function recalculatePartyBalance_(sheet, editedRow) {
     const rowParty = String(allData[i][0] || '').trim();
     const amountUsd = Number(allData[i][4]) || 0; // M at index 4 (relative to column 9)
     const movementKind = String(allData[i][5] || '').trim(); // N at index 5
+    const natureType = String(natureData[i][0] || '').trim(); // C: طبيعة الحركة
+
+    // ✅ معالجة خاصة للتمويل والتأمين المدفوع
+    const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
+    const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
 
     let balance = '';
     let status = '';
@@ -8561,7 +8574,13 @@ function recalculatePartyBalance_(sheet, editedRow) {
       if (movementKind === 'مدين استحقاق') {
         partyBalances[rowParty] += amountUsd;
       } else if (movementKind === 'دائن دفعة') {
-        partyBalances[rowParty] -= amountUsd;
+        // ✅ تمويل = دائن دفعة لكن يزيد رصيد الممول (التزام علينا)
+        // ✅ تأمين مدفوع = دائن دفعة لكن يزيد رصيد القناة (مستحق لنا)
+        if (isFundingIn || isInsurancePaid) {
+          partyBalances[rowParty] += amountUsd;
+        } else {
+          partyBalances[rowParty] -= amountUsd;
+        }
       }
 
       balance = Math.round(partyBalances[rowParty] * 100) / 100;
