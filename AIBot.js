@@ -37,20 +37,20 @@ function processAIBotUpdates() {
 
         const token = getAIBotToken();
         const startTime = Date.now();
-        // ⚡ تحسين: 45 ثانية بدل 55 - يترك 15 ثانية هامش للـ Trigger التالي للحصول على الـ Lock
-        const MAX_TIME = 45000;
+        // ⚡ تحسين: 55 ثانية - يترك 5 ثوان هامش للـ Trigger التالي للحصول على الـ Lock
+        const MAX_TIME = 55000;
 
         // ⚡ تحسين: قراءة lastUpdateId مرة واحدة من Properties عند بدء الحلقة
         currentUpdateId = getAILastUpdateId();
 
         Logger.log('🤖 البوت الذكي يعمل... (offset: ' + currentUpdateId + ')');
 
-        // حلقة polling لمدة 45 ثانية
+        // حلقة polling لمدة 55 ثانية
         while (Date.now() - startTime < MAX_TIME) {
 
             try {
-                // ⚡ تحسين: timeout=3 بدل 5 - استجابة أسرع (0-3 ثوان بدل 0-5)
-                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${currentUpdateId + 1}&timeout=3`;
+                // ⚡ timeout=5 - كفاءة أعلى (طلبات HTTP أقل) مع استجابة فورية للرسائل
+                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${currentUpdateId + 1}&timeout=5`;
 
                 const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
                 const data = JSON.parse(response.getContentText());
