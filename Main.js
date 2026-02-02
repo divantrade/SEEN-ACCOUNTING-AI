@@ -60,6 +60,7 @@ function onOpen() {
         .addItem('📋 تقرير المشروع التفصيلي', 'rebuildProjectDetailReport')
         .addItem('📊 تقرير ربحية مشروع (نافذة)', 'showProjectProfitability')
         .addItem('📊 تقرير ربحية كل المشاريع', 'generateAllProjectsProfitabilityReport')
+        .addItem('📈 تقرير ربحية (اختيار مشاريع)', 'showProfitabilityReportForm')
         .addSeparator()
         .addItem('📋 تقرير ميزانية مشروع', 'generateProjectBudgetReport')
         .addItem('📊 تقرير ميزانية مجمع (عدة مشاريع)', 'showCombinedBudgetReportForm')
@@ -3876,6 +3877,502 @@ function generateAllProjectsProfitabilityReport(silent) {
   );
 
   return { success: true, projectCount: projectCount };
+}
+
+/**
+ * عرض نموذج اختيار المشاريع لتقرير الربحية
+ */
+function showProfitabilityReportForm() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+
+  // جلب قائمة المشاريع
+  const projects = getProjectsList_();
+
+  if (projects.length === 0) {
+    ui.alert('⚠️ لا توجد مشاريع في قاعدة البيانات');
+    return;
+  }
+
+  // بناء HTML قائمة المشاريع
+  let projectsHtml = '';
+  for (let i = 0; i < projects.length; i++) {
+    const p = projects[i];
+    projectsHtml += '<label class="project-item">' +
+      '<input type="checkbox" name="project" value="' + p.code + '" onchange="updateCount()">' +
+      '<div class="project-info">' +
+      '<div class="project-code">' + p.code + '</div>' +
+      '<div class="project-name">' + p.name + '</div>' +
+      '</div></label>';
+  }
+
+  const html = HtmlService.createHtmlOutput(`
+    <!DOCTYPE html>
+    <html dir="rtl">
+    <head>
+      <base target="_top">
+      <style>
+        * { box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { padding: 20px; background: #f5f5f5; margin: 0; }
+        h2 { color: #1a73e8; margin-bottom: 20px; text-align: center; }
+        .info-box {
+          background: #e8f5e9;
+          padding: 12px;
+          border-radius: 8px;
+          margin-bottom: 15px;
+          border-right: 4px solid #4caf50;
+          font-size: 13px;
+        }
+        .projects-list {
+          max-height: 350px;
+          overflow-y: auto;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+          background: #fff;
+          padding: 10px;
+          margin-bottom: 15px;
+        }
+        .project-item {
+          display: flex;
+          align-items: center;
+          padding: 10px;
+          border-bottom: 1px solid #eee;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        .project-item:hover { background: #f5f5f5; }
+        .project-item:last-child { border-bottom: none; }
+        .project-item input[type="checkbox"] {
+          width: 18px;
+          height: 18px;
+          margin-left: 10px;
+        }
+        .project-info { flex: 1; }
+        .project-code { font-weight: bold; color: #4caf50; }
+        .project-name { color: #666; font-size: 13px; }
+        .selection-controls {
+          display: flex;
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        .selection-controls button {
+          padding: 8px 15px;
+          border: 1px solid #ddd;
+          border-radius: 5px;
+          background: #fff;
+          cursor: pointer;
+          font-size: 12px;
+        }
+        .selection-controls button:hover { background: #f0f0f0; }
+        .selected-count {
+          text-align: center;
+          padding: 10px;
+          background: #fff3e0;
+          border-radius: 5px;
+          margin-bottom: 15px;
+          font-weight: bold;
+        }
+        .btn-primary {
+          background: #4caf50;
+          color: white;
+          border: none;
+          padding: 12px 30px;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 16px;
+          width: 100%;
+        }
+        .btn-primary:hover { background: #388e3c; }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+        .loading { text-align: center; padding: 20px; display: none; }
+        .spinner {
+          border: 3px solid #f3f3f3;
+          border-top: 3px solid #4caf50;
+          border-radius: 50%;
+          width: 30px;
+          height: 30px;
+          animation: spin 1s linear infinite;
+          margin: 0 auto;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      </style>
+    </head>
+    <body>
+      <h2>📈 تقرير ربحية المشاريع</h2>
+
+      <div class="info-box">
+        💡 اختر المشاريع التي تريد عرض تقرير ربحيتها.
+        سيتم حساب هامش الربح وصافي الربح لكل مشروع مع ملخص إجمالي.
+      </div>
+
+      <div id="formContent">
+        <div class="selection-controls">
+          <button type="button" onclick="selectAll()">تحديد الكل</button>
+          <button type="button" onclick="deselectAll()">إلغاء الكل</button>
+        </div>
+
+        <div class="projects-list">
+          ${projectsHtml}
+        </div>
+
+        <div class="selected-count" id="selectedCount">
+          تم اختيار: 0 مشاريع
+        </div>
+
+        <button type="button" class="btn-primary" id="submitBtn" onclick="generateReport()" disabled>
+          📈 إنشاء تقرير الربحية
+        </button>
+      </div>
+
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>جاري إنشاء التقرير...</p>
+      </div>
+
+      <script>
+        function selectAll() {
+          document.querySelectorAll('input[name="project"]').forEach(cb => cb.checked = true);
+          updateCount();
+        }
+
+        function deselectAll() {
+          document.querySelectorAll('input[name="project"]').forEach(cb => cb.checked = false);
+          updateCount();
+        }
+
+        function updateCount() {
+          const checked = document.querySelectorAll('input[name="project"]:checked').length;
+          document.getElementById('selectedCount').textContent = 'تم اختيار: ' + checked + ' مشاريع';
+          document.getElementById('submitBtn').disabled = checked === 0;
+        }
+
+        function generateReport() {
+          const selected = [];
+          document.querySelectorAll('input[name="project"]:checked').forEach(cb => {
+            selected.push(cb.value);
+          });
+
+          if (selected.length === 0) {
+            alert('برجاء اختيار مشروع واحد على الأقل');
+            return;
+          }
+
+          document.getElementById('formContent').style.display = 'none';
+          document.getElementById('loading').style.display = 'block';
+
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result.success) {
+                alert('✅ تم إنشاء تقرير الربحية بنجاح!\\n\\n' +
+                  '📁 عدد المشاريع: ' + result.projectCount + '\\n' +
+                  '💰 إجمالي صافي الربح: $' + result.totalNetProfit.toLocaleString());
+                google.script.host.close();
+              } else {
+                alert('❌ خطأ: ' + result.error);
+                document.getElementById('formContent').style.display = 'block';
+                document.getElementById('loading').style.display = 'none';
+              }
+            })
+            .withFailureHandler(function(error) {
+              alert('❌ خطأ: ' + error.message);
+              document.getElementById('formContent').style.display = 'block';
+              document.getElementById('loading').style.display = 'none';
+            })
+            .generateSelectedProjectsProfitabilityReport(selected);
+        }
+      </script>
+    </body>
+    </html>
+  `).setWidth(450).setHeight(550);
+
+  ui.showModalDialog(html, '📈 تقرير ربحية المشاريع');
+}
+
+/**
+ * إنشاء تقرير ربحية للمشاريع المختارة
+ * @param {string[]} projectCodes - أكواد المشاريع المختارة
+ */
+function generateSelectedProjectsProfitabilityReport(projectCodes) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    const projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+    const transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+    const budgetSheet = ss.getSheetByName(CONFIG.SHEETS.BUDGETS);
+
+    if (!projectsSheet || !transSheet) {
+      return { success: false, error: 'الشيتات المطلوبة غير موجودة' };
+    }
+
+    // قراءة البيانات
+    const projectsData = projectsSheet.getDataRange().getValues();
+    const budgetData = budgetSheet ? budgetSheet.getDataRange().getValues() : [];
+    const transData = transSheet.getDataRange().getValues();
+
+    // تحويل أكواد المشاريع المختارة إلى uppercase للمقارنة
+    const selectedCodes = projectCodes.map(c => String(c).trim().toUpperCase());
+
+    // إنشاء شيت التقرير
+    const reportSheetName = 'تقارير ربحية المشاريع';
+    let reportSheet = ss.getSheetByName(reportSheetName);
+    if (reportSheet) {
+      ss.deleteSheet(reportSheet);
+    }
+    reportSheet = ss.insertSheet(reportSheetName);
+    reportSheet.setRightToLeft(true);
+
+    let currentRow = 1;
+
+    // العنوان الرئيسي
+    reportSheet.getRange(currentRow, 1, 1, 7).merge()
+      .setValue('📈 تقرير ربحية المشاريع المختارة')
+      .setBackground('#1a237e')
+      .setFontColor('white')
+      .setFontWeight('bold')
+      .setFontSize(18)
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    reportSheet.getRange(currentRow, 1, 1, 7).merge()
+      .setValue('عدد المشاريع: ' + projectCodes.length + ' | تاريخ التقرير: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
+      .setBackground('#283593')
+      .setFontColor('white')
+      .setFontSize(11)
+      .setHorizontalAlignment('center');
+    currentRow += 2;
+
+    // متغيرات للإجماليات
+    let totalContracts = 0;
+    let totalDirectExpenses = 0;
+    let totalProfitMargin = 0;
+    let totalOverhead = 0;
+    let totalNetProfit = 0;
+    let projectCount = 0;
+
+    // معالجة المشاريع المختارة فقط
+    for (let p = 1; p < projectsData.length; p++) {
+      const projectCode = String(projectsData[p][0] || '').trim();
+      const projectCodeUpper = projectCode.toUpperCase();
+
+      // تخطي المشاريع غير المختارة
+      if (!selectedCodes.includes(projectCodeUpper)) continue;
+
+      const projectName = String(projectsData[p][1] || '').trim();
+      const channel = String(projectsData[p][3] || '').trim();
+      const contractValue = Number(projectsData[p][8]) || 0;
+
+      if (!projectCode || contractValue === 0) continue;
+
+      projectCount++;
+
+      // جمع الميزانية المخططة للمشروع
+      const plannedBudget = {};
+      let totalPlanned = 0;
+      for (let b = 1; b < budgetData.length; b++) {
+        const budgetProjCode = String(budgetData[b][0] || '').trim().toUpperCase();
+        if (budgetProjCode === projectCodeUpper) {
+          const item = String(budgetData[b][2] || '').trim();
+          const amount = Number(budgetData[b][3]) || 0;
+          if (item) {
+            plannedBudget[item] = (plannedBudget[item] || 0) + amount;
+            totalPlanned += amount;
+          }
+        }
+      }
+
+      // جمع المصروفات الفعلية للمشروع
+      const actualExpenses = {};
+      let totalActual = 0;
+      for (let t = 1; t < transData.length; t++) {
+        const rowProjCode = String(transData[t][4] || '').trim().toUpperCase();
+        if (rowProjCode !== projectCodeUpper) continue;
+
+        const item = String(transData[t][6] || '').trim();
+        const amountUsd = Number(transData[t][12]) || 0;
+        const natureType = String(transData[t][2] || '');
+
+        if (natureType.includes('استحقاق مصروف') && amountUsd > 0) {
+          if (!item) continue;
+          actualExpenses[item] = (actualExpenses[item] || 0) + amountUsd;
+          totalActual += amountUsd;
+        }
+      }
+
+      // حسابات الربحية
+      const profitMargin = contractValue - totalActual;
+      const overheadExpenses = totalActual * 0.35;
+      const netProfit = profitMargin - overheadExpenses;
+      const profitMarginPercent = contractValue > 0 ? (profitMargin / contractValue) * 100 : 0;
+      const netProfitPercent = contractValue > 0 ? (netProfit / contractValue) * 100 : 0;
+
+      // تحديث الإجماليات
+      totalContracts += contractValue;
+      totalDirectExpenses += totalActual;
+      totalProfitMargin += profitMargin;
+      totalOverhead += overheadExpenses;
+      totalNetProfit += netProfit;
+
+      // عنوان المشروع
+      reportSheet.getRange(currentRow, 1, 1, 7).merge()
+        .setValue('🎬 المشروع: ' + projectCode + ' - ' + projectName)
+        .setBackground('#3949ab')
+        .setFontColor('white')
+        .setFontWeight('bold')
+        .setFontSize(12);
+      currentRow++;
+
+      reportSheet.getRange(currentRow, 1, 1, 7).merge()
+        .setValue('القناة: ' + channel + ' | قيمة العقد: $' + contractValue.toLocaleString())
+        .setBackground('#5c6bc0')
+        .setFontColor('white')
+        .setFontSize(10);
+      currentRow++;
+
+      // رؤوس أعمدة البنود
+      const itemHeaders = ['البند', 'المخطط', 'الفعلي', 'الفرق', 'النسبة %', '', ''];
+      reportSheet.getRange(currentRow, 1, 1, 7).setValues([itemHeaders])
+        .setBackground('#e8eaf6')
+        .setFontWeight('bold')
+        .setHorizontalAlignment('center');
+      currentRow++;
+
+      // جمع كل البنود
+      const allItems = new Set([...Object.keys(plannedBudget), ...Object.keys(actualExpenses)]);
+      const itemRows = [];
+
+      allItems.forEach(item => {
+        if (item.includes('عمولة مدير')) return;
+        const planned = plannedBudget[item] || 0;
+        const actual = actualExpenses[item] || 0;
+        const diff = planned - actual;
+        const percentage = planned > 0 ? Math.round((actual / planned) * 100) : (actual > 0 ? 999 : 0);
+        itemRows.push([item, planned, actual, diff, percentage + '%', '', '']);
+      });
+
+      // ترتيب حسب الفعلي تنازلياً
+      itemRows.sort((a, b) => b[2] - a[2]);
+
+      if (itemRows.length > 0) {
+        reportSheet.getRange(currentRow, 1, itemRows.length, 7).setValues(itemRows);
+        reportSheet.getRange(currentRow, 2, itemRows.length, 3).setNumberFormat('$#,##0.00');
+
+        // تلوين الفرق
+        for (let i = 0; i < itemRows.length; i++) {
+          const diffValue = itemRows[i][3];
+          if (diffValue < 0) {
+            reportSheet.getRange(currentRow + i, 4).setFontColor('#c62828');
+          } else if (diffValue > 0) {
+            reportSheet.getRange(currentRow + i, 4).setFontColor('#2e7d32');
+          }
+        }
+        currentRow += itemRows.length;
+      }
+
+      // صف إجمالي المصروفات
+      reportSheet.getRange(currentRow, 1, 1, 7)
+        .setValues([['إجمالي المصروفات المباشرة', totalPlanned, totalActual, totalPlanned - totalActual,
+          totalPlanned > 0 ? Math.round((totalActual / totalPlanned) * 100) + '%' : '-', '', '']])
+        .setBackground('#e0e0e0')
+        .setFontWeight('bold');
+      reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+      currentRow++;
+
+      // هامش الربح
+      const marginIcon = profitMargin >= 0 ? '✅' : '❌';
+      reportSheet.getRange(currentRow, 1, 1, 7).merge()
+        .setValue(marginIcon + ' هامش الربح: $' + profitMargin.toLocaleString() + ' (' + profitMarginPercent.toFixed(1) + '%)')
+        .setBackground(profitMargin >= 0 ? '#e8f5e9' : '#ffebee')
+        .setFontWeight('bold')
+        .setFontSize(11);
+      currentRow++;
+
+      // مصروفات عمومية
+      reportSheet.getRange(currentRow, 1, 1, 7).merge()
+        .setValue('🏢 مصروفات عمومية (35%): $' + overheadExpenses.toLocaleString())
+        .setBackground('#fff3e0')
+        .setFontSize(10);
+      currentRow++;
+
+      // صافي الربح
+      const netIcon = netProfit >= 0 ? '✅' : '❌';
+      reportSheet.getRange(currentRow, 1, 1, 7).merge()
+        .setValue(netIcon + ' صافي الربح: $' + netProfit.toLocaleString() + ' (' + netProfitPercent.toFixed(1) + '%)')
+        .setBackground(netProfit >= 0 ? '#c8e6c9' : '#ffcdd2')
+        .setFontWeight('bold')
+        .setFontSize(12);
+      currentRow += 2;
+    }
+
+    // الملخص الإجمالي
+    reportSheet.getRange(currentRow, 1, 1, 7).merge()
+      .setValue('📊 الملخص الإجمالي للمشاريع المختارة')
+      .setBackground('#1a237e')
+      .setFontColor('white')
+      .setFontWeight('bold')
+      .setFontSize(14)
+      .setHorizontalAlignment('center');
+    currentRow++;
+
+    const totalProfitMarginPercent = totalContracts > 0 ? (totalProfitMargin / totalContracts) * 100 : 0;
+    const totalNetProfitPercent = totalContracts > 0 ? (totalNetProfit / totalContracts) * 100 : 0;
+
+    const summaryData = [
+      ['عدد المشاريع', projectCount, '', '', '', '', ''],
+      ['إجمالي قيمة العقود', totalContracts, '', '', '', '', ''],
+      ['إجمالي المصروفات المباشرة', totalDirectExpenses, '', '', '', '', ''],
+      ['', '', '', '', '', '', ''],
+      ['✅ إجمالي هامش الربح', totalProfitMargin, totalProfitMarginPercent.toFixed(1) + '%', '', '', '', ''],
+      ['🏢 إجمالي المصروفات العمومية (35%)', totalOverhead, '35%', '', '', '', ''],
+      ['', '', '', '', '', '', ''],
+      ['💰 إجمالي صافي الربح', totalNetProfit, totalNetProfitPercent.toFixed(1) + '%', '', '', '', '']
+    ];
+
+    reportSheet.getRange(currentRow, 1, summaryData.length, 7).setValues(summaryData);
+    reportSheet.getRange(currentRow + 1, 2, 2, 1).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow + 4, 2, 1, 1).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow + 5, 2, 1, 1).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow + 7, 2, 1, 1).setNumberFormat('$#,##0.00');
+
+    // تنسيق صف هامش الربح الإجمالي
+    reportSheet.getRange(currentRow + 4, 1, 1, 7)
+      .setBackground(totalProfitMargin >= 0 ? '#e8f5e9' : '#ffebee')
+      .setFontWeight('bold');
+
+    // تنسيق صف المصروفات العمومية
+    reportSheet.getRange(currentRow + 5, 1, 1, 7)
+      .setBackground('#fff3e0');
+
+    // تنسيق صف صافي الربح الإجمالي
+    reportSheet.getRange(currentRow + 7, 1, 1, 7)
+      .setBackground(totalNetProfit >= 0 ? '#c8e6c9' : '#ffcdd2')
+      .setFontWeight('bold')
+      .setFontSize(13);
+
+    // تنسيقات عامة
+    reportSheet.setColumnWidth(1, 220);
+    reportSheet.setColumnWidth(2, 120);
+    reportSheet.setColumnWidth(3, 120);
+    reportSheet.setColumnWidth(4, 120);
+    reportSheet.setColumnWidth(5, 100);
+    reportSheet.setColumnWidth(6, 80);
+    reportSheet.setColumnWidth(7, 80);
+    reportSheet.setFrozenRows(2);
+
+    ss.setActiveSheet(reportSheet);
+
+    return {
+      success: true,
+      projectCount: projectCount,
+      totalNetProfit: Math.round(totalNetProfit)
+    };
+
+  } catch (error) {
+    Logger.log('Error in generateSelectedProjectsProfitabilityReport: ' + error.message);
+    return { success: false, error: error.message };
+  }
 }
 
 // ==================== دليل الاستخدام (محدث لنظام العملات + نوع الحركة) ====================
