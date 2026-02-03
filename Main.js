@@ -2808,8 +2808,12 @@ function generateDueReport() {
       const unpaidAmount = debit.amount - remainingCredit;
       remainingCredit = 0;  // استنفدت كل الدفعات
 
-      // تحديد إذا كان إيراد أو مصروف
-      const isRevenue = debit.nature && (debit.nature.includes('إيراد') || debit.nature.includes('تحصيل'));
+      // تحديد إذا كان إيراد أو مصروف (التأمين المدفوع = مستحق لنا من القناة)
+      const isRevenue = debit.nature && (
+        debit.nature.includes('إيراد') ||
+        debit.nature.includes('تحصيل') ||
+        debit.nature.includes('تأمين مدفوع')
+      );
 
       const item = {
         party: party,
@@ -6520,9 +6524,14 @@ function rebuildCashFlowReport(silent) {
 
     if (typeStr.includes('استحقاق مصروف')) {
       map[monthKey].accruals += amountUsd;
-    } else if (typeStr.includes('دفعة مصروف')) {
+    } else if (typeStr.includes('دفعة مصروف') ||
+               typeStr.includes('تأمين مدفوع') ||
+               typeStr.includes('سداد تمويل')) {
+      // التدفقات الخارجة: دفعات مصروفات + تأمينات مدفوعة + سداد تمويل
       map[monthKey].payments += amountUsd;
-    } else if (typeStr.includes('تحصيل إيراد')) {
+    } else if (typeStr.includes('تحصيل إيراد') ||
+               typeStr.includes('استرداد تأمين')) {
+      // التدفقات الداخلة: تحصيل إيرادات + استرداد تأمينات
       map[monthKey].revenues += amountUsd;
     }
   }
