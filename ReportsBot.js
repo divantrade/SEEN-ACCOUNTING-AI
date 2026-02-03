@@ -244,6 +244,93 @@ function handleReportPartySearch(chatId, text, session) {
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *                        البحث الذكي بالعربي
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * تطبيع النص العربي للبحث الذكي
+ * يوحد أشكال الحروف المختلفة ويزيل التشكيل
+ * @param {string} text - النص الأصلي
+ * @returns {string} - النص المطبّع
+ */
+function normalizeArabicText(text) {
+    if (!text) return '';
+
+    let normalized = String(text).trim();
+
+    // إزالة التشكيل (الحركات)
+    normalized = normalized.replace(/[\u064B-\u065F\u0670]/g, '');
+
+    // توحيد أشكال الألف
+    normalized = normalized.replace(/[أإآٱ]/g, 'ا');
+
+    // توحيد الياء والألف المقصورة
+    normalized = normalized.replace(/[ىئ]/g, 'ي');
+
+    // توحيد التاء المربوطة والهاء
+    normalized = normalized.replace(/ة/g, 'ه');
+
+    // توحيد الواو
+    normalized = normalized.replace(/ؤ/g, 'و');
+
+    // إزالة المسافات الزائدة
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+
+    return normalized.toLowerCase();
+}
+
+/**
+ * فحص تطابق البحث الذكي
+ * @param {string} name - اسم الطرف
+ * @param {string} searchText - نص البحث
+ * @returns {Object} - نتيجة المطابقة مع درجة التطابق
+ */
+function smartArabicMatch(name, searchText) {
+    const normalizedName = normalizeArabicText(name);
+    const normalizedSearch = normalizeArabicText(searchText);
+
+    // 1️⃣ تطابق تام (أعلى أولوية)
+    if (normalizedName === normalizedSearch) {
+        return { match: true, score: 100 };
+    }
+
+    // 2️⃣ الاسم يحتوي على نص البحث كاملاً
+    if (normalizedName.includes(normalizedSearch)) {
+        return { match: true, score: 80 };
+    }
+
+    // 3️⃣ البحث بالاسم الأول فقط
+    const nameParts = normalizedName.split(' ');
+    const searchParts = normalizedSearch.split(' ');
+
+    // تطابق الاسم الأول
+    if (nameParts[0] === searchParts[0]) {
+        return { match: true, score: 70 };
+    }
+
+    // 4️⃣ أي جزء من الاسم يحتوي على البحث
+    for (const part of nameParts) {
+        if (part.includes(normalizedSearch) || normalizedSearch.includes(part)) {
+            return { match: true, score: 60 };
+        }
+    }
+
+    // 5️⃣ تطابق جزئي (حرفين على الأقل متتاليين)
+    if (normalizedSearch.length >= 2) {
+        for (let i = 0; i <= normalizedName.length - 2; i++) {
+            const chunk = normalizedName.substring(i, i + Math.min(normalizedSearch.length, normalizedName.length - i));
+            if (chunk.includes(normalizedSearch.substring(0, 2))) {
+                return { match: true, score: 40 };
+            }
+        }
+    }
+
+    return { match: false, score: 0 };
+}
+
+/**
  * البحث عن الأطراف بالاسم
  * @param {string} searchText - نص البحث
  * @param {string} partyType - نوع الطرف
@@ -264,15 +351,20 @@ function searchPartiesByName(searchText, partyType) {
                 const name = String(row[0] || '').trim(); // العمود A - الاسم
                 const type = String(row[1] || '').trim(); // العمود B - النوع
 
-                // التحقق من النوع والاسم
-                if (type === partyType && name && name.toLowerCase().includes(searchText.toLowerCase())) {
-                    if (!addedNames.has(name.toLowerCase())) {
-                        results.push({
-                            name: name,
-                            type: type,
-                            code: '' // لا يوجد كود في الشيت الرئيسي
-                        });
-                        addedNames.add(name.toLowerCase());
+                // ✅ التحقق من النوع والاسم باستخدام البحث الذكي
+                if (type === partyType && name) {
+                    const matchResult = smartArabicMatch(name, searchText);
+                    if (matchResult.match) {
+                        const normalizedName = normalizeArabicText(name);
+                        if (!addedNames.has(normalizedName)) {
+                            results.push({
+                                name: name,
+                                type: type,
+                                code: '', // لا يوجد كود في الشيت الرئيسي
+                                score: matchResult.score // درجة التطابق للترتيب
+                            });
+                            addedNames.add(normalizedName);
+                        }
                     }
                 }
             }
@@ -287,14 +379,20 @@ function searchPartiesByName(searchText, partyType) {
                 const name = String(row[0] || '').trim(); // العمود A - الاسم
                 const type = String(row[1] || '').trim(); // العمود B - النوع
 
-                if (type === partyType && name && name.toLowerCase().includes(searchText.toLowerCase())) {
-                    if (!addedNames.has(name.toLowerCase())) {
-                        results.push({
-                            name: name,
-                            type: type,
-                            code: ''
-                        });
-                        addedNames.add(name.toLowerCase());
+                // ✅ البحث الذكي
+                if (type === partyType && name) {
+                    const matchResult = smartArabicMatch(name, searchText);
+                    if (matchResult.match) {
+                        const normalizedName = normalizeArabicText(name);
+                        if (!addedNames.has(normalizedName)) {
+                            results.push({
+                                name: name,
+                                type: type,
+                                code: '',
+                                score: matchResult.score
+                            });
+                            addedNames.add(normalizedName);
+                        }
                     }
                 }
             }
@@ -302,12 +400,13 @@ function searchPartiesByName(searchText, partyType) {
 
         Logger.log('🔍 Found ' + results.length + ' parties matching "' + searchText + '" of type ' + partyType);
 
-        // ترتيب النتائج حسب التطابق
+        // ✅ ترتيب النتائج حسب درجة التطابق (الأعلى أولاً)
         results.sort((a, b) => {
-            const aExact = a.name.toLowerCase() === searchText.toLowerCase();
-            const bExact = b.name.toLowerCase() === searchText.toLowerCase();
-            if (aExact && !bExact) return -1;
-            if (!aExact && bExact) return 1;
+            // ترتيب حسب درجة التطابق أولاً
+            if (b.score !== a.score) {
+                return b.score - a.score;
+            }
+            // ثم أبجدياً بالعربي
             return a.name.localeCompare(b.name, 'ar');
         });
 
