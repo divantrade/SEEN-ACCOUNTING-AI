@@ -2592,6 +2592,10 @@ function updateAlerts(silent) {
     const isCredit = movementKind.includes(CONFIG.MOVEMENT.CREDIT) || movementKind.includes('دائن');
     const isPaid = status.includes(CONFIG.PAYMENT_STATUS.PAID) || status.includes('مدفوع');
 
+    // ✅ معالجة خاصة للتأمين المدفوع والتمويل
+    const isInsurancePaid = natureType.includes('تأمين مدفوع');
+    const isFundingIn = natureType.includes('تمويل') && !natureType.includes('سداد تمويل');
+
     // تجميع أرصدة الأطراف
     if (party && amountUsd > 0) {
       if (!partyBalances[party]) {
@@ -2600,7 +2604,12 @@ function updateAlerts(silent) {
       if (isDebit) {
         partyBalances[party].debit += amountUsd;
       } else if (isCredit) {
-        partyBalances[party].credit += amountUsd;
+        // ✅ تأمين مدفوع وتمويل = دائن دفعة لكن يُعتبر مستحق لنا/علينا
+        if (isInsurancePaid || isFundingIn) {
+          partyBalances[party].debit += amountUsd;  // يُضاف للمدين (مستحق)
+        } else {
+          partyBalances[party].credit += amountUsd;
+        }
       }
     }
 
@@ -2649,9 +2658,14 @@ function updateAlerts(silent) {
   for (const party in partyBalances) {
     const balance = partyBalances[party].debit - partyBalances[party].credit;
 
-    // إذا كان الرصيد موجب (على الطرف لنا فلوس) وطبيعة الحركة إيرادية
-    if (balance > 100 && partyBalances[party].nature &&
-      (partyBalances[party].nature.includes('إيراد') || partyBalances[party].nature.includes('تحصيل'))) {
+    // إذا كان الرصيد موجب (على الطرف لنا فلوس) وطبيعة الحركة إيرادية أو تأمين
+    const isReceivable = partyBalances[party].nature && (
+      partyBalances[party].nature.includes('إيراد') ||
+      partyBalances[party].nature.includes('تحصيل') ||
+      partyBalances[party].nature.includes('تأمين مدفوع')  // ✅ إضافة التأمين
+    );
+
+    if (balance > 100 && isReceivable) {
       alerts.push([
         '💰 تحصيل مستحق',
         '🟣 متابعة',
@@ -2722,7 +2736,8 @@ function generateDueReport() {
   const data = transSheet.getDataRange().getValues();
   const today = new Date();
 
-  // تجميع الحركات حسب الطرف مع تتبع كل استحقاق على حدة
+  // تجميع الحركات حسب الطرف والمشروع مع تتبع كل استحقاق على حدة
+  // ✅ إصلاح: تجميع الدفعات حسب المشروع لتطبيق FIFO بشكل صحيح
   const partyData = {};
 
   for (let i = 1; i < data.length; i++) {
@@ -2749,9 +2764,10 @@ function generateDueReport() {
 
     if (!partyData[party]) {
       partyData[party] = {
-        totalCredit: 0,
         nature: natureType,
-        debits: []  // قائمة كل الاستحقاقات مع تواريخها ومبالغها
+        debits: [],           // قائمة كل الاستحقاقات
+        creditsByProject: {}, // ✅ الدفعات مجمعة حسب المشروع
+        totalCredit: 0        // إجمالي الدفعات (للاستخدام كاحتياطي)
       };
     }
 
@@ -2769,11 +2785,16 @@ function generateDueReport() {
         nature: natureType
       });
     } else if (isCreditPayment) {
+      // ✅ تجميع الدفعات حسب المشروع
+      if (!partyData[party].creditsByProject[projectKey]) {
+        partyData[party].creditsByProject[projectKey] = 0;
+      }
+      partyData[party].creditsByProject[projectKey] += amountUsd;
       partyData[party].totalCredit += amountUsd;
     }
   }
 
-  // تصنيف الحركات غير المسددة (FIFO) - كل حركة على حدة
+  // تصنيف الحركات غير المسددة (FIFO المحسّن) - كل حركة على حدة
   const overdue = [];      // متأخرة
   const thisWeek = [];     // هذا الأسبوع
   const thisMonth = [];    // هذا الشهر
@@ -2794,19 +2815,38 @@ function generateDueReport() {
     // ترتيب الاستحقاقات حسب تاريخ الحركة (الأقدم أولاً) لتطبيق FIFO
     pd.debits.sort((a, b) => a.transDate - b.transDate);
 
-    // تطبيق المدفوعات على الاستحقاقات الأقدم أولاً (FIFO)
-    let remainingCredit = pd.totalCredit;
+    // ✅ FIFO المحسّن: تطبيق الدفعات على نفس المشروع أولاً
+    // نسخة من الدفعات حسب المشروع (لعدم التأثير على الأصل)
+    const remainingCreditByProject = { ...pd.creditsByProject };
+    let remainingGeneralCredit = 0;  // دفعات بدون مشروع محدد
 
     for (const debit of pd.debits) {
-      if (remainingCredit >= debit.amount) {
-        // هذا الاستحقاق مسدد بالكامل - تجاهله
-        remainingCredit -= debit.amount;
-        continue;
+      let unpaidAmount = debit.amount;
+      const projectKey = debit.project;
+
+      // الخطوة 1: تطبيق الدفعات من نفس المشروع أولاً
+      if (remainingCreditByProject[projectKey] && remainingCreditByProject[projectKey] > 0) {
+        const creditFromSameProject = Math.min(remainingCreditByProject[projectKey], unpaidAmount);
+        unpaidAmount -= creditFromSameProject;
+        remainingCreditByProject[projectKey] -= creditFromSameProject;
       }
 
-      // حساب المبلغ غير المسدد (جزئي أو كلي)
-      const unpaidAmount = debit.amount - remainingCredit;
-      remainingCredit = 0;  // استنفدت كل الدفعات
+      // الخطوة 2: إذا بقي مبلغ غير مسدد، نطبق الدفعات من المشاريع الأخرى (FIFO)
+      if (unpaidAmount > 0) {
+        for (const otherProject in remainingCreditByProject) {
+          if (otherProject === projectKey) continue;  // تخطي نفس المشروع
+          if (remainingCreditByProject[otherProject] <= 0) continue;
+
+          const creditFromOther = Math.min(remainingCreditByProject[otherProject], unpaidAmount);
+          unpaidAmount -= creditFromOther;
+          remainingCreditByProject[otherProject] -= creditFromOther;
+
+          if (unpaidAmount <= 0) break;
+        }
+      }
+
+      // إذا المبلغ مسدد بالكامل، تجاهل هذا الاستحقاق
+      if (unpaidAmount <= 0.01) continue;  // تجاهل الفروقات الصغيرة (أقل من سنت)
 
       // تحديد إذا كان إيراد أو مصروف (التأمين المدفوع = مستحق لنا من القناة)
       const isRevenue = debit.nature && (
