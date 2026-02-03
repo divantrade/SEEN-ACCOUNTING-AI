@@ -2824,25 +2824,11 @@ function generateDueReport() {
       let unpaidAmount = debit.amount;
       const projectKey = debit.project;
 
-      // الخطوة 1: تطبيق الدفعات من نفس المشروع أولاً
+      // ✅ تطبيق الدفعات من نفس المشروع فقط (لا نأخذ من مشاريع أخرى)
       if (remainingCreditByProject[projectKey] && remainingCreditByProject[projectKey] > 0) {
         const creditFromSameProject = Math.min(remainingCreditByProject[projectKey], unpaidAmount);
         unpaidAmount -= creditFromSameProject;
         remainingCreditByProject[projectKey] -= creditFromSameProject;
-      }
-
-      // الخطوة 2: إذا بقي مبلغ غير مسدد، نطبق الدفعات من المشاريع الأخرى (FIFO)
-      if (unpaidAmount > 0) {
-        for (const otherProject in remainingCreditByProject) {
-          if (otherProject === projectKey) continue;  // تخطي نفس المشروع
-          if (remainingCreditByProject[otherProject] <= 0) continue;
-
-          const creditFromOther = Math.min(remainingCreditByProject[otherProject], unpaidAmount);
-          unpaidAmount -= creditFromOther;
-          remainingCreditByProject[otherProject] -= creditFromOther;
-
-          if (unpaidAmount <= 0) break;
-        }
       }
 
       // إذا المبلغ مسدد بالكامل، تجاهل هذا الاستحقاق
