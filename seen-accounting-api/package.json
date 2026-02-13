@@ -1,0 +1,40 @@
+{
+  "name": "seen-accounting-api",
+  "version": "1.0.0",
+  "description": "SEEN Accounting AI - Professional accounting system for documentary film production",
+  "main": "src/app.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/app.js",
+    "start": "node src/app.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:prod": "prisma migrate deploy",
+    "db:seed": "node prisma/seed.js",
+    "db:studio": "prisma studio",
+    "migrate:sheets": "node src/database/migrate-from-sheets.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.3.0",
+    "fastify": "^5.2.0",
+    "@fastify/cors": "^11.0.0",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/rate-limit": "^10.2.0",
+    "@fastify/jwt": "^9.0.0",
+    "@fastify/multipart": "^9.0.0",
+    "grammy": "^1.30.0",
+    "ioredis": "^5.4.2",
+    "zod": "^3.24.0",
+    "bcryptjs": "^2.4.3",
+    "pdfkit": "^0.16.0",
+    "winston": "^3.17.0",
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "prisma": "^6.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

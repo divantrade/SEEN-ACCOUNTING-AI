@@ -1,0 +1,418 @@
+// =============================================
+// SEEN Accounting AI - Database Schema
+// PostgreSQL via Prisma ORM
+// =============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================
+// المشاريع (Projects)
+// =============================================
+model Project {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.VarChar(50)
+  name        String    @db.VarChar(255)
+  status      String    @default("نشط") @db.VarChar(50)
+  description String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  transactions        Transaction[]
+  pendingTransactions PendingTransaction[]
+  budgets             Budget[]
+
+  @@index([code])
+  @@index([name])
+  @@map("projects")
+}
+
+// =============================================
+// الأطراف (Parties - Vendors/Clients/Funders)
+// =============================================
+enum PartyType {
+  VENDOR  @map("مورد")
+  CLIENT  @map("عميل")
+  FUNDER  @map("ممول")
+
+  @@map("party_type")
+}
+
+model Party {
+  id               Int       @id @default(autoincrement())
+  name             String    @db.VarChar(255)
+  type             PartyType
+  specialization   String?   @db.VarChar(255)
+  phone            String?   @db.VarChar(30)
+  email            String?   @db.VarChar(255)
+  city             String?   @db.VarChar(100)
+  preferredPayment String?   @map("preferred_payment") @db.VarChar(100)
+  bankDetails      String?   @map("bank_details") @db.Text
+  notes            String?   @db.Text
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  transactions        Transaction[]
+  pendingTransactions PendingTransaction[]
+  pendingParties      PendingParty[]
+
+  @@unique([name, type])
+  @@index([name])
+  @@index([type])
+  @@map("parties")
+}
+
+// =============================================
+// البنود (Items / Expense Categories)
+// =============================================
+enum NatureType {
+  EXPENSE_ACCRUAL       @map("استحقاق مصروف")
+  EXPENSE_PAYMENT       @map("دفعة مصروف")
+  REVENUE_ACCRUAL       @map("استحقاق إيراد")
+  REVENUE_COLLECTION    @map("تحصيل إيراد")
+  FINANCING             @map("تمويل")
+  FINANCING_RECEIVED    @map("استلام تمويل")
+  FINANCING_REPAYMENT   @map("سداد تمويل")
+  INSURANCE_PAID        @map("تأمين مدفوع للقناة")
+  INSURANCE_RETURNED    @map("استرداد تأمين من القناة")
+  INTERNAL_TRANSFER     @map("تحويل داخلي")
+
+  @@map("nature_type")
+}
+
+enum ClassificationType {
+  DIRECT_EXPENSE        @map("مصروفات مباشرة")
+  GENERAL_EXPENSE       @map("مصروفات عمومية")
+  REVENUE               @map("ايراد")
+  LONG_TERM_FINANCING   @map("تمويل طويل الأجل")
+  LONG_TERM_REPAYMENT   @map("سداد تمويل طويل الأجل")
+  SHORT_ADVANCE         @map("سلفة قصيرة")
+  SHORT_ADVANCE_REPAY   @map("سداد سلفة قصيرة")
+  INSURANCE             @map("تأمين")
+  INSURANCE_RETURN      @map("استرداد تأمين")
+  TRANSFER_TO_BANK      @map("تحويل للبنك")
+  TRANSFER_TO_CASH      @map("تحويل للخزنة")
+
+  @@map("classification_type")
+}
+
+model Item {
+  id             Int                 @id @default(autoincrement())
+  name           String              @unique @db.VarChar(255)
+  nature         NatureType?
+  classification ClassificationType?
+  unitType       String?             @map("unit_type") @db.VarChar(50)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz
+
+  transactions        Transaction[]
+  pendingTransactions PendingTransaction[]
+
+  @@map("items")
+}
+
+// =============================================
+// العملات (Currencies)
+// =============================================
+enum CurrencyCode {
+  USD @map("USD")
+  TRY @map("TRY")
+  EGP @map("EGP")
+
+  @@map("currency_code")
+}
+
+model ExchangeRate {
+  id        Int          @id @default(autoincrement())
+  currency  CurrencyCode
+  rate      Decimal      @db.Decimal(10, 6)
+  validDate DateTime     @map("valid_date") @db.Date
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([currency, validDate])
+  @@map("exchange_rates")
+}
+
+// =============================================
+// الحركات المالية (Transactions - القلب)
+// =============================================
+enum MovementType {
+  DEBIT  @map("مدين استحقاق")
+  CREDIT @map("دائن دفعة")
+
+  @@map("movement_type")
+}
+
+enum PaymentMethod {
+  CASH          @map("نقدي")
+  BANK_TRANSFER @map("تحويل بنكي")
+  CHECK         @map("شيك")
+  CARD          @map("بطاقة")
+  OTHER         @map("أخرى")
+
+  @@map("payment_method_type")
+}
+
+enum PaymentTerm {
+  IMMEDIATE    @map("فوري")
+  AFTER_DELIVERY @map("بعد التسليم")
+  CUSTOM_DATE  @map("تاريخ مخصص")
+
+  @@map("payment_term_type")
+}
+
+enum PaymentStatus {
+  PAID    @map("مدفوع بالكامل")
+  PENDING @map("معلق")
+  IN_PROCESS @map("عملية دفع/تحصيل")
+
+  @@map("payment_status_type")
+}
+
+model Transaction {
+  id               Int                @id @default(autoincrement())
+  transactionDate  DateTime           @map("transaction_date") @db.Date
+  nature           NatureType
+  classification   ClassificationType
+  projectId        Int?               @map("project_id")
+  itemId           Int?               @map("item_id")
+  details          String?            @db.Text
+  partyId          Int?               @map("party_id")
+  amount           Decimal            @db.Decimal(14, 2)
+  currency         CurrencyCode       @default(USD)
+  exchangeRate     Decimal            @default(1.0) @map("exchange_rate") @db.Decimal(10, 6)
+  amountUsd        Decimal?           @map("amount_usd") @db.Decimal(14, 2)
+  movementType     MovementType       @map("movement_type")
+  referenceNumber  String?            @map("reference_number") @db.VarChar(100)
+  paymentMethod    PaymentMethod?     @map("payment_method")
+  paymentTerm      PaymentTerm?       @default(IMMEDIATE) @map("payment_term")
+  paymentTermWeeks Int?               @map("payment_term_weeks")
+  paymentTermDate  DateTime?          @map("payment_term_date") @db.Date
+  dueDate          DateTime?          @map("due_date") @db.Date
+  paymentStatus    PaymentStatus      @default(PENDING) @map("payment_status")
+  month            String?            @db.VarChar(7)
+  notes            String?            @db.Text
+  attachmentUrl    String?            @map("attachment_url") @db.Text
+  unitCount        Int?               @map("unit_count")
+  source           String             @default("manual") @db.VarChar(50)
+  createdById      Int?               @map("created_by")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  project   Project? @relation(fields: [projectId], references: [id])
+  item      Item?    @relation(fields: [itemId], references: [id])
+  party     Party?   @relation(fields: [partyId], references: [id])
+  createdBy User?    @relation("TransactionCreator", fields: [createdById], references: [id])
+
+  pendingTransaction PendingTransaction?
+
+  @@index([transactionDate])
+  @@index([projectId])
+  @@index([partyId])
+  @@index([nature])
+  @@index([month])
+  @@index([paymentStatus])
+  @@index([dueDate])
+  @@map("transactions")
+}
+
+// =============================================
+// المستخدمون (Users)
+// =============================================
+model User {
+  id                  Int       @id @default(autoincrement())
+  name                String    @db.VarChar(255)
+  email               String?   @db.VarChar(255)
+  phone               String?   @db.VarChar(30)
+  telegramUsername    String?   @map("telegram_username") @db.VarChar(255)
+  telegramChatId     BigInt?   @unique @map("telegram_chat_id")
+  permTraditionalBot Boolean   @default(false) @map("perm_traditional_bot")
+  permAiBot          Boolean   @default(false) @map("perm_ai_bot")
+  permSheet          Boolean   @default(false) @map("perm_sheet")
+  permReview         Boolean   @default(false) @map("perm_review")
+  permAdmin          Boolean   @default(false) @map("perm_admin")
+  isActive           Boolean   @default(true) @map("is_active")
+  passwordHash       String?   @map("password_hash") @db.VarChar(255)
+  lastLogin          DateTime? @map("last_login") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  createdTransactions  Transaction[]        @relation("TransactionCreator")
+  submittedPending     PendingTransaction[] @relation("PendingSubmitter")
+  reviewedPending      PendingTransaction[] @relation("PendingReviewer")
+  submittedParties     PendingParty[]       @relation("PartySubmitter")
+  reviewedParties      PendingParty[]       @relation("PartyReviewer")
+  activityLogs         ActivityLog[]
+  conversationState    ConversationState?
+  rejectedTransactions RejectedTransaction[]
+
+  @@index([telegramChatId])
+  @@index([telegramUsername])
+  @@map("users")
+}
+
+// =============================================
+// حركات البوت المعلقة (Pending Transactions)
+// =============================================
+enum ReviewStatus {
+  PENDING      @map("قيد الانتظار")
+  APPROVED     @map("معتمد")
+  REJECTED     @map("مرفوض")
+  NEEDS_EDIT   @map("يحتاج تعديل")
+
+  @@map("review_status")
+}
+
+model PendingTransaction {
+  id               Int                @id @default(autoincrement())
+  transactionDate  DateTime?          @map("transaction_date") @db.Date
+  nature           NatureType?
+  classification   ClassificationType?
+  projectId        Int?               @map("project_id")
+  itemId           Int?               @map("item_id")
+  details          String?            @db.Text
+  partyId          Int?               @map("party_id")
+  partyNameRaw     String?            @map("party_name_raw") @db.VarChar(255)
+  amount           Decimal?           @db.Decimal(14, 2)
+  currency         CurrencyCode?      @default(USD)
+  exchangeRate     Decimal?           @default(1.0) @map("exchange_rate") @db.Decimal(10, 6)
+  amountUsd        Decimal?           @map("amount_usd") @db.Decimal(14, 2)
+  movementType     MovementType?      @map("movement_type")
+  paymentMethod    PaymentMethod?     @map("payment_method")
+  paymentTerm      PaymentTerm?       @map("payment_term")
+  paymentTermWeeks Int?               @map("payment_term_weeks")
+  paymentTermDate  DateTime?          @map("payment_term_date") @db.Date
+  dueDate          DateTime?          @map("due_date") @db.Date
+  paymentStatus    PaymentStatus?     @map("payment_status")
+  notes            String?            @db.Text
+  unitCount        Int?               @map("unit_count")
+  // حقول المراجعة
+  reviewStatus     ReviewStatus       @default(PENDING) @map("review_status")
+  submittedById    Int?               @map("submitted_by")
+  submittedAt      DateTime           @default(now()) @map("submitted_at") @db.Timestamptz
+  reviewedById     Int?               @map("reviewed_by")
+  reviewedAt       DateTime?          @map("reviewed_at") @db.Timestamptz
+  reviewNotes      String?            @map("review_notes") @db.Text
+  attachmentUrl    String?            @map("attachment_url") @db.Text
+  isNewParty       Boolean            @default(false) @map("is_new_party")
+  source           String             @default("telegram_bot") @db.VarChar(50)
+  // ربط بالحركة المعتمدة
+  approvedTransactionId Int?          @unique @map("approved_transaction_id")
+
+  project              Project?     @relation(fields: [projectId], references: [id])
+  item                 Item?        @relation(fields: [itemId], references: [id])
+  party                Party?       @relation(fields: [partyId], references: [id])
+  submittedBy          User?        @relation("PendingSubmitter", fields: [submittedById], references: [id])
+  reviewedBy           User?        @relation("PendingReviewer", fields: [reviewedById], references: [id])
+  approvedTransaction  Transaction? @relation(fields: [approvedTransactionId], references: [id])
+
+  @@index([reviewStatus])
+  @@index([submittedById])
+  @@map("pending_transactions")
+}
+
+// =============================================
+// أطراف البوت المعلقة (Pending Parties)
+// =============================================
+model PendingParty {
+  id               Int          @id @default(autoincrement())
+  name             String       @db.VarChar(255)
+  type             PartyType
+  specialization   String?      @db.VarChar(255)
+  phone            String?      @db.VarChar(30)
+  email            String?      @db.VarChar(255)
+  city             String?      @db.VarChar(100)
+  preferredPayment String?      @map("preferred_payment") @db.VarChar(100)
+  bankDetails      String?      @map("bank_details") @db.Text
+  notes            String?      @db.Text
+  reviewStatus     ReviewStatus @default(PENDING) @map("review_status")
+  submittedById    Int?         @map("submitted_by")
+  submittedAt      DateTime     @default(now()) @map("submitted_at") @db.Timestamptz
+  reviewedById     Int?         @map("reviewed_by")
+  reviewedAt       DateTime?    @map("reviewed_at") @db.Timestamptz
+  reviewNotes      String?      @map("review_notes") @db.Text
+  approvedPartyId  Int?         @map("approved_party_id")
+
+  submittedBy   User?  @relation("PartySubmitter", fields: [submittedById], references: [id])
+  reviewedBy    User?  @relation("PartyReviewer", fields: [reviewedById], references: [id])
+  approvedParty Party? @relation(fields: [approvedPartyId], references: [id])
+
+  @@map("pending_parties")
+}
+
+// =============================================
+// حالات المحادثة (Conversation States)
+// =============================================
+model ConversationState {
+  userId        Int      @id @map("user_id")
+  botType       String   @map("bot_type") @db.VarChar(20)
+  state         String   @default("idle") @db.VarChar(100)
+  context       Json     @default("{}")
+  lastMessageId BigInt?  @map("last_message_id")
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("conversation_states")
+}
+
+// =============================================
+// الموازنات (Budgets)
+// =============================================
+model Budget {
+  id        Int          @id @default(autoincrement())
+  projectId Int          @map("project_id")
+  itemName  String?      @map("item_name") @db.VarChar(255)
+  amount    Decimal      @db.Decimal(14, 2)
+  currency  CurrencyCode @default(USD)
+  notes     String?      @db.Text
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+  @@map("budgets")
+}
+
+// =============================================
+// سجل النشاط (Activity Log)
+// =============================================
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  action     String   @db.VarChar(100)
+  entityType String?  @map("entity_type") @db.VarChar(50)
+  entityId   Int?     @map("entity_id")
+  details    Json?
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([userId])
+  @@map("activity_log")
+}
+
+// =============================================
+// أرشيف المرفوضات (Rejected Transactions)
+// =============================================
+model RejectedTransaction {
+  id                    Int      @id @default(autoincrement())
+  pendingTransactionId  Int?     @map("pending_transaction_id")
+  data                  Json
+  rejectedById          Int?     @map("rejected_by")
+  rejectedAt            DateTime @default(now()) @map("rejected_at") @db.Timestamptz
+  rejectionReason       String?  @map("rejection_reason") @db.Text
+
+  rejectedBy User? @relation(fields: [rejectedById], references: [id])
+
+  @@map("rejected_transactions")
+}
