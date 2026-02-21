@@ -6152,34 +6152,53 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const partyData = getPartyData_(ss, partyName, partyType);
 
   // ═══════════════════════════════════════════════════════════
-  // العنوان الرئيسي
+  // الترويسة الرسمية (Letterhead) - مثل الفاتورة
   // ═══════════════════════════════════════════════════════════
-  sheet.getRange('A1:H1').merge();
-  sheet.getRange('A1')
-    .setValue('📊 ' + titlePrefix)
-    .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
-    .setFontColor(CONFIG.COLORS.TEXT.WHITE)
+  sheet.setRowHeight(1, 30);
+  sheet.setRowHeight(2, 22);
+  sheet.setRowHeight(3, 22);
+
+  // صف 1: اسم الشركة + منطقة اللوجو في H
+  sheet.getRange('A1:G1').merge()
+    .setValue('START SCENE MEDIA PRODUKSIYON LIMITED')
+    .setFontSize(13)
     .setFontWeight('bold')
-    .setFontSize(15)
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
+
+  // صف 2: العنوان
+  sheet.getRange('A2:G2').merge()
+    .setValue('212 My Office - Office No177 - Istanbul - Bagcilar')
+    .setFontSize(10)
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
+
+  // صف 3: البريد والموقع
+  sheet.getRange('A3:G3').merge()
+    .setValue('Finance@seenfilm.net  |  www.seenfilm.net')
+    .setFontSize(10)
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
+
+  // اللوجو في H1:H3 (مدمج)
+  sheet.getRange('H1:H3').merge()
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
   // ═══════════════════════════════════════════════════════════
-  // إضافة اللوجو (5 طرق: CellCopy → Blob → DriveApp → UrlFetchApp → IMAGE)
+  // إضافة اللوجو في عمود H (5 طرق)
   // ═══════════════════════════════════════════════════════════
-  let logoRowOffset = 0;
   let logoInserted = false;
 
   if (hasCellImage || logoBlob || logoFileId || logoOriginalUrl) {
-    sheet.setRowHeight(2, 80);
 
-    // الطريقة الأولى: نسخ CellImage مباشرة من خلية المصدر (الأكثر موثوقية)
+    // الطريقة الأولى: نسخ CellImage مباشرة من خلية المصدر
     if (hasCellImage && logoSourceRange && !logoInserted) {
       try {
-        Logger.log('🖼️ Method CellCopy: Direct CellImage copy from D2');
-        logoSourceRange.copyTo(sheet.getRange('C2'), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+        Logger.log('🖼️ Method CellCopy: Direct CellImage copy from D2 to H1');
+        logoSourceRange.copyTo(sheet.getRange('H1'), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
         logoInserted = true;
-        Logger.log('✅ Method CellCopy SUCCESS: CellImage copied directly');
+        Logger.log('✅ Method CellCopy SUCCESS');
       } catch (e) {
         Logger.log('⚠️ Method CellCopy FAILED: ' + e.message);
       }
@@ -6189,75 +6208,69 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     if (logoBlob && !logoInserted) {
       try {
         Logger.log('🖼️ Method 0: Direct blob insert');
-        const image = sheet.insertImage(logoBlob, 3, 2);
+        const image = sheet.insertImage(logoBlob, 8, 1);
         image.setWidth(70);
         image.setHeight(70);
         logoInserted = true;
-        Logger.log('✅ Method 0 SUCCESS: Logo inserted from blob');
+        Logger.log('✅ Method 0 SUCCESS');
       } catch (e) {
         Logger.log('⚠️ Method 0 FAILED: ' + e.message);
       }
     }
 
-    // الطريقة 1: DriveApp (بدون تحذيرات)
+    // الطريقة 1: DriveApp
     if (logoFileId && !logoInserted) {
       try {
         Logger.log('🖼️ Method 1: DriveApp.getFileById(' + logoFileId + ')');
         const file = DriveApp.getFileById(logoFileId);
         const blob = file.getBlob();
-        const image = sheet.insertImage(blob, 3, 2);
+        const image = sheet.insertImage(blob, 8, 1);
         image.setWidth(70);
         image.setHeight(70);
         logoInserted = true;
-        Logger.log('✅ Method 1 SUCCESS: Logo inserted via DriveApp');
+        Logger.log('✅ Method 1 SUCCESS');
       } catch (e) {
         Logger.log('⚠️ Method 1 FAILED: ' + e.message);
       }
     }
 
-    // الطريقة 2: UrlFetchApp + رابط lh3 (الأكثر توافقاً)
+    // الطريقة 2a: UrlFetchApp + رابط lh3
     if (logoFileId && !logoInserted) {
       try {
         const lh3Url = 'https://lh3.googleusercontent.com/d/' + logoFileId;
         Logger.log('🖼️ Method 2a: UrlFetchApp.fetch(' + lh3Url + ')');
         const response = UrlFetchApp.fetch(lh3Url, { muteHttpExceptions: true, followRedirects: true });
-        const code = response.getResponseCode();
-        Logger.log('🖼️ Method 2a status: ' + code);
-        if (code === 200) {
-          const blob = response.getBlob();
-          const image = sheet.insertImage(blob, 3, 2);
+        if (response.getResponseCode() === 200) {
+          const image = sheet.insertImage(response.getBlob(), 8, 1);
           image.setWidth(70);
           image.setHeight(70);
           logoInserted = true;
-          Logger.log('✅ Method 2a SUCCESS: Logo inserted via lh3 URL');
+          Logger.log('✅ Method 2a SUCCESS');
         }
       } catch (e) {
         Logger.log('⚠️ Method 2a FAILED: ' + e.message);
       }
     }
 
-    // الطريقة 2b: UrlFetchApp + رابط uc?export=view (احتياطي)
+    // الطريقة 2b: UrlFetchApp + رابط uc?export=view
     if (logoFileId && !logoInserted) {
       try {
         const directUrl = 'https://drive.google.com/uc?export=view&id=' + logoFileId;
         Logger.log('🖼️ Method 2b: UrlFetchApp.fetch(' + directUrl + ')');
         const response = UrlFetchApp.fetch(directUrl, { muteHttpExceptions: true, followRedirects: true });
-        const code = response.getResponseCode();
-        Logger.log('🖼️ Method 2b status: ' + code);
-        if (code === 200) {
-          const blob = response.getBlob();
-          const image = sheet.insertImage(blob, 3, 2);
+        if (response.getResponseCode() === 200) {
+          const image = sheet.insertImage(response.getBlob(), 8, 1);
           image.setWidth(70);
           image.setHeight(70);
           logoInserted = true;
-          Logger.log('✅ Method 2b SUCCESS: Logo inserted via uc URL');
+          Logger.log('✅ Method 2b SUCCESS');
         }
       } catch (e) {
         Logger.log('⚠️ Method 2b FAILED: ' + e.message);
       }
     }
 
-    // الطريقة 3: IMAGE formula مع رابط lh3 (أفضل توافق مع Google Sheets)
+    // الطريقة 3: IMAGE formula
     if (!logoInserted) {
       try {
         const imgUrl = logoFileId
@@ -6265,7 +6278,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
           : logoOriginalUrl;
         if (imgUrl) {
           Logger.log('🖼️ Method 3: IMAGE formula with ' + imgUrl);
-          sheet.getRange('C2').setFormula('=IMAGE("' + imgUrl + '", 2)');
+          sheet.getRange('H1').setFormula('=IMAGE("' + imgUrl + '", 2)');
           logoInserted = true;
           Logger.log('✅ Method 3: Logo set via IMAGE formula');
         }
@@ -6273,18 +6286,30 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
         Logger.log('⚠️ Method 3 FAILED: ' + e.message);
       }
     }
-
-    logoRowOffset = logoInserted ? 1 : 0;
-    if (!logoInserted) {
-      sheet.setRowHeight(2, 21);
-    }
   }
 
   // ═══════════════════════════════════════════════════════════
-  // كارت بيانات الطرف (ديناميكي حسب وجود اللوجو)
+  // فاصل + عنوان الكشف
   // ═══════════════════════════════════════════════════════════
-  const cardHeaderRow = 3 + logoRowOffset;
-  const cardDataStartRow = cardHeaderRow + 1;
+  sheet.setRowHeight(4, 6);
+  sheet.getRange('A4:H4').merge()
+    .setBackground(CONFIG.COLORS.HEADER.DASHBOARD);
+
+  sheet.getRange('A5:H5').merge();
+  sheet.getRange('A5')
+    .setValue('📊 ' + titlePrefix)
+    .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
+    .setFontColor(CONFIG.COLORS.TEXT.WHITE)
+    .setFontWeight('bold')
+    .setFontSize(15)
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
+
+  // ═══════════════════════════════════════════════════════════
+  // كارت بيانات الطرف
+  // ═══════════════════════════════════════════════════════════
+  const cardHeaderRow = 6;
+  const cardDataStartRow = 7;
 
   sheet.getRange('A' + cardHeaderRow + ':H' + cardHeaderRow).merge()
     .setValue('بيانات ' + partyType)
@@ -6486,7 +6511,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // الملخص المالي (ديناميكي حسب وجود اللوجو)
+  // الملخص المالي (ثابت)
   // ═══════════════════════════════════════════════════════════
   const summaryHeaderRow = cardDataStartRow + 5;
   const summaryDataStartRow = summaryHeaderRow + 1;
@@ -6520,7 +6545,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   );
 
   // ═══════════════════════════════════════════════════════════
-  // رأس جدول الحركات (ديناميكي حسب وجود اللوجو)
+  // رأس جدول الحركات (ثابت)
   // ═══════════════════════════════════════════════════════════
   const tableHeaderRow = summaryDataStartRow + 3;
   const headers = [
@@ -6542,7 +6567,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setHorizontalAlignment('center');
 
   // ═══════════════════════════════════════════════════════════
-  // بيانات الحركات (ديناميكي حسب وجود اللوجو)
+  // بيانات الحركات (ثابت)
   // ═══════════════════════════════════════════════════════════
   const dataStartRow = tableHeaderRow + 1;
 
@@ -6569,7 +6594,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   sheet.setFrozenRows(tableHeaderRow);
 
   // ═══════════════════════════════════════════════════════════
-  // التذييل (ديناميكي حسب وجود اللوجو)
+  // التذييل
   // ═══════════════════════════════════════════════════════════
   const footerStart = dataStartRow + Math.max(rows.length, 1) + 3;
 
@@ -6578,8 +6603,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
   sheet.getRange(footerStart + 1, 1, 3, 8).merge()
     .setValue(
-      "Seen Film\n" +
-      "info@seenfilm.net | www.seenfilm.net\n" +
+      "START SCENE MEDIA PRODUKSIYON LIMITED\n" +
+      "Finance@seenfilm.net | www.seenfilm.net\n" +
       "تاريخ الإنشاء: " + new Date().toLocaleDateString('ar-EG')
     )
     .setHorizontalAlignment('center')
