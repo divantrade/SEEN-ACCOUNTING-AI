@@ -6646,7 +6646,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setBackground('#f8f9fa')
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle')
-    .setFontSize(8)
+    .setFontSize(9)
     .setFontColor('#9e9e9e');
 
   // تفعيل الشيت

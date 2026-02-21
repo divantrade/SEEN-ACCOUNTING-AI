@@ -793,7 +793,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     sheet.getRange('A' + creditRow + ':G' + creditRow).merge()
         .setValue('Accounting by aldewan.net  •  Developed by KodLab.ai')
         .setHorizontalAlignment('center')
-        .setFontSize(8)
+        .setFontSize(9)
         .setFontColor('#9e9e9e');
 
     // ⭐ مهم جداً: flush لضمان كتابة البيانات قبل التصدير
