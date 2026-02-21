@@ -6631,12 +6631,10 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   sheet.getRange(footerStart, 1, 1, 8).merge()
     .setBackground('#1a237e');
 
-  sheet.getRange(footerStart + 1, 1, 3, 8).merge()
-    .setValue(
-      "START SCENE MEDIA PRODUKSIYON LIMITED\n" +
-      "212 My Office - Office No177 - Istanbul - Bagcilar\n" +
-      "Finance@seenfilm.net | www.seenfilm.net"
-    )
+  const now = new Date();
+  const reportDate = Utilities.formatDate(now, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+  sheet.getRange(footerStart + 1, 1, 1, 8).merge()
+    .setValue('تاريخ التقرير: ' + reportDate + '  |  حقوق النظام محفوظة لـ ديوان للحسابات aldewan.net')
     .setBackground('#f8f9fa')
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle')
