@@ -5988,10 +5988,9 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // جلب لوجو الشركة من قاعدة بيانات البنود (D2)
-  // يدعم روابط Google Drive العادية ويحولها لروابط مباشرة
+  // جلب File ID للوجو الشركة من قاعدة بيانات البنود (D2)
   // ═══════════════════════════════════════════════════════════
-  let companyLogo = '';
+  let logoFileId = '';
   try {
     const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
     if (itemsSheet) {
@@ -6003,23 +6002,16 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
         if (formulaMatch) logoUrl = formulaMatch[1];
       }
 
-      // استخراج File ID من روابط Google Drive وتحويلها لرابط عرض مباشر
-      if (logoUrl && logoUrl.includes('drive.google.com/file/d/')) {
-        const match = logoUrl.match(/\/file\/d\/([^\/\?]+)/);
-        if (match && match[1]) {
-          logoUrl = 'https://lh3.googleusercontent.com/d/' + match[1];
-        }
-      } else if (logoUrl && logoUrl.includes('drive.google.com/uc?id=')) {
-        const idMatch = logoUrl.match(/uc\?id=([^&]+)/);
-        if (idMatch && idMatch[1]) {
-          logoUrl = 'https://lh3.googleusercontent.com/d/' + idMatch[1];
+      // استخراج File ID من أي صيغة رابط Google Drive
+      if (logoUrl) {
+        const fileIdMatch = logoUrl.match(/\/file\/d\/([^\/\?]+)/) ||
+                            logoUrl.match(/[?&]id=([^&]+)/) ||
+                            logoUrl.match(/\/d\/([^\/\?]+)/);
+        if (fileIdMatch && fileIdMatch[1]) {
+          logoFileId = fileIdMatch[1];
         }
       }
-
-      if (logoUrl && !logoUrl.includes('/folders/')) {
-        companyLogo = logoUrl;
-      }
-      Logger.log('🖼️ Company logo URL: ' + (companyLogo ? companyLogo : 'Not found'));
+      Logger.log('🖼️ Logo file ID: ' + (logoFileId || 'Not found'));
     }
   } catch (e) {
     Logger.log('⚠️ Could not get company logo: ' + e.message);
@@ -6094,15 +6086,19 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setVerticalAlignment('middle');
 
   // ═══════════════════════════════════════════════════════════
-  // إضافة اللوجو باستخدام دالة IMAGE (لا تحتاج صلاحيات DriveApp)
+  // إضافة اللوجو من Google Drive (باستخدام DriveApp + insertImage)
   // ═══════════════════════════════════════════════════════════
   let logoRowOffset = 0;
-  if (companyLogo) {
+  if (logoFileId) {
     try {
+      const file = DriveApp.getFileById(logoFileId);
+      const blob = file.getBlob();
       sheet.setRowHeight(2, 80);
-      sheet.getRange('C2').setFormula('=IMAGE("' + companyLogo + '", 2)');
+      const image = sheet.insertImage(blob, 3, 2); // العمود C، الصف 2
+      image.setWidth(70);
+      image.setHeight(70);
       logoRowOffset = 1;
-      Logger.log('✅ Logo inserted via IMAGE formula: ' + companyLogo);
+      Logger.log('✅ Logo inserted from Drive: ' + logoFileId);
     } catch (e) {
       Logger.log('⚠️ Could not insert logo: ' + e.message);
       logoRowOffset = 0;
