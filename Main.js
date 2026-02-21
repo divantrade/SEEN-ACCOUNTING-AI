@@ -6160,13 +6160,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   sheet.setRowHeight(2, 35);
   sheet.setRowHeight(3, 30);
 
-  // خلفية الترويسة
-  sheet.getRange('A1:H3').setBackground('#ffffff');
-
-  // منطقة اللوجو: G1:H3 مدمجة (260px عرض × 110px ارتفاع)
-  sheet.getRange('G1:H3').merge()
-    .setHorizontalAlignment('center')
-    .setVerticalAlignment('middle');
+  // خلفية رمادية فاتحة للترويسة
+  sheet.getRange('A1:H3').setBackground('#f8f9fa');
 
   // صف 1: اسم الشركة
   sheet.getRange('A1:F1').merge()
@@ -6200,9 +6195,17 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   );
 
   // ═══════════════════════════════════════════════════════════
-  // إضافة اللوجو في G1:H3 (5 طرق متتالية)
+  // إضافة اللوجو في G1:H3 مدمجة (5 طرق متتالية)
   // ═══════════════════════════════════════════════════════════
   let logoInserted = false;
+
+  // دالة مساعدة: تضمن دمج G1:H3 وتنسيقها بعد إدراج اللوجو
+  function ensureLogoMerge_() {
+    sheet.getRange('G1:H3').merge()
+      .setBackground('#f8f9fa')
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle');
+  }
 
   if (hasCellImage || logoBlob || logoFileId || logoOriginalUrl) {
 
@@ -6210,8 +6213,9 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     if (hasCellImage && logoSourceRange && !logoInserted) {
       try {
         Logger.log('🖼️ Method CellCopy: Direct CellImage copy from D2 to G1');
+        // copyTo بتلغي الدمج لأنها بتنقل تنسيق المصدر، فلازم ندمج بعدها
         logoSourceRange.copyTo(sheet.getRange('G1'), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
-        sheet.getRange('G1:H3').setBackground('#ffffff');
+        ensureLogoMerge_();
         logoInserted = true;
         Logger.log('✅ Method CellCopy SUCCESS');
       } catch (e) {
@@ -6223,6 +6227,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     if (logoBlob && !logoInserted) {
       try {
         Logger.log('🖼️ Method 0: Direct blob insert');
+        ensureLogoMerge_();
         const image = sheet.insertImage(logoBlob, 7, 1);
         image.setWidth(140);
         image.setHeight(100);
@@ -6237,6 +6242,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     if (logoFileId && !logoInserted) {
       try {
         Logger.log('🖼️ Method 1: DriveApp.getFileById(' + logoFileId + ')');
+        ensureLogoMerge_();
         const file = DriveApp.getFileById(logoFileId);
         const blob = file.getBlob();
         const image = sheet.insertImage(blob, 7, 1);
@@ -6256,6 +6262,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
         Logger.log('🖼️ Method 2a: fetch ' + lh3Url);
         const response = UrlFetchApp.fetch(lh3Url, { muteHttpExceptions: true, followRedirects: true });
         if (response.getResponseCode() === 200) {
+          ensureLogoMerge_();
           const image = sheet.insertImage(response.getBlob(), 7, 1);
           image.setWidth(140);
           image.setHeight(100);
@@ -6274,6 +6281,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
         Logger.log('🖼️ Method 2b: fetch ' + directUrl);
         const response = UrlFetchApp.fetch(directUrl, { muteHttpExceptions: true, followRedirects: true });
         if (response.getResponseCode() === 200) {
+          ensureLogoMerge_();
           const image = sheet.insertImage(response.getBlob(), 7, 1);
           image.setWidth(140);
           image.setHeight(100);
@@ -6285,7 +6293,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
       }
     }
 
-    // الطريقة 3: IMAGE formula (تملأ الخلية تلقائياً)
+    // الطريقة 3: IMAGE formula (تملأ الخلية المدمجة تلقائياً)
     if (!logoInserted) {
       try {
         const imgUrl = logoFileId
@@ -6293,6 +6301,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
           : logoOriginalUrl;
         if (imgUrl) {
           Logger.log('🖼️ Method 3: IMAGE formula');
+          ensureLogoMerge_();
           sheet.getRange('G1').setFormula('=IMAGE("' + imgUrl + '", 2)');
           logoInserted = true;
           Logger.log('✅ Method 3 SUCCESS');
@@ -6301,6 +6310,11 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
         Logger.log('⚠️ Method 3 FAILED: ' + e.message);
       }
     }
+  }
+
+  // ضمان دمج G1:H3 حتى لو مفيش لوجو
+  if (!logoInserted) {
+    ensureLogoMerge_();
   }
 
   // ═══════════════════════════════════════════════════════════
