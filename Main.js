@@ -5988,43 +5988,61 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // جلب رابط لوجو الشركة من قاعدة بيانات البنود (D2)
+  // جلب بيانات لوجو الشركة من قاعدة بيانات البنود (D2)
   // ═══════════════════════════════════════════════════════════
-  let logoDirectUrl = '';
+  let logoFileId = '';
+  let logoOriginalUrl = '';
   try {
     const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
     if (itemsSheet) {
-      // محاولة قراءة الرابط من القيمة أولاً، ثم من المعادلة (IMAGE formula)
+      // الخطوة 1: قراءة القيمة النصية من D2
       let logoUrl = String(itemsSheet.getRange('D2').getValue() || '').trim();
-      Logger.log('🖼️ D2 getValue: "' + logoUrl + '"');
+      Logger.log('🖼️ [1] D2 getValue: [' + logoUrl + ']');
 
-      // إذا القيمة فارغة (مثل IMAGE formula)، نقرأ المعادلة
+      // الخطوة 2: إذا فارغة، نقرأ المعادلة (IMAGE formula)
       if (!logoUrl) {
         const formula = itemsSheet.getRange('D2').getFormula() || '';
-        Logger.log('🖼️ D2 formula: "' + formula + '"');
+        Logger.log('🖼️ [2] D2 getFormula: [' + formula + ']');
         const formulaMatch = formula.match(/IMAGE\s*\(\s*"([^"]+)"/i);
-        if (formulaMatch) logoUrl = formulaMatch[1];
-      }
-
-      Logger.log('🖼️ Logo URL extracted: "' + logoUrl + '"');
-
-      if (logoUrl) {
-        // استخراج File ID من أي صيغة رابط Google Drive
-        const fileIdMatch = logoUrl.match(/\/file\/d\/([^\/\?]+)/) ||
-                            logoUrl.match(/[?&]id=([^&]+)/) ||
-                            logoUrl.match(/\/d\/([^\/\?]+)/);
-        if (fileIdMatch && fileIdMatch[1]) {
-          // تحويل لرابط تنزيل مباشر
-          logoDirectUrl = 'https://drive.google.com/uc?export=view&id=' + fileIdMatch[1];
-        } else if (logoUrl.startsWith('http')) {
-          // إذا الرابط ليس Drive، نستخدمه كما هو
-          logoDirectUrl = logoUrl;
+        if (formulaMatch) {
+          logoUrl = formulaMatch[1];
+          Logger.log('🖼️ [2] URL from IMAGE formula: [' + logoUrl + ']');
         }
       }
-      Logger.log('🖼️ Logo direct URL: ' + (logoDirectUrl || 'Not found'));
+
+      // الخطوة 3: إذا لا زالت فارغة، نفحص خلايا أخرى (C2, E2, B2)
+      if (!logoUrl) {
+        const fallbackCells = ['C2', 'E2', 'B2'];
+        for (const cell of fallbackCells) {
+          let val = String(itemsSheet.getRange(cell).getValue() || '').trim();
+          if (!val) {
+            const f = itemsSheet.getRange(cell).getFormula() || '';
+            const fm = f.match(/IMAGE\s*\(\s*"([^"]+)"/i);
+            if (fm) val = fm[1];
+          }
+          if (val && val.includes('http')) {
+            logoUrl = val;
+            Logger.log('🖼️ [3] Found logo in ' + cell + ': [' + logoUrl + ']');
+            break;
+          }
+        }
+      }
+
+      logoOriginalUrl = logoUrl;
+      Logger.log('🖼️ [4] Final logoUrl: [' + logoUrl + ']');
+
+      // استخراج File ID
+      if (logoUrl) {
+        const m = logoUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+                  logoUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
+                  logoUrl.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/) ||
+                  logoUrl.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+        if (m) logoFileId = m[1];
+      }
+      Logger.log('🖼️ [5] logoFileId: [' + logoFileId + ']');
     }
   } catch (e) {
-    Logger.log('⚠️ Could not get company logo: ' + e.message);
+    Logger.log('⚠️ Logo extraction error: ' + e.message);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -6096,29 +6114,70 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setVerticalAlignment('middle');
 
   // ═══════════════════════════════════════════════════════════
-  // إضافة اللوجو (UrlFetchApp → blob → insertImage، بدون صلاحية DriveApp)
+  // إضافة اللوجو (3 طرق: DriveApp → UrlFetchApp → IMAGE formula)
   // ═══════════════════════════════════════════════════════════
   let logoRowOffset = 0;
-  if (logoDirectUrl) {
-    try {
-      const response = UrlFetchApp.fetch(logoDirectUrl, { muteHttpExceptions: true });
-      const responseCode = response.getResponseCode();
-      Logger.log('🖼️ Logo fetch status: ' + responseCode);
+  let logoInserted = false;
 
-      if (responseCode === 200) {
-        const blob = response.getBlob();
-        sheet.setRowHeight(2, 80);
-        const image = sheet.insertImage(blob, 3, 2); // العمود C، الصف 2
+  if (logoFileId || logoOriginalUrl) {
+    sheet.setRowHeight(2, 80);
+
+    // الطريقة 1: DriveApp (الأفضل - بدون تحذيرات)
+    if (logoFileId && !logoInserted) {
+      try {
+        Logger.log('🖼️ Method 1: DriveApp.getFileById(' + logoFileId + ')');
+        const file = DriveApp.getFileById(logoFileId);
+        const blob = file.getBlob();
+        const image = sheet.insertImage(blob, 3, 2);
         image.setWidth(70);
         image.setHeight(70);
-        logoRowOffset = 1;
-        Logger.log('✅ Logo inserted successfully');
-      } else {
-        Logger.log('⚠️ Logo fetch failed with status: ' + responseCode);
+        logoInserted = true;
+        Logger.log('✅ Method 1 SUCCESS: Logo inserted via DriveApp');
+      } catch (e) {
+        Logger.log('⚠️ Method 1 FAILED: ' + e.message);
       }
-    } catch (e) {
-      Logger.log('⚠️ Could not insert logo: ' + e.message);
-      logoRowOffset = 0;
+    }
+
+    // الطريقة 2: UrlFetchApp مع lh3 URL (للملفات المفتوحة)
+    if (logoFileId && !logoInserted) {
+      try {
+        const lh3Url = 'https://lh3.googleusercontent.com/d/' + logoFileId;
+        Logger.log('🖼️ Method 2: UrlFetchApp.fetch(' + lh3Url + ')');
+        const response = UrlFetchApp.fetch(lh3Url, { muteHttpExceptions: true, followRedirects: true });
+        const code = response.getResponseCode();
+        const contentType = response.getHeaders()['Content-Type'] || '';
+        Logger.log('🖼️ Method 2 status: ' + code + ', type: ' + contentType);
+        if (code === 200 && contentType.indexOf('image') !== -1) {
+          const blob = response.getBlob();
+          const image = sheet.insertImage(blob, 3, 2);
+          image.setWidth(70);
+          image.setHeight(70);
+          logoInserted = true;
+          Logger.log('✅ Method 2 SUCCESS: Logo inserted via UrlFetchApp+lh3');
+        }
+      } catch (e) {
+        Logger.log('⚠️ Method 2 FAILED: ' + e.message);
+      }
+    }
+
+    // الطريقة 3: IMAGE formula (آخر حل)
+    if (!logoInserted && logoOriginalUrl) {
+      try {
+        const imgUrl = logoFileId
+          ? 'https://lh3.googleusercontent.com/d/' + logoFileId
+          : logoOriginalUrl;
+        Logger.log('🖼️ Method 3: IMAGE formula with ' + imgUrl);
+        sheet.getRange('C2').setFormula('=IMAGE("' + imgUrl + '", 2)');
+        logoInserted = true;
+        Logger.log('✅ Method 3: Logo set via IMAGE formula');
+      } catch (e) {
+        Logger.log('⚠️ Method 3 FAILED: ' + e.message);
+      }
+    }
+
+    logoRowOffset = logoInserted ? 1 : 0;
+    if (!logoInserted) {
+      sheet.setRowHeight(2, 21); // إرجاع الارتفاع الطبيعي
     }
   }
 
