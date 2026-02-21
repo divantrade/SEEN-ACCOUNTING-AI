@@ -6634,12 +6634,20 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const now = new Date();
   const reportDate = Utilities.formatDate(now, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
   sheet.getRange(footerStart + 1, 1, 1, 8).merge()
-    .setValue('تاريخ التقرير: ' + reportDate + '  |  حقوق النظام محفوظة لـ ديوان للحسابات aldewan.net')
+    .setValue('تاريخ التقرير: ' + reportDate)
     .setBackground('#f8f9fa')
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle')
     .setFontSize(9)
     .setFontColor('#424242');
+
+  sheet.getRange(footerStart + 2, 1, 1, 8).merge()
+    .setValue('Accounting by aldewan.net  •  Developed by KodLab.ai')
+    .setBackground('#f8f9fa')
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setFontSize(8)
+    .setFontColor('#9e9e9e');
 
   // تفعيل الشيت
   ss.setActiveSheet(sheet);

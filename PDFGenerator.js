@@ -782,11 +782,19 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // تذييل التقرير
     // ═══════════════════════════════════════════════════════════
     const footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
+    const reportDateStr = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm');
     sheet.getRange('A' + footerRow + ':G' + footerRow).merge()
-        .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm') + ' | حقوق النظام محفوظة لـ ديوان للحسابات aldewan.net')
+        .setValue('تاريخ التقرير: ' + reportDateStr)
         .setHorizontalAlignment('center')
         .setFontSize(9)
         .setFontColor('#757575');
+
+    const creditRow = footerRow + 1;
+    sheet.getRange('A' + creditRow + ':G' + creditRow).merge()
+        .setValue('Accounting by aldewan.net  •  Developed by KodLab.ai')
+        .setHorizontalAlignment('center')
+        .setFontSize(8)
+        .setFontColor('#9e9e9e');
 
     // ⭐ مهم جداً: flush لضمان كتابة البيانات قبل التصدير
     SpreadsheetApp.flush();
