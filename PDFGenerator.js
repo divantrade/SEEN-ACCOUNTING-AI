@@ -510,6 +510,100 @@ function generateStatementForBot_(ss, partyName, partyType) {
     const partyData = getPartyData_(ss, partyName, partyType);
 
     // ═══════════════════════════════════════════════════════════
+    // جلب بيانات لوجو الشركة من قاعدة بيانات البنود (D2)
+    // ═══════════════════════════════════════════════════════════
+    let logoBlob = null;
+    let logoFileId = '';
+    let logoOriginalUrl = '';
+    let hasCellImage = false;
+    let logoSourceRange = null;
+    try {
+        const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
+        if (itemsSheet) {
+            const d2Range = itemsSheet.getRange('D2');
+            const d2Value = d2Range.getValue();
+            const d2Type = typeof d2Value;
+            let logoUrl = '';
+
+            // الحالة 1: CellImage (صورة مدرجة داخل الخلية)
+            if (d2Value && d2Type === 'object') {
+                hasCellImage = true;
+                logoSourceRange = d2Range;
+                try {
+                    if (typeof d2Value.getContentUrl === 'function') {
+                        logoUrl = d2Value.getContentUrl() || '';
+                    }
+                    if (!logoUrl && typeof d2Value.getUrl === 'function') {
+                        logoUrl = d2Value.getUrl() || '';
+                    }
+                } catch (imgErr) {
+                    Logger.log('🖼️ CellImage read error: ' + imgErr.message);
+                }
+            }
+
+            // الحالة 2: نص عادي (URL مباشر)
+            if (!logoUrl && d2Value && d2Type === 'string') {
+                logoUrl = String(d2Value).trim();
+            }
+
+            // الحالة 3: معادلة IMAGE
+            if (!logoUrl) {
+                const formula = d2Range.getFormula() || '';
+                const formulaMatch = formula.match(/IMAGE\s*\(\s*"([^"]+)"/i);
+                if (formulaMatch) {
+                    logoUrl = formulaMatch[1];
+                }
+            }
+
+            // الحالة 4: صورة عائمة فوق الخلايا (OverGridImage)
+            if (!logoUrl && !logoBlob) {
+                try {
+                    const images = itemsSheet.getImages();
+                    if (images.length > 0) {
+                        logoBlob = images[0].getBlob();
+                    }
+                } catch (imgErr) {
+                    Logger.log('🖼️ getImages error: ' + imgErr.message);
+                }
+            }
+
+            // الحالة 5: البحث عن رابط اللوجو في الخلايا المجاورة (احتياطي)
+            if (!logoUrl && !logoBlob) {
+                try {
+                    const lastCol = Math.min(itemsSheet.getLastColumn(), 10);
+                    if (lastCol >= 5) {
+                        const searchRange = itemsSheet.getRange(1, 5, Math.min(itemsSheet.getLastRow(), 5), lastCol - 4);
+                        const searchValues = searchRange.getValues();
+                        for (let r = 0; r < searchValues.length && !logoUrl; r++) {
+                            for (let c = 0; c < searchValues[r].length && !logoUrl; c++) {
+                                const val = String(searchValues[r][c] || '').trim();
+                                if (val && (val.includes('drive.google.com/file/d/') || val.includes('googleusercontent.com/d/'))) {
+                                    logoUrl = val;
+                                }
+                            }
+                        }
+                    }
+                } catch (searchErr) {
+                    Logger.log('🖼️ Nearby cell search error: ' + searchErr.message);
+                }
+            }
+
+            logoOriginalUrl = logoUrl;
+
+            // استخراج File ID من URL
+            if (logoUrl) {
+                const m = logoUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+                          logoUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
+                          logoUrl.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/) ||
+                          logoUrl.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+                if (m) logoFileId = m[1];
+            }
+        }
+    } catch (e) {
+        Logger.log('⚠️ Logo extraction error: ' + e.message);
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // تحديد عنوان الكشف ولون التبويب حسب نوع الطرف
     // ═══════════════════════════════════════════════════════════
     let titlePrefix = 'كشف حساب';
@@ -541,7 +635,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     sheet.setRightToLeft(true);
 
     // ═══════════════════════════════════════════════════════════
-    // عرض الأعمدة (7 أعمدة - مع تاريخ الاستحقاق)
+    // عرض الأعمدة (8 أعمدة - مع تاريخ الاستحقاق + عمود اللوجو)
     // ═══════════════════════════════════════════════════════════
     sheet.setColumnWidth(1, 100);  // تاريخ التسجيل
     sheet.setColumnWidth(2, 100);  // تاريخ الاستحقاق
@@ -550,34 +644,161 @@ function generateStatementForBot_(ss, partyName, partyType) {
     sheet.setColumnWidth(5, 110);  // مدين
     sheet.setColumnWidth(6, 110);  // دائن
     sheet.setColumnWidth(7, 110);  // الرصيد
+    sheet.setColumnWidth(8, 80);   // عمود اللوجو
 
     // ═══════════════════════════════════════════════════════════
     // Header الشركة في أعلى التقرير
     // ═══════════════════════════════════════════════════════════
+    // ارتفاع الصفوف لمنطقة اللوجو
+    sheet.setRowHeight(1, 45);
+    sheet.setRowHeight(2, 35);
+    sheet.setRowHeight(3, 30);
+
+    // خلفية رمادية فاتحة للترويسة
+    sheet.getRange('A1:H3').setBackground('#f8f9fa');
+
     // صف 1: اسم الشركة (بولد، خط كبير)
-    sheet.getRange('A1:G1').merge();
+    sheet.getRange('A1:F1').merge();
     sheet.getRange('A1')
         .setValue('START SCENE MEDIA PRODUKSIYON LIMITED')
         .setFontWeight('bold')
         .setFontSize(14)
+        .setFontColor('#1a237e')
         .setHorizontalAlignment('center')
-        .setVerticalAlignment('middle');
+        .setVerticalAlignment('bottom');
 
     // صف 2: العنوان
-    sheet.getRange('A2:G2').merge();
+    sheet.getRange('A2:F2').merge();
     sheet.getRange('A2')
         .setValue('212 My Office - Office No177 - Istanbul - Bagcilar')
         .setFontSize(10)
+        .setFontColor('#555555')
         .setHorizontalAlignment('center')
         .setVerticalAlignment('middle');
 
     // صف 3: البريد والموقع
-    sheet.getRange('A3:G3').merge();
+    sheet.getRange('A3:F3').merge();
     sheet.getRange('A3')
         .setValue('Finance@seenfilm.net  |  www.seenfilm.net')
         .setFontSize(10)
+        .setFontColor('#555555')
         .setHorizontalAlignment('center')
-        .setVerticalAlignment('middle');
+        .setVerticalAlignment('top');
+
+    // خط فاصل سفلي للترويسة
+    sheet.getRange('A3:H3').setBorder(
+        false, false, true, false, false, false,
+        '#1a237e', SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+    );
+
+    // ═══════════════════════════════════════════════════════════
+    // إضافة اللوجو في G1:H3 مدمجة
+    // ═══════════════════════════════════════════════════════════
+    let logoInserted = false;
+
+    function ensureLogoMerge_() {
+        sheet.getRange('G1:H3').merge()
+            .setBackground('#f8f9fa')
+            .setHorizontalAlignment('center')
+            .setVerticalAlignment('middle');
+    }
+
+    if (hasCellImage || logoBlob || logoFileId || logoOriginalUrl) {
+
+        // الطريقة الأولى: نسخ CellImage مباشرة من خلية المصدر
+        if (hasCellImage && logoSourceRange && !logoInserted) {
+            try {
+                logoSourceRange.copyTo(sheet.getRange('G1'), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+                ensureLogoMerge_();
+                logoInserted = true;
+            } catch (e) {
+                Logger.log('⚠️ Method CellCopy FAILED: ' + e.message);
+            }
+        }
+
+        // الطريقة 0: blob مباشر (من OverGridImage)
+        if (logoBlob && !logoInserted) {
+            try {
+                ensureLogoMerge_();
+                const image = sheet.insertImage(logoBlob, 7, 1);
+                image.setWidth(140);
+                image.setHeight(100);
+                logoInserted = true;
+            } catch (e) {
+                Logger.log('⚠️ Method 0 FAILED: ' + e.message);
+            }
+        }
+
+        // الطريقة 1: DriveApp
+        if (logoFileId && !logoInserted) {
+            try {
+                ensureLogoMerge_();
+                const file = DriveApp.getFileById(logoFileId);
+                const blob = file.getBlob();
+                const image = sheet.insertImage(blob, 7, 1);
+                image.setWidth(140);
+                image.setHeight(100);
+                logoInserted = true;
+            } catch (e) {
+                Logger.log('⚠️ Method 1 FAILED: ' + e.message);
+            }
+        }
+
+        // الطريقة 2a: UrlFetchApp + رابط lh3
+        if (logoFileId && !logoInserted) {
+            try {
+                const lh3Url = 'https://lh3.googleusercontent.com/d/' + logoFileId;
+                const response = UrlFetchApp.fetch(lh3Url, { muteHttpExceptions: true, followRedirects: true });
+                if (response.getResponseCode() === 200) {
+                    ensureLogoMerge_();
+                    const image = sheet.insertImage(response.getBlob(), 7, 1);
+                    image.setWidth(140);
+                    image.setHeight(100);
+                    logoInserted = true;
+                }
+            } catch (e) {
+                Logger.log('⚠️ Method 2a FAILED: ' + e.message);
+            }
+        }
+
+        // الطريقة 2b: UrlFetchApp + رابط uc?export=view
+        if (logoFileId && !logoInserted) {
+            try {
+                const directUrl = 'https://drive.google.com/uc?export=view&id=' + logoFileId;
+                const response = UrlFetchApp.fetch(directUrl, { muteHttpExceptions: true, followRedirects: true });
+                if (response.getResponseCode() === 200) {
+                    ensureLogoMerge_();
+                    const image = sheet.insertImage(response.getBlob(), 7, 1);
+                    image.setWidth(140);
+                    image.setHeight(100);
+                    logoInserted = true;
+                }
+            } catch (e) {
+                Logger.log('⚠️ Method 2b FAILED: ' + e.message);
+            }
+        }
+
+        // الطريقة 3: IMAGE formula
+        if (!logoInserted) {
+            try {
+                const imgUrl = logoFileId
+                    ? 'https://lh3.googleusercontent.com/d/' + logoFileId
+                    : logoOriginalUrl;
+                if (imgUrl) {
+                    ensureLogoMerge_();
+                    sheet.getRange('G1').setFormula('=IMAGE("' + imgUrl + '", 2)');
+                    logoInserted = true;
+                }
+            } catch (e) {
+                Logger.log('⚠️ Method 3 FAILED: ' + e.message);
+            }
+        }
+    }
+
+    // ضمان دمج G1:H3 حتى لو مفيش لوجو
+    if (!logoInserted) {
+        ensureLogoMerge_();
+    }
 
     // صف 4: فاصل
     sheet.setRowHeight(4, 10);
@@ -585,7 +806,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // ═══════════════════════════════════════════════════════════
     // العنوان الرئيسي (كشف مورد/عميل/ممول)
     // ═══════════════════════════════════════════════════════════
-    sheet.getRange('A5:G5').merge();
+    sheet.getRange('A5:H5').merge();
     sheet.getRange('A5')
         .setValue(titlePrefix)
         .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
@@ -601,34 +822,34 @@ function generateStatementForBot_(ss, partyName, partyType) {
     const cardHeaderRow = 7;
     const cardDataStartRow = cardHeaderRow + 1;
 
-    sheet.getRange('A' + cardHeaderRow + ':G' + cardHeaderRow).merge()
+    sheet.getRange('A' + cardHeaderRow + ':H' + cardHeaderRow).merge()
         .setValue('بيانات ' + partyType)
         .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
         .setFontColor(CONFIG.COLORS.TEXT.WHITE)
         .setFontWeight('bold')
         .setHorizontalAlignment('center');
 
-    sheet.getRange('A' + cardDataStartRow + ':G' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+    sheet.getRange('A' + cardDataStartRow + ':H' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
     sheet.getRange('A' + cardDataStartRow).setValue('الاسم:').setFontWeight('bold');
     sheet.getRange('B' + cardDataStartRow + ':C' + cardDataStartRow).merge().setValue(partyName);
 
     sheet.getRange('E' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
-    sheet.getRange('F' + cardDataStartRow + ':G' + cardDataStartRow).merge().setValue(partyData.specialization || '');
+    sheet.getRange('F' + cardDataStartRow + ':H' + cardDataStartRow).merge().setValue(partyData.specialization || '');
 
     sheet.getRange('A' + (cardDataStartRow + 1)).setValue('الهاتف:').setFontWeight('bold');
     sheet.getRange('B' + (cardDataStartRow + 1) + ':C' + (cardDataStartRow + 1)).merge().setValue(partyData.phone || '');
 
     sheet.getRange('E' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
-    sheet.getRange('F' + (cardDataStartRow + 1) + ':G' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
+    sheet.getRange('F' + (cardDataStartRow + 1) + ':H' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
 
     sheet.getRange('A' + (cardDataStartRow + 2)).setValue('البنك:').setFontWeight('bold');
-    sheet.getRange('B' + (cardDataStartRow + 2) + ':G' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
+    sheet.getRange('B' + (cardDataStartRow + 2) + ':H' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
 
     sheet.getRange('A' + (cardDataStartRow + 3)).setValue('ملاحظات:').setFontWeight('bold');
-    sheet.getRange('B' + (cardDataStartRow + 3) + ':G' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
+    sheet.getRange('B' + (cardDataStartRow + 3) + ':H' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
 
-    sheet.getRange('A' + cardDataStartRow + ':G' + (cardDataStartRow + 3)).setBorder(
+    sheet.getRange('A' + cardDataStartRow + ':H' + (cardDataStartRow + 3)).setBorder(
         true, true, true, true, true, true,
         '#1565c0', SpreadsheetApp.BorderStyle.SOLID
     );
@@ -704,14 +925,14 @@ function generateStatementForBot_(ss, partyName, partyType) {
     const summaryHeaderRow = cardDataStartRow + 5;
     const summaryDataStartRow = summaryHeaderRow + 1;
 
-    sheet.getRange('A' + summaryHeaderRow + ':G' + summaryHeaderRow).merge()
+    sheet.getRange('A' + summaryHeaderRow + ':H' + summaryHeaderRow).merge()
         .setValue('الملخص المالي')
         .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
         .setFontColor(CONFIG.COLORS.TEXT.WHITE)
         .setFontWeight('bold')
         .setHorizontalAlignment('center');
 
-    sheet.getRange('A' + summaryDataStartRow + ':G' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
+    sheet.getRange('A' + summaryDataStartRow + ':H' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
 
     sheet.getRange('A' + summaryDataStartRow).setValue('إجمالي المدين:').setFontWeight('bold');
     sheet.getRange('B' + summaryDataStartRow).setValue(totalDebit).setNumberFormat('$#,##0.00');
@@ -727,7 +948,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     sheet.getRange('E' + (summaryDataStartRow + 1)).setValue('عدد الحركات:').setFontWeight('bold');
     sheet.getRange('F' + (summaryDataStartRow + 1)).setValue(rows.length);
 
-    sheet.getRange('A' + summaryDataStartRow + ':G' + (summaryDataStartRow + 1)).setBorder(
+    sheet.getRange('A' + summaryDataStartRow + ':H' + (summaryDataStartRow + 1)).setBorder(
         true, true, true, true, true, true,
         '#1565c0', SpreadsheetApp.BorderStyle.SOLID
     );
@@ -783,14 +1004,14 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // ═══════════════════════════════════════════════════════════
     const footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
     const reportDateStr = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm');
-    sheet.getRange('A' + footerRow + ':G' + footerRow).merge()
+    sheet.getRange('A' + footerRow + ':H' + footerRow).merge()
         .setValue('تاريخ التقرير: ' + reportDateStr)
         .setHorizontalAlignment('center')
         .setFontSize(9)
         .setFontColor('#757575');
 
     const creditRow = footerRow + 1;
-    sheet.getRange('A' + creditRow + ':G' + creditRow).merge()
+    sheet.getRange('A' + creditRow + ':H' + creditRow).merge()
         .setValue('Accounting by aldewan.net  •  Developed by KodLab.ai')
         .setHorizontalAlignment('center')
         .setFontSize(9)
