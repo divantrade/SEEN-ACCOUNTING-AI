@@ -5988,30 +5988,40 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // جلب File ID للوجو الشركة من قاعدة بيانات البنود (D2)
+  // جلب رابط لوجو الشركة من قاعدة بيانات البنود (D2)
   // ═══════════════════════════════════════════════════════════
-  let logoFileId = '';
+  let logoDirectUrl = '';
   try {
     const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
     if (itemsSheet) {
       // محاولة قراءة الرابط من القيمة أولاً، ثم من المعادلة (IMAGE formula)
       let logoUrl = String(itemsSheet.getRange('D2').getValue() || '').trim();
+      Logger.log('🖼️ D2 getValue: "' + logoUrl + '"');
+
+      // إذا القيمة فارغة (مثل IMAGE formula)، نقرأ المعادلة
       if (!logoUrl) {
         const formula = itemsSheet.getRange('D2').getFormula() || '';
+        Logger.log('🖼️ D2 formula: "' + formula + '"');
         const formulaMatch = formula.match(/IMAGE\s*\(\s*"([^"]+)"/i);
         if (formulaMatch) logoUrl = formulaMatch[1];
       }
 
-      // استخراج File ID من أي صيغة رابط Google Drive
+      Logger.log('🖼️ Logo URL extracted: "' + logoUrl + '"');
+
       if (logoUrl) {
+        // استخراج File ID من أي صيغة رابط Google Drive
         const fileIdMatch = logoUrl.match(/\/file\/d\/([^\/\?]+)/) ||
                             logoUrl.match(/[?&]id=([^&]+)/) ||
                             logoUrl.match(/\/d\/([^\/\?]+)/);
         if (fileIdMatch && fileIdMatch[1]) {
-          logoFileId = fileIdMatch[1];
+          // تحويل لرابط تنزيل مباشر
+          logoDirectUrl = 'https://drive.google.com/uc?export=view&id=' + fileIdMatch[1];
+        } else if (logoUrl.startsWith('http')) {
+          // إذا الرابط ليس Drive، نستخدمه كما هو
+          logoDirectUrl = logoUrl;
         }
       }
-      Logger.log('🖼️ Logo file ID: ' + (logoFileId || 'Not found'));
+      Logger.log('🖼️ Logo direct URL: ' + (logoDirectUrl || 'Not found'));
     }
   } catch (e) {
     Logger.log('⚠️ Could not get company logo: ' + e.message);
@@ -6086,19 +6096,26 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setVerticalAlignment('middle');
 
   // ═══════════════════════════════════════════════════════════
-  // إضافة اللوجو من Google Drive (باستخدام DriveApp + insertImage)
+  // إضافة اللوجو (UrlFetchApp → blob → insertImage، بدون صلاحية DriveApp)
   // ═══════════════════════════════════════════════════════════
   let logoRowOffset = 0;
-  if (logoFileId) {
+  if (logoDirectUrl) {
     try {
-      const file = DriveApp.getFileById(logoFileId);
-      const blob = file.getBlob();
-      sheet.setRowHeight(2, 80);
-      const image = sheet.insertImage(blob, 3, 2); // العمود C، الصف 2
-      image.setWidth(70);
-      image.setHeight(70);
-      logoRowOffset = 1;
-      Logger.log('✅ Logo inserted from Drive: ' + logoFileId);
+      const response = UrlFetchApp.fetch(logoDirectUrl, { muteHttpExceptions: true });
+      const responseCode = response.getResponseCode();
+      Logger.log('🖼️ Logo fetch status: ' + responseCode);
+
+      if (responseCode === 200) {
+        const blob = response.getBlob();
+        sheet.setRowHeight(2, 80);
+        const image = sheet.insertImage(blob, 3, 2); // العمود C، الصف 2
+        image.setWidth(70);
+        image.setHeight(70);
+        logoRowOffset = 1;
+        Logger.log('✅ Logo inserted successfully');
+      } else {
+        Logger.log('⚠️ Logo fetch failed with status: ' + responseCode);
+      }
     } catch (e) {
       Logger.log('⚠️ Could not insert logo: ' + e.message);
       logoRowOffset = 0;
