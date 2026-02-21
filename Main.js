@@ -6154,15 +6154,19 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   // ═══════════════════════════════════════════════════════════
   // الترويسة الرسمية (Letterhead) - مثل الفاتورة
   // ═══════════════════════════════════════════════════════════
-  sheet.setRowHeight(1, 30);
-  sheet.setRowHeight(2, 22);
-  sheet.setRowHeight(3, 22);
+  sheet.setRowHeight(1, 36);
+  sheet.setRowHeight(2, 24);
+  sheet.setRowHeight(3, 24);
 
-  // صف 1: اسم الشركة + منطقة اللوجو في H
+  // خلفية الترويسة (صفوف 1-3)
+  sheet.getRange('A1:H3').setBackground('#f8f9fa');
+
+  // صف 1: اسم الشركة
   sheet.getRange('A1:G1').merge()
     .setValue('START SCENE MEDIA PRODUKSIYON LIMITED')
-    .setFontSize(13)
+    .setFontSize(14)
     .setFontWeight('bold')
+    .setFontColor('#1a237e')
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
@@ -6170,6 +6174,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   sheet.getRange('A2:G2').merge()
     .setValue('212 My Office - Office No177 - Istanbul - Bagcilar')
     .setFontSize(10)
+    .setFontColor('#424242')
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
@@ -6177,10 +6182,17 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   sheet.getRange('A3:G3').merge()
     .setValue('Finance@seenfilm.net  |  www.seenfilm.net')
     .setFontSize(10)
+    .setFontColor('#424242')
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  // اللوجو في H1:H3 (مدمج)
+  // حدود سفلية للترويسة
+  sheet.getRange('A3:H3').setBorder(
+    false, false, true, false, false, false,
+    '#1a237e', SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+  );
+
+  // منطقة اللوجو H1:H3 (مدمجة)
   sheet.getRange('H1:H3').merge()
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
@@ -6197,6 +6209,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
       try {
         Logger.log('🖼️ Method CellCopy: Direct CellImage copy from D2 to H1');
         logoSourceRange.copyTo(sheet.getRange('H1'), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+        // إعادة تطبيق الخلفية بعد النسخ
+        sheet.getRange('H1:H3').setBackground('#f8f9fa');
         logoInserted = true;
         Logger.log('✅ Method CellCopy SUCCESS');
       } catch (e) {
@@ -6207,10 +6221,10 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     // الطريقة 0: blob مباشر (من CellImage أو OverGridImage)
     if (logoBlob && !logoInserted) {
       try {
-        Logger.log('🖼️ Method 0: Direct blob insert');
+        Logger.log('🖼️ Method 0: Direct blob insert at H1');
         const image = sheet.insertImage(logoBlob, 8, 1);
-        image.setWidth(70);
-        image.setHeight(70);
+        image.setWidth(100);
+        image.setHeight(80);
         logoInserted = true;
         Logger.log('✅ Method 0 SUCCESS');
       } catch (e) {
@@ -6225,8 +6239,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
         const file = DriveApp.getFileById(logoFileId);
         const blob = file.getBlob();
         const image = sheet.insertImage(blob, 8, 1);
-        image.setWidth(70);
-        image.setHeight(70);
+        image.setWidth(100);
+        image.setHeight(80);
         logoInserted = true;
         Logger.log('✅ Method 1 SUCCESS');
       } catch (e) {
@@ -6242,8 +6256,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
         const response = UrlFetchApp.fetch(lh3Url, { muteHttpExceptions: true, followRedirects: true });
         if (response.getResponseCode() === 200) {
           const image = sheet.insertImage(response.getBlob(), 8, 1);
-          image.setWidth(70);
-          image.setHeight(70);
+          image.setWidth(100);
+          image.setHeight(80);
           logoInserted = true;
           Logger.log('✅ Method 2a SUCCESS');
         }
@@ -6260,8 +6274,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
         const response = UrlFetchApp.fetch(directUrl, { muteHttpExceptions: true, followRedirects: true });
         if (response.getResponseCode() === 200) {
           const image = sheet.insertImage(response.getBlob(), 8, 1);
-          image.setWidth(70);
-          image.setHeight(70);
+          image.setWidth(100);
+          image.setHeight(80);
           logoInserted = true;
           Logger.log('✅ Method 2b SUCCESS');
         }
@@ -6270,7 +6284,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
       }
     }
 
-    // الطريقة 3: IMAGE formula
+    // الطريقة 3: IMAGE formula (تملأ الخلية تلقائياً)
     if (!logoInserted) {
       try {
         const imgUrl = logoFileId
@@ -6291,10 +6305,11 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   // ═══════════════════════════════════════════════════════════
   // فاصل + عنوان الكشف
   // ═══════════════════════════════════════════════════════════
-  sheet.setRowHeight(4, 6);
+  sheet.setRowHeight(4, 8);
   sheet.getRange('A4:H4').merge()
-    .setBackground(CONFIG.COLORS.HEADER.DASHBOARD);
+    .setBackground('#ffffff');
 
+  sheet.setRowHeight(5, 35);
   sheet.getRange('A5:H5').merge();
   sheet.getRange('A5')
     .setValue('📊 ' + titlePrefix)
@@ -6599,18 +6614,19 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   const footerStart = dataStartRow + Math.max(rows.length, 1) + 3;
 
   sheet.getRange(footerStart, 1, 1, 8).merge()
-    .setBackground(CONFIG.COLORS.HEADER.DASHBOARD);
+    .setBackground('#1a237e');
 
   sheet.getRange(footerStart + 1, 1, 3, 8).merge()
     .setValue(
       "START SCENE MEDIA PRODUKSIYON LIMITED\n" +
-      "Finance@seenfilm.net | www.seenfilm.net\n" +
-      "تاريخ الإنشاء: " + new Date().toLocaleDateString('ar-EG')
+      "212 My Office - Office No177 - Istanbul - Bagcilar\n" +
+      "Finance@seenfilm.net | www.seenfilm.net"
     )
+    .setBackground('#f8f9fa')
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle')
-    .setFontSize(10)
-    .setFontColor(CONFIG.COLORS.TEXT.DARK);
+    .setFontSize(9)
+    .setFontColor('#424242');
 
   // تفعيل الشيت
   ss.setActiveSheet(sheet);
