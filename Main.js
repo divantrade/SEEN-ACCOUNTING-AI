@@ -5989,49 +5989,74 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
   // ═══════════════════════════════════════════════════════════
   // جلب بيانات لوجو الشركة من قاعدة بيانات البنود (D2)
+  // يدعم: CellImage (صورة داخل الخلية) + IMAGE formula + URL نصي
   // ═══════════════════════════════════════════════════════════
-  let logoFileId = '';
-  let logoOriginalUrl = '';
+  let logoBlob = null;    // blob مباشر من CellImage أو OverGridImage
+  let logoFileId = '';     // File ID لجلب الصورة من Drive
+  let logoOriginalUrl = ''; // URL أصلي للاستخدام مع IMAGE formula
   try {
     const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
     if (itemsSheet) {
-      // الخطوة 1: قراءة القيمة النصية من D2
-      let logoUrl = String(itemsSheet.getRange('D2').getValue() || '').trim();
-      Logger.log('🖼️ [1] D2 getValue: [' + logoUrl + ']');
+      const d2Range = itemsSheet.getRange('D2');
+      const d2Value = d2Range.getValue();
+      const d2Type = typeof d2Value;
+      Logger.log('🖼️ [1] D2 type: ' + d2Type + ', value: [' + d2Value + ']');
 
-      // الخطوة 2: إذا فارغة، نقرأ المعادلة (IMAGE formula)
-      if (!logoUrl) {
-        const formula = itemsSheet.getRange('D2').getFormula() || '';
-        Logger.log('🖼️ [2] D2 getFormula: [' + formula + ']');
-        const formulaMatch = formula.match(/IMAGE\s*\(\s*"([^"]+)"/i);
-        if (formulaMatch) {
-          logoUrl = formulaMatch[1];
-          Logger.log('🖼️ [2] URL from IMAGE formula: [' + logoUrl + ']');
+      let logoUrl = '';
+
+      // الحالة 1: CellImage (صورة مدرجة داخل الخلية)
+      if (d2Value && d2Type === 'object') {
+        Logger.log('🖼️ [2] D2 is CellImage object');
+        try {
+          // محاولة قراءة الرابط من CellImage
+          if (typeof d2Value.getContentUrl === 'function') {
+            logoUrl = d2Value.getContentUrl() || '';
+            Logger.log('🖼️ [2a] getContentUrl: [' + logoUrl + ']');
+          }
+          if (!logoUrl && typeof d2Value.getUrl === 'function') {
+            logoUrl = d2Value.getUrl() || '';
+            Logger.log('🖼️ [2b] getUrl: [' + logoUrl + ']');
+          }
+        } catch (imgErr) {
+          Logger.log('🖼️ [2c] CellImage read error: ' + imgErr.message);
         }
       }
 
-      // الخطوة 3: إذا لا زالت فارغة، نفحص خلايا أخرى (C2, E2, B2)
+      // الحالة 2: نص عادي (URL مباشر)
+      if (!logoUrl && d2Value && d2Type === 'string') {
+        logoUrl = String(d2Value).trim();
+        Logger.log('🖼️ [3] D2 is string: [' + logoUrl + ']');
+      }
+
+      // الحالة 3: معادلة IMAGE
       if (!logoUrl) {
-        const fallbackCells = ['C2', 'E2', 'B2'];
-        for (const cell of fallbackCells) {
-          let val = String(itemsSheet.getRange(cell).getValue() || '').trim();
-          if (!val) {
-            const f = itemsSheet.getRange(cell).getFormula() || '';
-            const fm = f.match(/IMAGE\s*\(\s*"([^"]+)"/i);
-            if (fm) val = fm[1];
+        const formula = d2Range.getFormula() || '';
+        Logger.log('🖼️ [4] D2 formula: [' + formula + ']');
+        const formulaMatch = formula.match(/IMAGE\s*\(\s*"([^"]+)"/i);
+        if (formulaMatch) {
+          logoUrl = formulaMatch[1];
+          Logger.log('🖼️ [4] URL from IMAGE formula: [' + logoUrl + ']');
+        }
+      }
+
+      // الحالة 4: صورة عائمة فوق الخلايا (OverGridImage)
+      if (!logoUrl && !logoBlob) {
+        try {
+          const images = itemsSheet.getImages();
+          Logger.log('🖼️ [5] OverGridImages count: ' + images.length);
+          if (images.length > 0) {
+            logoBlob = images[0].getBlob();
+            Logger.log('🖼️ [5] Got blob from OverGridImage');
           }
-          if (val && val.includes('http')) {
-            logoUrl = val;
-            Logger.log('🖼️ [3] Found logo in ' + cell + ': [' + logoUrl + ']');
-            break;
-          }
+        } catch (imgErr) {
+          Logger.log('🖼️ [5] getImages error: ' + imgErr.message);
         }
       }
 
       logoOriginalUrl = logoUrl;
-      Logger.log('🖼️ [4] Final logoUrl: [' + logoUrl + ']');
+      Logger.log('🖼️ [6] Final logoUrl: [' + logoUrl + ']');
 
-      // استخراج File ID
+      // استخراج File ID من URL
       if (logoUrl) {
         const m = logoUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
                   logoUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
@@ -6039,7 +6064,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
                   logoUrl.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
         if (m) logoFileId = m[1];
       }
-      Logger.log('🖼️ [5] logoFileId: [' + logoFileId + ']');
+      Logger.log('🖼️ [7] logoFileId: [' + logoFileId + '], hasBlob: ' + (logoBlob !== null));
     }
   } catch (e) {
     Logger.log('⚠️ Logo extraction error: ' + e.message);
@@ -6114,15 +6139,29 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setVerticalAlignment('middle');
 
   // ═══════════════════════════════════════════════════════════
-  // إضافة اللوجو (3 طرق: DriveApp → UrlFetchApp → IMAGE formula)
+  // إضافة اللوجو (4 طرق: Blob → DriveApp → UrlFetchApp → IMAGE)
   // ═══════════════════════════════════════════════════════════
   let logoRowOffset = 0;
   let logoInserted = false;
 
-  if (logoFileId || logoOriginalUrl) {
+  if (logoBlob || logoFileId || logoOriginalUrl) {
     sheet.setRowHeight(2, 80);
 
-    // الطريقة 1: DriveApp (الأفضل - بدون تحذيرات)
+    // الطريقة 0: blob مباشر (من CellImage أو OverGridImage)
+    if (logoBlob && !logoInserted) {
+      try {
+        Logger.log('🖼️ Method 0: Direct blob insert');
+        const image = sheet.insertImage(logoBlob, 3, 2);
+        image.setWidth(70);
+        image.setHeight(70);
+        logoInserted = true;
+        Logger.log('✅ Method 0 SUCCESS: Logo inserted from blob');
+      } catch (e) {
+        Logger.log('⚠️ Method 0 FAILED: ' + e.message);
+      }
+    }
+
+    // الطريقة 1: DriveApp (بدون تحذيرات)
     if (logoFileId && !logoInserted) {
       try {
         Logger.log('🖼️ Method 1: DriveApp.getFileById(' + logoFileId + ')');
@@ -6138,38 +6177,39 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
       }
     }
 
-    // الطريقة 2: UrlFetchApp مع lh3 URL (للملفات المفتوحة)
+    // الطريقة 2: UrlFetchApp + رابط مباشر (uc?export=view - الطريقة المُجربة)
     if (logoFileId && !logoInserted) {
       try {
-        const lh3Url = 'https://lh3.googleusercontent.com/d/' + logoFileId;
-        Logger.log('🖼️ Method 2: UrlFetchApp.fetch(' + lh3Url + ')');
-        const response = UrlFetchApp.fetch(lh3Url, { muteHttpExceptions: true, followRedirects: true });
+        const directUrl = 'https://drive.google.com/uc?export=view&id=' + logoFileId;
+        Logger.log('🖼️ Method 2: UrlFetchApp.fetch(' + directUrl + ')');
+        const response = UrlFetchApp.fetch(directUrl, { muteHttpExceptions: true, followRedirects: true });
         const code = response.getResponseCode();
-        const contentType = response.getHeaders()['Content-Type'] || '';
-        Logger.log('🖼️ Method 2 status: ' + code + ', type: ' + contentType);
-        if (code === 200 && contentType.indexOf('image') !== -1) {
+        Logger.log('🖼️ Method 2 status: ' + code);
+        if (code === 200) {
           const blob = response.getBlob();
           const image = sheet.insertImage(blob, 3, 2);
           image.setWidth(70);
           image.setHeight(70);
           logoInserted = true;
-          Logger.log('✅ Method 2 SUCCESS: Logo inserted via UrlFetchApp+lh3');
+          Logger.log('✅ Method 2 SUCCESS: Logo inserted via UrlFetchApp');
         }
       } catch (e) {
         Logger.log('⚠️ Method 2 FAILED: ' + e.message);
       }
     }
 
-    // الطريقة 3: IMAGE formula (آخر حل)
-    if (!logoInserted && logoOriginalUrl) {
+    // الطريقة 3: IMAGE formula (نفس طريقة المشروع الناجح)
+    if (!logoInserted) {
       try {
         const imgUrl = logoFileId
-          ? 'https://lh3.googleusercontent.com/d/' + logoFileId
+          ? 'https://drive.google.com/uc?export=view&id=' + logoFileId
           : logoOriginalUrl;
-        Logger.log('🖼️ Method 3: IMAGE formula with ' + imgUrl);
-        sheet.getRange('C2').setFormula('=IMAGE("' + imgUrl + '", 2)');
-        logoInserted = true;
-        Logger.log('✅ Method 3: Logo set via IMAGE formula');
+        if (imgUrl) {
+          Logger.log('🖼️ Method 3: IMAGE formula with ' + imgUrl);
+          sheet.getRange('C2').setFormula('=IMAGE("' + imgUrl + '", 2)');
+          logoInserted = true;
+          Logger.log('✅ Method 3: Logo set via IMAGE formula');
+        }
       } catch (e) {
         Logger.log('⚠️ Method 3 FAILED: ' + e.message);
       }
@@ -6177,7 +6217,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
     logoRowOffset = logoInserted ? 1 : 0;
     if (!logoInserted) {
-      sheet.setRowHeight(2, 21); // إرجاع الارتفاع الطبيعي
+      sheet.setRowHeight(2, 21);
     }
   }
 
