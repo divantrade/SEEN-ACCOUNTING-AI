@@ -6177,32 +6177,53 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
       }
     }
 
-    // الطريقة 2: UrlFetchApp + رابط مباشر (uc?export=view - الطريقة المُجربة)
+    // الطريقة 2: UrlFetchApp + رابط lh3 (الأكثر توافقاً)
     if (logoFileId && !logoInserted) {
       try {
-        const directUrl = 'https://drive.google.com/uc?export=view&id=' + logoFileId;
-        Logger.log('🖼️ Method 2: UrlFetchApp.fetch(' + directUrl + ')');
-        const response = UrlFetchApp.fetch(directUrl, { muteHttpExceptions: true, followRedirects: true });
+        const lh3Url = 'https://lh3.googleusercontent.com/d/' + logoFileId;
+        Logger.log('🖼️ Method 2a: UrlFetchApp.fetch(' + lh3Url + ')');
+        const response = UrlFetchApp.fetch(lh3Url, { muteHttpExceptions: true, followRedirects: true });
         const code = response.getResponseCode();
-        Logger.log('🖼️ Method 2 status: ' + code);
+        Logger.log('🖼️ Method 2a status: ' + code);
         if (code === 200) {
           const blob = response.getBlob();
           const image = sheet.insertImage(blob, 3, 2);
           image.setWidth(70);
           image.setHeight(70);
           logoInserted = true;
-          Logger.log('✅ Method 2 SUCCESS: Logo inserted via UrlFetchApp');
+          Logger.log('✅ Method 2a SUCCESS: Logo inserted via lh3 URL');
         }
       } catch (e) {
-        Logger.log('⚠️ Method 2 FAILED: ' + e.message);
+        Logger.log('⚠️ Method 2a FAILED: ' + e.message);
       }
     }
 
-    // الطريقة 3: IMAGE formula (نفس طريقة المشروع الناجح)
+    // الطريقة 2b: UrlFetchApp + رابط uc?export=view (احتياطي)
+    if (logoFileId && !logoInserted) {
+      try {
+        const directUrl = 'https://drive.google.com/uc?export=view&id=' + logoFileId;
+        Logger.log('🖼️ Method 2b: UrlFetchApp.fetch(' + directUrl + ')');
+        const response = UrlFetchApp.fetch(directUrl, { muteHttpExceptions: true, followRedirects: true });
+        const code = response.getResponseCode();
+        Logger.log('🖼️ Method 2b status: ' + code);
+        if (code === 200) {
+          const blob = response.getBlob();
+          const image = sheet.insertImage(blob, 3, 2);
+          image.setWidth(70);
+          image.setHeight(70);
+          logoInserted = true;
+          Logger.log('✅ Method 2b SUCCESS: Logo inserted via uc URL');
+        }
+      } catch (e) {
+        Logger.log('⚠️ Method 2b FAILED: ' + e.message);
+      }
+    }
+
+    // الطريقة 3: IMAGE formula مع رابط lh3 (أفضل توافق مع Google Sheets)
     if (!logoInserted) {
       try {
         const imgUrl = logoFileId
-          ? 'https://drive.google.com/uc?export=view&id=' + logoFileId
+          ? 'https://lh3.googleusercontent.com/d/' + logoFileId
           : logoOriginalUrl;
         if (imgUrl) {
           Logger.log('🖼️ Method 3: IMAGE formula with ' + imgUrl);
