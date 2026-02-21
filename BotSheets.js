@@ -668,9 +668,8 @@ function addBotTransaction(transactionData) {
  * تحديد نوع الحركة من طبيعتها
  */
 function getMovementType(nature) {
-    const isSettlement = nature.indexOf('تسوية استحقاق مصروف') !== -1 || nature.indexOf('تسوية استحقاق إيراد') !== -1;
-    if (isSettlement) {
-        return CONFIG.MOVEMENT.SETTLEMENT;
+    if (nature.includes('تسوية')) {
+        return CONFIG.MOVEMENT.CREDIT;
     } else if (nature.includes('استحقاق') || nature === 'تمويل') {
         return CONFIG.MOVEMENT.DEBIT;
     } else if (nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استرداد') || nature.includes('استلام')) {
@@ -1230,9 +1229,8 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
         // تحديد نوع الحركة (التسوية أولاً لأنها تحتوي على كلمة "استحقاق")
         const nature = transactionData.nature || '';
         let movementType = '';
-        const isSettlement = nature.indexOf('تسوية استحقاق مصروف') !== -1 || nature.indexOf('تسوية استحقاق إيراد') !== -1;
-        if (isSettlement) {
-            movementType = CONFIG.MOVEMENT.SETTLEMENT;
+        if (nature.includes('تسوية')) {
+            movementType = CONFIG.MOVEMENT.CREDIT;
         } else if (nature.includes('استحقاق') || nature === 'تمويل') {
             movementType = CONFIG.MOVEMENT.DEBIT;
         } else if (nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استرداد') || nature.includes('استلام')) {
