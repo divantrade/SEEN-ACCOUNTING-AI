@@ -862,12 +862,17 @@ function sortTransactionsByDate() {
         } else {
           partyBalances[party] -= amountUsd;
         }
+      } else if (movementKind === 'دائن تسوية') {
+        // ✅ تسوية = تخفيض الرصيد المستحق بدون حركة نقدية
+        partyBalances[party] -= amountUsd;
       }
 
       balance = Math.round(partyBalances[party] * 100) / 100;
 
       if (movementKind === 'دائن دفعة') {
         status = CONFIG.PAYMENT_STATUS.OPERATION;
+      } else if (movementKind === 'دائن تسوية') {
+        status = CONFIG.PAYMENT_STATUS.SETTLEMENT;
       } else if (balance > 0.01) {
         status = CONFIG.PAYMENT_STATUS.PENDING;
       } else {
@@ -1162,7 +1167,7 @@ function createTransactionsSheet(ss) {
   const movementTypeValidation = SpreadsheetApp.newDataValidation()
     .requireValueInList(CONFIG.MOVEMENT.TYPES, true)
     .setAllowInvalid(true)
-    .setHelpText('اختر نوع الحركة: مدين استحقاق أو دائن دفعة')
+    .setHelpText('اختر نوع الحركة: مدين استحقاق أو دائن دفعة أو دائن تسوية')
     .build();
   sheet.getRange(2, 14, lastRow, 1) // N
     .setDataValidation(movementTypeValidation)
@@ -1231,11 +1236,12 @@ function createTransactionsSheet(ss) {
       `IF(OR(L${row}="",L${row}=0),"",J${row}/L${row})))`
     ]);
 
-    // الرصيد O = مجموع (مدين استحقاق - دائن دفعة) لنفس الطرف حتى هذا الصف
+    // الرصيد O = مجموع (مدين استحقاق - دائن دفعة - دائن تسوية) لنفس الطرف حتى هذا الصف
     formulasO.push([
       `=IF(OR(I${row}="",M${row}=""),"",` +
       `SUMIFS($M$2:M${row},$I$2:I${row},I${row},$N$2:N${row},"مدين استحقاق")-` +
-      `SUMIFS($M$2:M${row},$I$2:I${row},I${row},$N$2:N${row},"دائن دفعة"))`
+      `SUMIFS($M$2:M${row},$I$2:I${row},I${row},$N$2:N${row},"دائن دفعة")-` +
+      `SUMIFS($M$2:M${row},$I$2:I${row},I${row},$N$2:N${row},"دائن تسوية"))`
     ]);
 
     // رقم مرجعي P (16) للحركات المدينة
@@ -1262,7 +1268,8 @@ function createTransactionsSheet(ss) {
     formulasV.push([
       `=IF(N${row}="مدين استحقاق",` +
       `IF(O${row}<=0,"مدفوع بالكامل","معلق"),` +
-      `IF(N${row}="دائن دفعة","عملية دفع/تحصيل",""))`
+      `IF(N${row}="دائن دفعة","عملية دفع/تحصيل",` +
+      `IF(N${row}="دائن تسوية","عملية تسوية","")))`
     ]);
 
     // الشهر W (23)
@@ -1297,6 +1304,7 @@ function createTransactionsSheet(ss) {
   sheet.getRange('N1').setNote(
     'نوع الحركة:\n' +
     '• مدين استحقاق = فاتورة/استحقاق على الطرف\n' +
+    '• دائن تسوية = خصم/تسوية تقلل الاستحقاق بدون دفع\n' +
     '• دائن دفعة = دفعة/تحصيل تقلل الرصيد'
   );
 }
@@ -1334,7 +1342,18 @@ function applyConditionalFormatting(sheet, lastRow) {
   );
 
   // ═══════════════════════════════════════════════════════════
-  // 3. دفعة = أزرق فاتح
+  // 3. تسوية = بنفسجي فاتح
+  // ═══════════════════════════════════════════════════════════
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=AND($N2<>"",$N2="دائن تسوية")')
+      .setBackground('#e1bee7')  // بنفسجي فاتح
+      .setRanges([dataRange])
+      .build()
+  );
+
+  // ═══════════════════════════════════════════════════════════
+  // 4. دفعة = أزرق فاتح
   // ═══════════════════════════════════════════════════════════
   rules.push(
     SpreadsheetApp.newConditionalFormatRule()
@@ -1368,6 +1387,7 @@ function refreshTransactionsFormatting() {
     'تم إعادة تطبيق التلوين الشرطي على دفتر الحركات المالية.\n\n' +
     '• 🏦 تمويل (دخول قرض) = أخضر فاتح 🟩\n' +
     '• مدين استحقاق = برتقالي فاتح 🟧\n' +
+    '• دائن تسوية = بنفسجي فاتح 🟪\n' +
     '• دائن دفعة = أزرق فاتح 🟦\n\n' +
     'النطاق: ' + lastRow + ' صف',
     SpreadsheetApp.getUi().ButtonSet.OK
@@ -1536,6 +1556,9 @@ function refreshValueAndBalanceFormulas() {
         } else {
           partyBalances[party] -= amountUsd;
         }
+      } else if (movementKind === 'دائن تسوية') {
+        // ✅ تسوية = تخفيض الرصيد المستحق بدون حركة نقدية
+        partyBalances[party] -= amountUsd;
       }
 
       balance = Math.round(partyBalances[party] * 100) / 100;
@@ -1543,6 +1566,8 @@ function refreshValueAndBalanceFormulas() {
       // حساب حالة السداد (باستخدام CONFIG.PAYMENT_STATUS للتوحيد)
       if (movementKind === 'دائن دفعة') {
         status = CONFIG.PAYMENT_STATUS.OPERATION; // 'عملية دفع/تحصيل'
+      } else if (movementKind === 'دائن تسوية') {
+        status = CONFIG.PAYMENT_STATUS.SETTLEMENT; // 'عملية تسوية'
       } else if (balance > 0.01) {
         status = CONFIG.PAYMENT_STATUS.PENDING; // 'معلق'
       } else {
@@ -1592,7 +1617,7 @@ function refreshValueAndBalanceFormulas() {
     'تم حساب وكتابة القيم (بدون معادلات) في:\n\n' +
     '• M - القيمة بالدولار: المبلغ ÷ سعر الصرف (أو نفسه للدولار)\n' +
     '   ⚠️ إذا كانت العملة غير دولار ولا يوجد سعر صرف = ترك فارغ\n' +
-    '• O - الرصيد: مدين استحقاق - دائن دفعة لكل طرف\n' +
+    '• O - الرصيد: مدين استحقاق - دائن دفعة - دائن تسوية لكل طرف\n' +
     '• U - تاريخ الاستحقاق: حسب نوع شرط الدفع\n' +
     '• V - حالة السداد: معلق / مدفوع بالكامل / عملية دفع/تحصيل\n\n' +
     '⚡ الحسابات تتم تلقائياً عند تعديل البيانات (onEdit)\n\n' +
@@ -1907,12 +1932,16 @@ function createBudgetsSheet(ss) {
   const formulasG = [];  // نسبة التنفيذ
 
   for (let row = 2; row <= 100; row++) {
-    // المبلغ الفعلي = مجموع القيمة بالدولار من دفتر الحركات (مدين استحقاق فقط) (E)
+    // المبلغ الفعلي = مجموع القيمة بالدولار من دفتر الحركات (مدين استحقاق - تسويات) (E)
     formulasE.push([
       `=SUMIFS('دفتر الحركات المالية'!M2:M1000,` +
       `'دفتر الحركات المالية'!E2:E1000,A${row},` +
       `'دفتر الحركات المالية'!G2:G1000,C${row},` +
-      `'دفتر الحركات المالية'!N2:N1000,"مدين استحقاق")`
+      `'دفتر الحركات المالية'!N2:N1000,"مدين استحقاق")` +
+      `-SUMIFS('دفتر الحركات المالية'!M2:M1000,` +
+      `'دفتر الحركات المالية'!E2:E1000,A${row},` +
+      `'دفتر الحركات المالية'!G2:G1000,C${row},` +
+      `'دفتر الحركات المالية'!N2:N1000,"دائن تسوية")`
     ]);
     // الفرق (F)
     formulasF.push([`=IF(D${row}="","",D${row}-E${row})`]);
@@ -2757,11 +2786,12 @@ function generateDueReport() {
     // تحديد نوع الحركة
     const isDebitAccrual = movementKind.indexOf('مدين استحقاق') !== -1;
     const isCreditPayment = movementKind.indexOf('دائن دفعة') !== -1;
+    const isCreditSettlement = movementKind.indexOf('دائن تسوية') !== -1;
 
     // ✅ تأمين مدفوع = دائن دفعة لكن يُعامل كاستحقاق (القناة تدين لنا)
     const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
 
-    if (!isDebitAccrual && !isCreditPayment) continue;
+    if (!isDebitAccrual && !isCreditPayment && !isCreditSettlement) continue;
 
     if (!partyData[party]) {
       partyData[party] = {
@@ -2785,8 +2815,8 @@ function generateDueReport() {
         details: details,
         nature: natureType
       });
-    } else if (isCreditPayment) {
-      // ✅ تجميع الدفعات حسب المشروع
+    } else if (isCreditPayment || isCreditSettlement) {
+      // ✅ تجميع الدفعات والتسويات حسب المشروع (التسوية تُعامل مثل الدفعة في FIFO)
       if (!partyData[party].creditsByProject[projectKey]) {
         partyData[party].creditsByProject[projectKey] = 0;
       }
@@ -3767,10 +3797,15 @@ function showProjectProfitability() {
     const amountUsd = Number(transData[i][12]) || 0;  // M: القيمة بالدولار
 
     const isDebit = movementKind.includes('مدين');
+    const isSettlement = movementKind.includes('دائن تسوية');
 
     // مصروفات مباشرة (استحقاق فقط)
     if (isDebit && amountUsd > 0) {
       directExpenses += amountUsd;
+    }
+    // ✅ التسوية تخفض المصروفات (خصم من الاستحقاق)
+    if (isSettlement && amountUsd > 0 && movementType.includes('مصروف')) {
+      directExpenses -= amountUsd;
     }
   }
 
@@ -4056,10 +4091,16 @@ function generateAllProjectsProfitabilityReport(silent) {
       const natureType = String(transData[t][2] || ''); // طبيعة الحركة (column C)
 
       // فقط استحقاق مصروف - استبعاد الإيرادات والدفعات
-      if (natureType.includes('استحقاق مصروف') && amountUsd > 0) {
+      if (natureType.includes('استحقاق مصروف') && !natureType.includes('تسوية') && amountUsd > 0) {
         if (!item) continue;
         actualExpenses[item] = (actualExpenses[item] || 0) + amountUsd;
         totalActual += amountUsd;
+      }
+      // ✅ تسوية استحقاق مصروف = تخفيض المصروفات الفعلية
+      if (natureType.includes('تسوية استحقاق مصروف') && amountUsd > 0) {
+        if (!item) continue;
+        actualExpenses[item] = (actualExpenses[item] || 0) - amountUsd;
+        totalActual -= amountUsd;
       }
     }
 
@@ -4559,10 +4600,17 @@ function generateSelectedProjectsProfitabilityReport(projectCodes) {
         const amountUsd = Number(transData[t][12]) || 0;
         const natureType = String(transData[t][2] || '');
 
-        if (natureType.includes('استحقاق مصروف') && amountUsd > 0) {
+        if (natureType.includes('استحقاق مصروف') && !natureType.includes('تسوية') && amountUsd > 0) {
           if (!item) continue;
           actualExpenses[item] = (actualExpenses[item] || 0) + amountUsd;
           totalActual += amountUsd;
+        }
+
+        // تسوية استحقاق مصروف - خصم من المصروفات
+        if (natureType.includes('تسوية استحقاق مصروف') && amountUsd > 0) {
+          if (!item) continue;
+          actualExpenses[item] = (actualExpenses[item] || 0) - amountUsd;
+          totalActual -= amountUsd;
         }
       }
 
@@ -4751,7 +4799,7 @@ function showGuide() {
     '   • K: العملة\n' +
     '   • L: سعر الصرف إلى دولار (لو فضلت فاضي = نفس العملة USD)\n' +
     '   • M: القيمة بالدولار (تحسب تلقائياً = J × L)\n' +
-    '   • N: نوع الحركة = "مدين استحقاق" أو "دائن دفعة"\n' +
+    '   • N: نوع الحركة = "مدين استحقاق" أو "دائن دفعة" أو "دائن تسوية"\n' +
     '   • O: الرصيد بالدولار على مستوى الطرف (مجموع المدين - الدائن)\n\n' +
     '2️⃣ طبيعة الحركة (C) وتصنيف الحركة (D):\n' +
     '   • طبيعة الحركة: مثل استحقاق مصروف / دفعة مصروف / استحقاق إيراد / تحصيل إيراد\n' +
@@ -4759,7 +4807,8 @@ function showGuide() {
     '3️⃣ حالة السداد (V):\n' +
     '   • "معلق"      = استحقاق لم يُغلق بالكامل\n' +
     '   • "مدفوع بالكامل" = لا يوجد رصيد مفتوح على الطرف\n' +
-    '   • "عملية دفع/تحصيل" = سطر دفعة/تحصيل فقط\n\n' +
+    '   • "عملية دفع/تحصيل" = سطر دفعة/تحصيل فقط\n' +
+    '   • "عملية تسوية"     = خصم/تسوية من استحقاق سابق\n\n' +
     '4️⃣ التقارير:\n' +
     '   • تقرير ربحية المشروع يعتمد على القيمة بالدولار (M)\n' +
     '   • كشف حساب الطرف يوضح الاستحقاقات والدفعات بالدولار مع المحافظة على بيانات العملة الأصلية في الدفتر\n' +
@@ -6147,6 +6196,10 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     if (movementKind.includes(CONFIG.MOVEMENT.DEBIT) || movementKind.includes('مدين')) {
       debit = amountUsd;
       totalDebit += debit;
+    } else if (movementKind.includes(CONFIG.MOVEMENT.SETTLEMENT) || movementKind.includes('تسوية')) {
+      // ✅ التسوية = دائن (تخفض الرصيد) لكن ليست دفعة نقدية
+      credit = amountUsd;
+      totalCredit += credit;
     } else if (movementKind.includes(CONFIG.MOVEMENT.CREDIT) || movementKind.includes('دائن')) {
       credit = amountUsd;
       totalCredit += credit;
@@ -6498,11 +6551,20 @@ function rebuildProjectDetailReport(silent) {
     // 🔹 أي "استحقاق" (مصروف أو إيراد) يروح في إجمالي المستحق
     // استخدام includes للتعامل مع القيم التي تحتوي على إيموجي
     if (type.includes('استحقاق مصروف') || type.includes('استحقاق إيراد')) {
-      map[key].totalDue += amountUsd;
+      // استبعاد التسوية (تسوية استحقاق مصروف/إيراد)
+      if (!type.includes('تسوية')) {
+        map[key].totalDue += amountUsd;
+      }
     }
 
     // 🔹 أي "دفعة" أو "تحصيل" يروح في المدفوع
     if (type.includes('دفعة مصروف') || type.includes('تحصيل إيراد')) {
+      map[key].totalPaid += amountUsd;
+      if (amountUsd > 0) map[key].payments++;
+    }
+
+    // 🔹 تسوية = تخفيض المستحق (تُعامل مثل الدفعة في الحساب)
+    if (type.includes('تسوية استحقاق مصروف') || type.includes('تسوية استحقاق إيراد')) {
       map[key].totalPaid += amountUsd;
       if (amountUsd > 0) map[key].payments++;
     }
@@ -6588,8 +6650,8 @@ function rebuildVendorSummaryReport(silent) {
     const typeStr = String(type || '');
     const movementStr = String(movementKind || '');
 
-    // فلترة حركات الموردين فقط (استحقاق مصروف أو دفعة مصروف)
-    if (!typeStr.includes('استحقاق مصروف') && !typeStr.includes('دفعة مصروف')) continue;
+    // فلترة حركات الموردين فقط (استحقاق مصروف أو دفعة مصروف أو تسوية استحقاق مصروف)
+    if (!typeStr.includes('استحقاق مصروف') && !typeStr.includes('دفعة مصروف') && !typeStr.includes('تسوية استحقاق مصروف')) continue;
 
     if (!map[vendor]) {
       map[vendor] = {
@@ -6609,6 +6671,10 @@ function rebuildVendorSummaryReport(silent) {
     // استخدام عمود N (نوع الحركة) للحساب - نفس منطق كشف الحساب
     if (movementStr.includes('مدين استحقاق') || movementStr.includes('مدين')) {
       v.totalDebitUsd += amountUsd;
+    } else if (movementStr.includes('دائن تسوية')) {
+      // ✅ التسوية = تخفيض المستحق (دائن بدون حركة نقدية)
+      v.totalCreditUsd += amountUsd;
+      if (amountUsd > 0) v.payments++;
     } else if (movementStr.includes('دائن دفعة') || movementStr.includes('دائن')) {
       v.totalCreditUsd += amountUsd;
       if (amountUsd > 0) v.payments++;
@@ -9211,9 +9277,10 @@ function onEdit(e) {
   // ═══════════════════════════════════════════════════════════
   if (col === 3 && value) {
     const valueStr = String(value);
-    // فقط الاستحقاقات = مدين استحقاق | كل شيء آخر (تمويل/دفعة/تحصيل) = دائن دفعة
-    const isAccrual = valueStr.indexOf('استحقاق') !== -1;
-    const movementType = isAccrual ? 'مدين استحقاق' : 'دائن دفعة';
+    // تسوية = دائن تسوية | استحقاق = مدين استحقاق | كل شيء آخر = دائن دفعة
+    const isSettlement = valueStr.indexOf('تسوية استحقاق') !== -1;
+    const isAccrual = !isSettlement && valueStr.indexOf('استحقاق') !== -1;
+    const movementType = isSettlement ? 'دائن تسوية' : (isAccrual ? 'مدين استحقاق' : 'دائن دفعة');
     sheet.getRange(row, 14).setValue(movementType);
   }
 
@@ -9448,6 +9515,9 @@ function recalculatePartyBalance_(sheet, editedRow) {
         } else {
           partyBalances[rowParty] -= amountUsd;
         }
+      } else if (movementKind === 'دائن تسوية') {
+        // ✅ تسوية = تخفيض الرصيد المستحق بدون حركة نقدية
+        partyBalances[rowParty] -= amountUsd;
       }
 
       balance = Math.round(partyBalances[rowParty] * 100) / 100;
@@ -9455,6 +9525,8 @@ function recalculatePartyBalance_(sheet, editedRow) {
       // حساب حالة السداد (باستخدام CONFIG.PAYMENT_STATUS للتوحيد)
       if (movementKind === 'دائن دفعة') {
         status = CONFIG.PAYMENT_STATUS.OPERATION; // 'عملية دفع/تحصيل'
+      } else if (movementKind === 'دائن تسوية') {
+        status = CONFIG.PAYMENT_STATUS.SETTLEMENT; // 'عملية تسوية'
       } else if (balance > 0.01) {
         status = CONFIG.PAYMENT_STATUS.PENDING; // 'معلق'
       } else {
@@ -9523,8 +9595,10 @@ function applyTransactionsDropdowns() {
       .requireValueInList([
         'استحقاق مصروف',
         'دفعة مصروف',
+        'تسوية استحقاق مصروف',
         'استحقاق إيراد',
         'تحصيل إيراد',
+        'تسوية استحقاق إيراد',
         'تمويل',
         'سداد تمويل',
         'تأمين مدفوع للقناة',
@@ -10536,7 +10610,7 @@ function checkAccrualPaymentBalance() {
 
     if (movementType.indexOf('مدين استحقاق') !== -1) {
       parties[partyName].accruals += amountUsd;
-    } else if (movementType.indexOf('دائن دفعة') !== -1) {
+    } else if (movementType.indexOf('دائن دفعة') !== -1 || movementType.indexOf('دائن تسوية') !== -1) {
       parties[partyName].payments += amountUsd;
     }
   }
@@ -10639,7 +10713,7 @@ function generateAccrualPaymentReport() {
 
     if (movementType.indexOf('مدين استحقاق') !== -1) {
       parties[partyName].accruals += amountUsd;
-    } else if (movementType.indexOf('دائن دفعة') !== -1) {
+    } else if (movementType.indexOf('دائن دفعة') !== -1 || movementType.indexOf('دائن تسوية') !== -1) {
       parties[partyName].payments += amountUsd;
     }
   }
@@ -12105,15 +12179,16 @@ function generateDetailedPayablesReport() {
     if (!partyName || amountUsd <= 0) continue;
 
     // تحديد نوع الحركة
-    const isDebitAccrual = movementType.indexOf('مدين استحقاق') !== -1 || movementType.indexOf('مدين') !== -1;
-    const isCreditPayment = movementType.indexOf('دائن دفعة') !== -1 || movementType.indexOf('دائن') !== -1;
+    const isDebitAccrual = movementType.indexOf('مدين استحقاق') !== -1;
+    const isCreditSettlement = movementType.indexOf('دائن تسوية') !== -1;
+    const isCreditPayment = !isCreditSettlement && (movementType.indexOf('دائن دفعة') !== -1 || movementType.indexOf('دائن') !== -1);
 
     // تضمين حركات التمويل
     const isFinancing = natureType.indexOf('تمويل') !== -1 || natureType.indexOf('سداد تمويل') !== -1;
     // تضمين حركات الإيرادات
     const isRevenue = natureType.indexOf('إيراد') !== -1 || natureType.indexOf('تحصيل') !== -1;
 
-    if (!isDebitAccrual && !isCreditPayment && !isFinancing && !isRevenue) continue;
+    if (!isDebitAccrual && !isCreditPayment && !isCreditSettlement && !isFinancing && !isRevenue) continue;
 
     if (!parties[partyName]) {
       parties[partyName] = {
@@ -12137,6 +12212,9 @@ function generateDetailedPayablesReport() {
     } else if (natureType.indexOf('📈 استحقاق إيراد') !== -1) {
       // استحقاق إيراد = العميل يدين لنا
       debit = amountUsd;
+    } else if (isCreditSettlement) {
+      // ✅ تسوية = تخفيض المستحق (تُعامل كدائن)
+      credit = amountUsd;
     } else if (isDebitAccrual) {
       debit = amountUsd;
     } else if (isCreditPayment) {
@@ -13811,7 +13889,9 @@ function saveTransactionData(formData) {
 
   // تحديد نوع الحركة (N)
   let movementType = '';
-  if (formData.natureType.includes('استحقاق')) {
+  if (formData.natureType.includes('تسوية استحقاق')) {
+    movementType = 'دائن تسوية';
+  } else if (formData.natureType.includes('استحقاق')) {
     movementType = 'مدين استحقاق';
   } else if (formData.natureType.includes('دفعة') || formData.natureType.includes('تحصيل') ||
     formData.natureType.includes('سداد') || formData.natureType.includes('استرداد')) {
@@ -13862,7 +13942,7 @@ function saveTransactionData(formData) {
         if (partyInRow === formData.partyName) {
           if (movementTypeInRow === 'مدين استحقاق') {
             balance += amountUsdInRow;
-          } else if (movementTypeInRow === 'دائن دفعة') {
+          } else if (movementTypeInRow === 'دائن دفعة' || movementTypeInRow === 'دائن تسوية') {
             balance -= amountUsdInRow;
           }
         }
@@ -13871,7 +13951,7 @@ function saveTransactionData(formData) {
     // إضافة الحركة الحالية للرصيد
     if (movementType === 'مدين استحقاق') {
       balance += amountUsd;
-    } else if (movementType === 'دائن دفعة') {
+    } else if (movementType === 'دائن دفعة' || movementType === 'دائن تسوية') {
       balance -= amountUsd;
     }
   }
@@ -13900,6 +13980,8 @@ function saveTransactionData(formData) {
     paymentStatus = balance <= 0 ? 'مدفوع بالكامل' : 'معلق';
   } else if (movementType === 'دائن دفعة') {
     paymentStatus = 'عملية دفع/تحصيل';
+  } else if (movementType === 'دائن تسوية') {
+    paymentStatus = 'عملية تسوية';
   }
 
   // W: الشهر (YYYY-MM)

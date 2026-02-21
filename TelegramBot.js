@@ -1163,6 +1163,9 @@ function startExpenseFlow(chatId, session) {
                     { text: '💸 دفعة مصروف (سداد)', callback_data: 'nature_دفعة مصروف' }
                 ],
                 [
+                    { text: '✂️ تسوية استحقاق مصروف (خصم)', callback_data: 'nature_تسوية استحقاق مصروف' }
+                ],
+                [
                     { text: '❌ إلغاء', callback_data: 'cancel' }
                 ]
             ]
@@ -1192,6 +1195,9 @@ function startRevenueFlow(chatId, session) {
             ],
             [
                 { text: '💰 تحصيل إيراد (استلام)', callback_data: 'nature_تحصيل إيراد' }
+            ],
+            [
+                { text: '✂️ تسوية استحقاق إيراد (خصم)', callback_data: 'nature_تسوية استحقاق إيراد' }
             ],
             [
                 { text: '❌ إلغاء', callback_data: 'cancel' }
@@ -1402,11 +1408,11 @@ function handleCallbackQuery(callbackQuery) {
  * الحصول على لوحة التصنيف المناسبة بناءً على طبيعة الحركة
  */
 function getClassificationKeyboard(nature) {
-    // تصنيفات المصروفات
+    // تصنيفات المصروفات (بما فيها التسوية)
     if (nature.includes('مصروف')) {
         return BOT_CONFIG.KEYBOARDS.CLASSIFICATION_EXPENSE;
     }
-    // تصنيفات الإيرادات
+    // تصنيفات الإيرادات (بما فيها التسوية)
     if (nature.includes('إيراد') || nature.includes('ايراد')) {
         return BOT_CONFIG.KEYBOARDS.CLASSIFICATION_REVENUE;
     }

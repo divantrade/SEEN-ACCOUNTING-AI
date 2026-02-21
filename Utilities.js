@@ -279,6 +279,14 @@ function getMovementTypeFromNature_(natureType) {
     const nature = String(natureType).trim();
 
     // ═══════════════════════════════════════════════════════════
+    // دائن تسوية (خصم/تسوية من استحقاق - بدون حركة نقدية)
+    // ⚠️ يجب فحصه قبل isCredit لأن "تسوية استحقاق مصروف" يحتوي على "مصروف"
+    // ═══════════════════════════════════════════════════════════
+    const isSettlement =
+        nature.indexOf('تسوية استحقاق مصروف') !== -1 ||
+        nature.indexOf('تسوية استحقاق إيراد') !== -1;
+
+    // ═══════════════════════════════════════════════════════════
     // دائن دفعة (دفع/تحصيل/حركة نقدية فعلية)
     // ═══════════════════════════════════════════════════════════
     const isCredit =
@@ -300,8 +308,10 @@ function getMovementTypeFromNature_(natureType) {
          nature.indexOf('سداد تمويل') === -1 &&
          nature.indexOf('استلام تمويل') === -1);         // تمويل فقط (دين علينا)
 
-    // الترتيب مهم: نفحص isCredit أولاً لأن "سداد تمويل" يحتوي على "تمويل"
-    if (isCredit) {
+    // الترتيب مهم: نفحص isSettlement أولاً ثم isCredit لأن "سداد تمويل" يحتوي على "تمويل"
+    if (isSettlement) {
+        return CONFIG.MOVEMENT.SETTLEMENT; // 'دائن تسوية'
+    } else if (isCredit) {
         return CONFIG.MOVEMENT.CREDIT; // 'دائن دفعة'
     } else if (isDebit) {
         return CONFIG.MOVEMENT.DEBIT; // 'مدين استحقاق'
