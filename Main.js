@@ -5994,6 +5994,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
   let logoBlob = null;    // blob مباشر من CellImage أو OverGridImage
   let logoFileId = '';     // File ID لجلب الصورة من Drive
   let logoOriginalUrl = ''; // URL أصلي للاستخدام مع IMAGE formula
+  let hasCellImage = false;   // هل D2 تحتوي CellImage (صورة داخل الخلية)
+  let logoSourceRange = null; // مرجع لخلية المصدر D2 لنسخ CellImage مباشرة
   try {
     const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
     if (itemsSheet) {
@@ -6006,6 +6008,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
       // الحالة 1: CellImage (صورة مدرجة داخل الخلية)
       if (d2Value && d2Type === 'object') {
+        hasCellImage = true;
+        logoSourceRange = d2Range;
         Logger.log('🖼️ [2] D2 is CellImage object');
         try {
           // محاولة قراءة الرابط من CellImage
@@ -6050,6 +6054,28 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
           }
         } catch (imgErr) {
           Logger.log('🖼️ [5] getImages error: ' + imgErr.message);
+        }
+      }
+
+      // الحالة 5: البحث عن رابط اللوجو في الخلايا المجاورة (احتياطي)
+      if (!logoUrl && !logoBlob) {
+        try {
+          const lastCol = Math.min(itemsSheet.getLastColumn(), 10);
+          if (lastCol >= 5) {
+            const searchRange = itemsSheet.getRange(1, 5, Math.min(itemsSheet.getLastRow(), 5), lastCol - 4);
+            const searchValues = searchRange.getValues();
+            for (let r = 0; r < searchValues.length && !logoUrl; r++) {
+              for (let c = 0; c < searchValues[r].length && !logoUrl; c++) {
+                const val = String(searchValues[r][c] || '').trim();
+                if (val && (val.includes('drive.google.com/file/d/') || val.includes('googleusercontent.com/d/'))) {
+                  logoUrl = val;
+                  Logger.log('🖼️ [5b] Found logo URL in cell: [' + logoUrl + ']');
+                }
+              }
+            }
+          }
+        } catch (searchErr) {
+          Logger.log('🖼️ [5b] Nearby cell search error: ' + searchErr.message);
         }
       }
 
@@ -6139,13 +6165,25 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     .setVerticalAlignment('middle');
 
   // ═══════════════════════════════════════════════════════════
-  // إضافة اللوجو (4 طرق: Blob → DriveApp → UrlFetchApp → IMAGE)
+  // إضافة اللوجو (5 طرق: CellCopy → Blob → DriveApp → UrlFetchApp → IMAGE)
   // ═══════════════════════════════════════════════════════════
   let logoRowOffset = 0;
   let logoInserted = false;
 
-  if (logoBlob || logoFileId || logoOriginalUrl) {
+  if (hasCellImage || logoBlob || logoFileId || logoOriginalUrl) {
     sheet.setRowHeight(2, 80);
+
+    // الطريقة الأولى: نسخ CellImage مباشرة من خلية المصدر (الأكثر موثوقية)
+    if (hasCellImage && logoSourceRange && !logoInserted) {
+      try {
+        Logger.log('🖼️ Method CellCopy: Direct CellImage copy from D2');
+        logoSourceRange.copyTo(sheet.getRange('C2'), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+        logoInserted = true;
+        Logger.log('✅ Method CellCopy SUCCESS: CellImage copied directly');
+      } catch (e) {
+        Logger.log('⚠️ Method CellCopy FAILED: ' + e.message);
+      }
+    }
 
     // الطريقة 0: blob مباشر (من CellImage أو OverGridImage)
     if (logoBlob && !logoInserted) {
