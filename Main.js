@@ -1175,6 +1175,7 @@ function createTransactionsSheet(ss) {
   sheet.getRange(2, 14, lastRow, 1) // N
     .setDataValidation(movementTypeValidation)
     .setHorizontalAlignment('center');
+  sheet.getRange(1, 14).setDataValidation(null); // منع التحقق من الهيدر
 
   // 🆕 دروب داون العملة (K)
   const currencyValidation = SpreadsheetApp.newDataValidation()
@@ -5179,6 +5180,7 @@ function fixAllDropdowns() {
   }
 
   nRange.setDataValidation(movementValidation);
+  sheet.getRange(1, 14).setDataValidation(null); // منع التحقق من الهيدر
 
   // تحديث الملاحظة على N1 لتشمل الأنواع الثلاثة
   sheet.getRange('N1').setNote(
