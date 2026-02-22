@@ -1973,10 +1973,26 @@ function handleDetailsInput(chatId, text, session) {
  */
 function handlePaymentMethodSelection(chatId, messageId, method, session) {
     session.data.paymentMethod = method;
+
+    editMessage(chatId, messageId, `✅ طريقة الدفع: *${method}*`);
+
+    // ═══════════════════════════════════════════════════════════
+    // تمويل (دخول قرض): الفلوس وردت فعلاً → شرط الدفع "فوري" تلقائياً
+    // ═══════════════════════════════════════════════════════════
+    const nature = (session.data.natureType || '').trim();
+    if (nature.indexOf('دخول قرض') !== -1) {
+        session.data.paymentTermType = 'فوري';
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_ATTACHMENT;
+        saveUserSession(chatId, session);
+
+        sendMessage(chatId, '⚡ شرط الدفع: *فوري* (تمويل مستلم)\n\n' + BOT_CONFIG.INTERACTIVE_MESSAGES.ASK_ATTACHMENT,
+            BOT_CONFIG.KEYBOARDS.ATTACHMENT, 'Markdown');
+        return;
+    }
+
     session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_PAYMENT_TERM;
     saveUserSession(chatId, session);
 
-    editMessage(chatId, messageId, `✅ طريقة الدفع: *${method}*`);
     sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.SELECT_PAYMENT_TERM,
         BOT_CONFIG.KEYBOARDS.PAYMENT_TERMS, 'Markdown');
 }

@@ -1089,7 +1089,7 @@ function validateTransaction(transaction, context) {
 
     // ⭐ شروط الدفع (تعتمد على نوع الحركة)
     const nature = transaction.nature || '';
-    const isPayment = nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استلام') || nature.includes('تسوية');
+    const isPayment = nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استلام') || nature.includes('تسوية') || nature.includes('دخول قرض');
 
     if (isPayment) {
         // الدفعات الفعلية: شرط الدفع "فوري" تلقائياً (تم الدفع بتاريخ الحركة)
