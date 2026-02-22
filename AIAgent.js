@@ -1164,9 +1164,14 @@ function validateTransaction(transaction, context) {
     }
 
     // ⭐ التحقق من طريقة الدفع (يجب أن تكون محددة)
-    // التحويل الداخلي: طريقة الدفع "تحويل داخلي" تلقائياً
+    // التحويل الداخلي: تحويل للخزنة = نقدي، تحويل للبنك = تحويل بنكي
     if (isInternalTransfer) {
-        validation.enriched.payment_method = 'تحويل داخلي';
+        const classification = (transaction.classification || '').trim();
+        if (classification.includes('خزنة')) {
+            validation.enriched.payment_method = 'نقدي';
+        } else {
+            validation.enriched.payment_method = 'تحويل بنكي';
+        }
         validation.enriched.payment_term = 'فوري';
     }
     // القيم المسموحة: نقدي، تحويل بنكي، شيك، بطاقة، أخرى
