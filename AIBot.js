@@ -2148,6 +2148,17 @@ function handleEditInput(chatId, text, session) {
             break;
 
         case 'item':
+            // ⭐ المصاريف البنكية والتحويل الداخلي: البند ثابت لا يتغير
+            const txNatureForItem = (session.transaction && session.transaction.nature) || '';
+            if (txNatureForItem.includes('مصاريف بنكية')) {
+                session.transaction.item = 'مصاريف بنكية';
+                saveAIUserSession(chatId, session);
+                sendAIMessage(chatId, '✅ بند المصاريف البنكية ثابت: *مصاريف بنكية*\n\nهل تريد تعديل حقل آخر؟', {
+                    parse_mode: 'Markdown',
+                    reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.EDIT_FIELDS)
+                });
+                return;
+            }
             // البحث الذكي عن البند
             const context = loadAIContext();
             const itemMatch = matchItem(text, context.items);

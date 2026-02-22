@@ -1182,8 +1182,8 @@ function validateTransaction(transaction, context) {
         }
     }
 
-    // مطابقة البند
-    if (transaction.item && context.items) {
+    // مطابقة البند (تخطي المصاريف البنكية والتحويل الداخلي - البند يتعيّن تلقائياً)
+    if (transaction.item && context.items && !isBankFees && !isInternalTransfer) {
         const itemMatch = matchItem(transaction.item, context.items);
         if (itemMatch.found) {
             validation.enriched.item = itemMatch.match;
