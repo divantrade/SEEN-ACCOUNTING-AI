@@ -55,7 +55,8 @@ const AI_CONFIG = {
             'استحقاق': ['اتفقت', 'اتفقنا', 'تم الاتفاق', 'عقد', 'تعاقد', 'طلب', 'طلبت', 'حجز', 'حجزت', 'سيتم', 'سأدفع', 'مستحق', 'يستحق', 'يحاسب', 'سيحاسب', 'هيحاسب', 'حيحاسب', 'يدفع', 'سيدفع', 'هيدفع', 'حيدفع'],
             'دفعة': ['دفعت', 'سددت', 'حولت', 'أرسلت', 'صرفت', 'أعطيت', 'سلمت', 'دفع', 'تحويل', 'سداد'],
             'تحصيل': ['استلمت', 'قبضت', 'وصلني', 'حصلت', 'تسلمت', 'جاني', 'وصل', 'استلام', 'تحصيل', 'قبض'],
-            'مصاريف بنكية': ['مصاريف بنكية', 'عمولة بنكية', 'رسوم بنكية', 'مصاريف تحويل', 'عمولة تحويل', 'رسوم حوالة', 'مصاريف البنك', 'عمولة البنك']
+            // المصاريف البنكية تُعامل كـ "دفعة" مع بند "مصاريف بنكية"
+            'دفعة_بنكية': ['مصاريف بنكية', 'عمولة بنكية', 'رسوم بنكية', 'مصاريف تحويل', 'عمولة تحويل', 'رسوم حوالة', 'مصاريف البنك', 'عمولة البنك']
         },
 
         // استنتاج التصنيف من نوع الحركة
@@ -369,12 +370,13 @@ const AI_CONFIG = {
   - ⚠️ **مهم جداً**: التحويل الداخلي **لا يحتاج طرف** (party = null) لأنه بين حسابات الشركة نفسها
   - التصنيف يكون "تحويل للبنك" أو "تحويل للخزنة" حسب اتجاه التحويل
   - "البنك" و"الخزنة" و"خزنة العهدة" ليست أطراف بل حسابات داخلية
-- **مصاريف بنكية**: عمولات ومصاريف يفرضها البنك على التحويلات الواردة أو الصادرة
+- **مصاريف بنكية (عمولات البنك)**: عمولات ومصاريف يفرضها البنك على التحويلات الواردة أو الصادرة
+  - ⚠️ **مهم جداً: المصاريف البنكية ليست طبيعة حركة مستقلة!** هي **دفعة مصروف** والبند هو **مصاريف بنكية**
   - **كلمات مفتاحية للكشف**: مصاريف بنكية، عمولة بنكية، رسوم بنكية، مصاريف تحويل، عمولة تحويل، رسوم حوالة، مصاريف البنك، عمولة البنك، رسوم البنك، مصاريف بنك، عمولات، رسوم مصرفية
   - **الحقول الثابتة تلقائياً (لا تتغير أبداً)**:
-    * nature → "مصاريف بنكية"
+    * nature → **"دفعة مصروف"** (وليس "مصاريف بنكية"!)
     * classification → "مصروفات عمومية"
-    * item → "مصاريف بنكية"
+    * item → "مصاريف بنكية" (هذا هو البند من قاعدة البنود)
     * payment_method → "تحويل بنكي"
     * payment_term → "فوري"
     * project → null (حتى لو ذُكر اسم مشروع/فيلم، يُضاف للتفاصيل فقط)
@@ -397,22 +399,22 @@ const AI_CONFIG = {
   - **⭐ أمثلة كاملة مع JSON المتوقع:**
 
     **مثال 1:** "مصاريف بنكية 44 دولار مقابل استلام فاتورة العربي بتاريخ 25/11/2025"
-    → {"success":true,"is_shared_order":false,"nature":"مصاريف بنكية","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":"العربي","amount":44,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"2025-11-25","details":"مقابل استلام فاتورة","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"دفعة مصروف","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":"العربي","amount":44,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"2025-11-25","details":"مقابل استلام فاتورة","confidence":0.95}
 
     **مثال 2:** "بتاريخ 25/11/2025 مصاريف بنكية بقيمة 44 دولار"
-    → {"success":true,"is_shared_order":false,"nature":"مصاريف بنكية","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":null,"amount":44,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"2025-11-25","details":"","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"دفعة مصروف","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":null,"amount":44,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"2025-11-25","details":"","confidence":0.95}
 
     **مثال 3:** "عمولة بنكية 30 دولار على تحويل لمصطفى الحسيني"
-    → {"success":true,"is_shared_order":false,"nature":"مصاريف بنكية","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":"مصطفى الحسيني","amount":30,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"TODAY","details":"مقابل تحويل","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"دفعة مصروف","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":"مصطفى الحسيني","amount":30,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"TODAY","details":"مقابل تحويل","confidence":0.95}
 
     **مثال 4:** "مصاريف بنكية 90 دولار مقابل تحويل لمصطفى الحسيني فيلم الجمسي"
-    → {"success":true,"is_shared_order":false,"nature":"مصاريف بنكية","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":"مصطفى الحسيني","amount":90,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"TODAY","details":"مقابل تحويل فيلم الجمسي","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"دفعة مصروف","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":"مصطفى الحسيني","amount":90,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"TODAY","details":"مقابل تحويل فيلم الجمسي","confidence":0.95}
 
     **مثال 5:** "رسوم بنكية 20 دولار"
-    → {"success":true,"is_shared_order":false,"nature":"مصاريف بنكية","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":null,"amount":20,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"TODAY","details":"","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"دفعة مصروف","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":null,"amount":20,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"TODAY","details":"","confidence":0.95}
 
     **مثال 6:** "مصاريف بنكية 44 دولار مقابل استلام فاتورة العربي فيلم الجمسي بتاريخ 25/11/2025"
-    → {"success":true,"is_shared_order":false,"nature":"مصاريف بنكية","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":"العربي","amount":44,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"2025-11-25","details":"مقابل استلام فاتورة فيلم الجمسي","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"دفعة مصروف","classification":"مصروفات عمومية","project":null,"project_code":null,"item":"مصاريف بنكية","party":"العربي","amount":44,"currency":"USD","payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"2025-11-25","details":"مقابل استلام فاتورة فيلم الجمسي","confidence":0.95}
 
 ## العملات:
 - USD (دولار، $، دولارات، أمريكي)

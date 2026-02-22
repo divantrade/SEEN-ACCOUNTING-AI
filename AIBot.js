@@ -471,7 +471,7 @@ function processNewTransaction(chatId, text, user) {
         // 🔄 التحويل الداخلي: تخطي الطرف والمشروع وطريقة الدفع
         // ═══════════════════════════════════════════════════════════
         const isInternalTransfer = result.transaction && (result.transaction.nature || '').includes('تحويل داخلي');
-        const isBankFees = result.transaction && (result.transaction.nature || '').includes('مصاريف بنكية');
+        const isBankFees = result.transaction && ((result.transaction.item || '').includes('مصاريف بنكية') || (result.validation && result.validation.enriched && result.validation.enriched.isBankFees));
         const hasBankFeesParty = isBankFees && result.transaction && result.transaction.party;
         // التحويل الداخلي يتخطى الطرف والمشروع، المصاريف البنكية تتخطى المشروع فقط (الطرف اختياري)
         const skipPartyAndProject = isInternalTransfer;
@@ -653,7 +653,8 @@ function askNewPartyConfirmation(chatId, session) {
     }
 
     // ⭐ المصاريف البنكية: الطرف اختياري
-    const isBankFeesPartyConf = nature.includes('مصاريف بنكية');
+    const itemForPartyConf = (session.transaction && session.transaction.item) || '';
+    const isBankFeesPartyConf = itemForPartyConf.includes('مصاريف بنكية') || (session.validation && session.validation.enriched && session.validation.enriched.isBankFees);
 
     session.newPartyName = partyName;
     session.newPartyType = partyType;
@@ -1231,7 +1232,8 @@ function handlePaymentTermInput(chatId, text, session) {
 function continueValidation(chatId, session) {
     // ⭐ المصاريف البنكية والتحويل الداخلي: تخطي المشروع وطريقة الدفع
     const nature = (session.transaction && session.transaction.nature) || '';
-    const isBankFeesCV = nature.includes('مصاريف بنكية');
+    const itemForCV = (session.transaction && session.transaction.item) || '';
+    const isBankFeesCV = itemForCV.includes('مصاريف بنكية') || (session.validation && session.validation.enriched && session.validation.enriched.isBankFees);
     const isInternalTransferCV = nature.includes('تحويل داخلي');
     const skipProjectAndPayment = isBankFeesCV || isInternalTransferCV;
 
@@ -2150,7 +2152,8 @@ function handleEditInput(chatId, text, session) {
         case 'item':
             // ⭐ المصاريف البنكية والتحويل الداخلي: البند ثابت لا يتغير
             const txNatureForItem = (session.transaction && session.transaction.nature) || '';
-            if (txNatureForItem.includes('مصاريف بنكية')) {
+            const txItemForEdit = (session.transaction && session.transaction.item) || '';
+            if (txItemForEdit.includes('مصاريف بنكية') || (session.validation && session.validation.enriched && session.validation.enriched.isBankFees)) {
                 session.transaction.item = 'مصاريف بنكية';
                 saveAIUserSession(chatId, session);
                 sendAIMessage(chatId, '✅ بند المصاريف البنكية ثابت: *مصاريف بنكية*\n\nهل تريد تعديل حقل آخر؟', {

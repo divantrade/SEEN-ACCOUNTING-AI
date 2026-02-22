@@ -1009,7 +1009,21 @@ function validateTransaction(transaction, context) {
 
     // التحويل الداخلي لا يحتاج طرف، المصاريف البنكية الطرف اختياري
     const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
-    const isBankFees = (transaction.nature || '').includes('مصاريف بنكية');
+    // ⭐ كشف المصاريف البنكية: بالبند أو بالطبيعة القديمة (للتوافق) أو بالكلمات المفتاحية
+    const isBankFees = (transaction.item || '').includes('مصاريف بنكية')
+        || (transaction.nature || '').includes('مصاريف بنكية')
+        || (transaction.nature || '').includes('عمولة بنكية')
+        || (transaction.nature || '').includes('رسوم بنكية');
+
+    // ⭐ تصحيح: المصاريف البنكية طبيعتها "دفعة مصروف" وليست طبيعة مستقلة
+    if (isBankFees) {
+        transaction.nature = 'دفعة مصروف';
+        validation.enriched.nature = 'دفعة مصروف';
+        transaction.item = 'مصاريف بنكية';
+        validation.enriched.item = 'مصاريف بنكية';
+        validation.enriched.isBankFees = true;
+        Logger.log('🏦 مصاريف بنكية: تصحيح الطبيعة إلى "دفعة مصروف" والبند إلى "مصاريف بنكية"');
+    }
     if (!transaction.party && !isInternalTransfer && !isBankFees) {
         validation.missingRequired.push({
             field: 'party',
@@ -1075,7 +1089,7 @@ function validateTransaction(transaction, context) {
 
     // ⭐ شروط الدفع (تعتمد على نوع الحركة)
     const nature = transaction.nature || '';
-    const isPayment = nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استلام') || nature.includes('تسوية') || nature.includes('مصاريف بنكية');
+    const isPayment = nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استلام') || nature.includes('تسوية');
 
     if (isPayment) {
         // الدفعات الفعلية: شرط الدفع "فوري" تلقائياً (تم الدفع بتاريخ الحركة)
@@ -1439,7 +1453,7 @@ function tryParseBankFees_(text) {
     return {
         success: true,
         is_shared_order: false,
-        nature: 'مصاريف بنكية',
+        nature: 'دفعة مصروف',
         classification: 'مصروفات عمومية',
         project: null,
         project_code: null,
@@ -1483,8 +1497,7 @@ function inferMovementType(nature) {
         'استلام تمويل',
         'سداد تمويل',
         'تأمين مدفوع للقناة',
-        'تحويل داخلي',
-        'مصاريف بنكية'
+        'تحويل داخلي'
     ];
     return creditNatures.includes(nature) ? 'دائن دفعة' : 'مدين استحقاق';
 }
@@ -1600,8 +1613,7 @@ function getTransactionEmoji(nature) {
         'استحقاق إيراد': '📥',
         'تحصيل إيراد': '💰',
         'تمويل': '🏦',
-        'سداد تمويل': '💳',
-        'مصاريف بنكية': '🏦'
+        'سداد تمويل': '💳'
     };
     return emojis[nature] || '📋';
 }
