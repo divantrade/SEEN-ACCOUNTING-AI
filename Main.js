@@ -10073,6 +10073,7 @@ function rebuildBankAndCashFromTransactions(silent) {
     date: findHeaderIndex_(headers, 'التاريخ'),
     type: findHeaderIndex_(headers, 'طبيعة الحركة'),
     classification: findHeaderIndex_(headers, 'تصنيف الحركة'),
+    item: findHeaderIndex_(headers, 'البند'),
     details: findHeaderIndex_(headers, 'التفاصيل'),
     party: findHeaderIndex_(headers, 'اسم المورد/الجهة'),
     amount: findHeaderIndex_(headers, 'المبلغ بالعملة الأصلية'),
@@ -10194,8 +10195,9 @@ function rebuildBankAndCashFromTransactions(silent) {
     // 5) تحديد هل هي تحويل داخلي؟
     const isInternalTransfer = typeVal.indexOf('تحويل داخلي') !== -1;
 
-    // 6) تحديد هل هي مصاريف بنكية؟
-    const isBankFees = typeVal.indexOf('مصاريف بنكية') !== -1;
+    // 6) تحديد هل هي مصاريف بنكية؟ (بالطبيعة أو بالبند)
+    const itemVal = col.item >= 0 ? String(row[col.item] || '').trim() : '';
+    const isBankFees = typeVal.indexOf('مصاريف بنكية') !== -1 || itemVal.indexOf('مصاريف بنكية') !== -1;
 
     // 🔴 استبعاد كل الاستحقاقات غير الممولة
     // 🔴 واستبعاد أي حركة غير مدفوعة فعليًا وليست استحقاق تمويل وليست تحويل داخلي وليست مصاريف بنكية
