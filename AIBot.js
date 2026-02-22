@@ -186,6 +186,26 @@ function checkBotInfo() {
 // ==================== معالجة الرسائل ====================
 
 /**
+ * كشف ما إذا كان النص يبدو كحركة مالية جديدة (وليس اسم طرف)
+ * يستخدم لمنع الجلسة من "العلق" عند إرسال حركة جديدة أثناء انتظار اختيار الطرف
+ */
+function looksLikeNewTransaction_(text) {
+    if (!text) return false;
+    const transactionKeywords = [
+        'استحقاق', 'دفعة', 'تحصيل', 'مصاريف بنكية', 'عمولة بنكية', 'رسوم بنكية',
+        'مصاريف تحويل', 'عمولة تحويل', 'تحويل داخلي', 'سداد', 'تمويل', 'سلفة',
+        'تسوية', 'إيراد', 'مصروف', 'فاتورة', 'تأمين', 'استرداد',
+        'دولار', 'ليرة', 'جنيه', 'USD', 'TRY', 'EGP',
+        'بتاريخ', 'نقدي', 'كاش', 'تحويل بنكي'
+    ];
+    const lowerText = text.trim();
+    // إذا احتوى النص على رقم + كلمة مفتاحية مالية = حركة جديدة
+    const hasNumber = /\d/.test(lowerText);
+    const hasKeyword = transactionKeywords.some(kw => lowerText.includes(kw));
+    return hasNumber && hasKeyword;
+}
+
+/**
  * معالجة الرسائل النصية
  */
 function handleAIMessage(message) {
@@ -238,7 +258,14 @@ function handleAIMessage(message) {
             break;
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PARTY_SELECTION:
-            handleAIPartySelection(chatId, text, session);
+            // ⭐ كشف الرسائل الجديدة أثناء انتظار الطرف - إذا النص يحتوي كلمات مفتاحية لحركة مالية، يُعامل كحركة جديدة
+            if (looksLikeNewTransaction_(text)) {
+                Logger.log('🔄 Detected new transaction while waiting for party, resetting session');
+                resetAIUserSession(chatId);
+                processNewTransaction(chatId, text, message.from);
+            } else {
+                handleAIPartySelection(chatId, text, session);
+            }
             break;
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_EDIT:
@@ -275,16 +302,30 @@ function handleAIMessage(message) {
             break;
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_NEW_PARTY_CONFIRM:
-            Logger.log('⚠️ User sent text while waiting for party confirmation');
-            sendAIMessage(chatId, '⚠️ يرجى اختيار أحد الخيارات من الأزرار أعلاه', { parse_mode: 'Markdown' });
-            askNewPartyConfirmation(chatId, session);
+            // ⭐ كشف الرسائل الجديدة أثناء انتظار تأكيد الطرف
+            if (looksLikeNewTransaction_(text)) {
+                Logger.log('🔄 Detected new transaction while waiting for party confirm, resetting session');
+                resetAIUserSession(chatId);
+                processNewTransaction(chatId, text, message.from);
+            } else {
+                Logger.log('⚠️ User sent text while waiting for party confirmation');
+                sendAIMessage(chatId, '⚠️ يرجى اختيار أحد الخيارات من الأزرار أعلاه', { parse_mode: 'Markdown' });
+                askNewPartyConfirmation(chatId, session);
+            }
             break;
 
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_CONFIRMATION:
         case AI_CONFIG.AI_CONVERSATION_STATES.CONFIRM_WAIT:
-            Logger.log('⚠️ User sent text while waiting for confirmation');
-            sendAIMessage(chatId, '⚠️ يرجى تأكيد الحركة أو تعديلها من الأزرار أعلاه', { parse_mode: 'Markdown' });
-            showTransactionConfirmation(chatId, session);
+            // ⭐ كشف الرسائل الجديدة أثناء انتظار التأكيد
+            if (looksLikeNewTransaction_(text)) {
+                Logger.log('🔄 Detected new transaction while waiting for confirmation, resetting session');
+                resetAIUserSession(chatId);
+                processNewTransaction(chatId, text, message.from);
+            } else {
+                Logger.log('⚠️ User sent text while waiting for confirmation');
+                sendAIMessage(chatId, '⚠️ يرجى تأكيد الحركة أو تعديلها من الأزرار أعلاه', { parse_mode: 'Markdown' });
+                showTransactionConfirmation(chatId, session);
+            }
             break;
 
         default:
@@ -611,6 +652,9 @@ function askNewPartyConfirmation(chatId, session) {
         partyType = 'ممول';
     }
 
+    // ⭐ المصاريف البنكية: الطرف اختياري
+    const isBankFeesPartyConf = nature.includes('مصاريف بنكية');
+
     session.newPartyName = partyName;
     session.newPartyType = partyType;
     session.partySuggestions = suggestions; // حفظ الاقتراحات
@@ -637,10 +681,15 @@ function askNewPartyConfirmation(chatId, session) {
         keyboard.inline_keyboard.push([
             { text: '➕ إضافة كطرف جديد', callback_data: 'ai_add_party_yes' }
         ]);
-        keyboard.inline_keyboard.push([
+        const lastRow = [
             { text: '✏️ تعديل الاسم', callback_data: 'ai_add_party_edit' },
             { text: '❌ إلغاء', callback_data: 'ai_add_party_no' }
-        ]);
+        ];
+        // ⭐ زر تخطي الطرف للمصاريف البنكية
+        if (isBankFeesPartyConf) {
+            lastRow.unshift({ text: '⏭️ بدون طرف', callback_data: 'ai_skip_party' });
+        }
+        keyboard.inline_keyboard.push(lastRow);
 
         sendAIMessage(chatId, message, {
             parse_mode: 'Markdown',
@@ -648,7 +697,7 @@ function askNewPartyConfirmation(chatId, session) {
         });
     } else {
         // لا توجد اقتراحات - اعرض خيار الإضافة فقط
-        const message = `⚠️ *الطرف غير موجود في قاعدة البيانات*
+        let message = `⚠️ *الطرف غير موجود في قاعدة البيانات*
 
 👤 الاسم: *${partyName}*
 📋 النوع المقترح: ${partyType}
@@ -667,6 +716,14 @@ function askNewPartyConfirmation(chatId, session) {
                 ]
             ]
         };
+
+        // ⭐ زر تخطي الطرف للمصاريف البنكية
+        if (isBankFeesPartyConf) {
+            keyboard.inline_keyboard.push([
+                { text: '⏭️ تسجيل بدون طرف', callback_data: 'ai_skip_party' }
+            ]);
+            message += '\n\nأو يمكنك تسجيل المصاريف البنكية بدون ربطها بطرف.';
+        }
 
         sendAIMessage(chatId, message, {
             parse_mode: 'Markdown',
@@ -714,6 +771,19 @@ function handleNewPartyConfirmation(chatId, action, session) {
 
         case 'ai_add_party_type':
             showPartyTypeSelection(chatId, session);
+            break;
+
+        case 'ai_skip_party':
+            // ⭐ تخطي الطرف (للمصاريف البنكية)
+            session.transaction.party = '';
+            session.validation.enriched.party = '';
+            session.validation.needsPartyConfirmation = false;
+            session.transaction.isNewParty = false;
+            delete session.newPartyName;
+            delete session.newPartyType;
+            saveAIUserSession(chatId, session);
+            sendAIMessage(chatId, '✅ تم تخطي الطرف - مصاريف بنكية بدون ربط بطرف', { parse_mode: 'Markdown' });
+            continueValidation(chatId, session);
             break;
     }
 }
@@ -1159,14 +1229,20 @@ function handlePaymentTermInput(chatId, text, session) {
  * ⭐ متابعة التحقق من البيانات بعد إكمال حقل
  */
 function continueValidation(chatId, session) {
-    // ⭐ التحقق من المشروع (اختياري)
-    if (session.validation.needsProjectSelection) {
+    // ⭐ المصاريف البنكية والتحويل الداخلي: تخطي المشروع وطريقة الدفع
+    const nature = (session.transaction && session.transaction.nature) || '';
+    const isBankFeesCV = nature.includes('مصاريف بنكية');
+    const isInternalTransferCV = nature.includes('تحويل داخلي');
+    const skipProjectAndPayment = isBankFeesCV || isInternalTransferCV;
+
+    // ⭐ التحقق من المشروع (اختياري - يُتخطى للمصاريف البنكية والتحويل الداخلي)
+    if (session.validation.needsProjectSelection && !skipProjectAndPayment) {
         askProjectSelection(chatId, session);
         return;
     }
 
-    // التحقق من طريقة الدفع
-    if (session.validation.needsPaymentMethod) {
+    // التحقق من طريقة الدفع (يُتخطى للمصاريف البنكية والتحويل الداخلي)
+    if (session.validation.needsPaymentMethod && !skipProjectAndPayment) {
         askPaymentMethod(chatId, session);
         return;
     }
@@ -1498,6 +1574,9 @@ function handleAICallback(callbackQuery) {
         // ⭐ معالجة اختيار شرط الدفع
         const term = data.replace('ai_term_', '');
         handleAIPaymentTermSelection(chatId, term, session);
+    } else if (data === 'ai_skip_party') {
+        // ⭐ تخطي الطرف (للمصاريف البنكية)
+        handleNewPartyConfirmation(chatId, data, session);
     } else if (data.startsWith('ai_add_party_')) {
         // معالجة تأكيد إضافة طرف جديد
         handleNewPartyConfirmation(chatId, data, session);
