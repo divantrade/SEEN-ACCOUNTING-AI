@@ -1313,6 +1313,23 @@ function analyzeTransaction(userMessage) {
         if (isExplicitFailure || (!hasTransactionData && !aiResult.success)) {
             Logger.log('❌ AI result indicates failure or no transaction data');
             Logger.log('❌ aiResult.error: ' + aiResult.error);
+
+            // ⭐ خطة بديلة: إذا فشل Gemini والنص يبدو كمصاريف بنكية، حلّله يدوياً
+            const bankFeesFallback = tryParseBankFees_(userMessage);
+            if (bankFeesFallback) {
+                Logger.log('✅ Bank fees fallback parser succeeded');
+                const validation = validateTransaction(bankFeesFallback, context);
+                return {
+                    success: true,
+                    transaction: validation.enriched,
+                    validation: validation,
+                    needsInput: validation.missingRequired.length > 0,
+                    missingFields: validation.missingRequired,
+                    warnings: validation.warnings,
+                    confidence: 0.85
+                };
+            }
+
             return {
                 success: false,
                 error: aiResult.error || AI_CONFIG.AI_MESSAGES.ERROR_PARSE,
@@ -1355,6 +1372,93 @@ function analyzeTransaction(userMessage) {
 
 
 // ==================== دوال مساعدة ====================
+
+/**
+ * ⭐ محلل بديل للمصاريف البنكية - يعمل عند فشل Gemini
+ * يحلل النص يدوياً ويستخرج البيانات الأساسية
+ */
+function tryParseBankFees_(text) {
+    if (!text) return null;
+
+    // كشف المصاريف البنكية بالكلمات المفتاحية
+    const bankKeywords = ['مصاريف بنكية', 'عمولة بنكية', 'رسوم بنكية', 'مصاريف تحويل',
+        'عمولة تحويل', 'رسوم حوالة', 'مصاريف البنك', 'عمولة البنك', 'رسوم البنك', 'مصاريف بنك', 'رسوم مصرفية'];
+    const isBankFee = bankKeywords.some(kw => text.includes(kw));
+    if (!isBankFee) return null;
+
+    Logger.log('🏦 Bank fees fallback parser: detected bank fees in text');
+
+    // استخراج المبلغ (أرقام عربية وإنجليزية)
+    let amount = null;
+    const normalizedText = text.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    const amountMatch = normalizedText.match(/(\d+(?:[.,]\d+)?)\s*(?:دولار|ليرة|جنيه|USD|TRY|EGP|\$)/i)
+        || normalizedText.match(/(?:بقيمة|بمبلغ)\s*(\d+(?:[.,]\d+)?)/i)
+        || normalizedText.match(/(\d+(?:[.,]\d+)?)/);
+    if (amountMatch) {
+        amount = parseFloat(amountMatch[1].replace(',', '.'));
+    }
+    if (!amount) return null;
+
+    // استخراج العملة
+    let currency = 'USD';
+    if (/ليرة|TRY|TL/i.test(text)) currency = 'TRY';
+    else if (/جنيه|EGP/i.test(text)) currency = 'EGP';
+
+    // استخراج التاريخ
+    let dueDate = 'TODAY';
+    const dateMatch = text.match(/(?:بتاريخ\s*)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dateMatch) {
+        const day = dateMatch[1].padStart(2, '0');
+        const month = dateMatch[2].padStart(2, '0');
+        const year = dateMatch[3];
+        dueDate = `${year}-${month}-${day}`;
+    }
+
+    // استخراج الطرف (بعد "مقابل استلام فاتورة X" أو "مقابل تحويل لـ X")
+    let party = null;
+    let details = '';
+    const contextMatch = text.match(/مقابل\s+(.*?)(?:\s+بتاريخ|\s*$)/);
+    if (contextMatch) {
+        details = contextMatch[1].trim();
+        // استخراج اسم الطرف من السياق
+        const partyPatterns = [
+            /(?:استلام\s+فاتورة|فاتورة)\s+(\S+)/,
+            /(?:تحويل\s+ل|حوالة\s+ل|تحويل\s+إلى|حوالة\s+إلى)\s*(.+?)(?:\s+فيلم|\s+مشروع|\s*$)/,
+            /(?:حوالة|تحويل)\s+(\S+)/
+        ];
+        for (const pat of partyPatterns) {
+            const m = details.match(pat);
+            if (m) {
+                party = m[1].trim();
+                break;
+            }
+        }
+    }
+
+    Logger.log('🏦 Parsed: amount=' + amount + ', currency=' + currency + ', date=' + dueDate + ', party=' + party + ', details=' + details);
+
+    return {
+        success: true,
+        is_shared_order: false,
+        nature: 'مصاريف بنكية',
+        classification: 'مصروفات عمومية',
+        project: null,
+        project_code: null,
+        item: 'مصاريف بنكية',
+        party: party,
+        amount: amount,
+        currency: currency,
+        payment_method: 'تحويل بنكي',
+        payment_term: 'فوري',
+        payment_term_weeks: null,
+        payment_term_date: null,
+        due_date: dueDate,
+        details: details,
+        unit_count: null,
+        exchange_rate: null,
+        confidence: 0.85
+    };
+}
 
 /**
  * استنتاج نوع الطرف من طبيعة الحركة
