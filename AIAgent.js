@@ -1007,7 +1007,7 @@ function validateTransaction(transaction, context) {
         });
     }
 
-    // التحويل الداخلي والمصاريف البنكية لا تحتاج طرف
+    // التحويل الداخلي لا يحتاج طرف، المصاريف البنكية الطرف اختياري
     const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
     const isBankFees = (transaction.nature || '').includes('مصاريف بنكية');
     if (!transaction.party && !isInternalTransfer && !isBankFees) {
@@ -1104,21 +1104,54 @@ function validateTransaction(transaction, context) {
         validation.enriched.payment_term_date = '';
     }
 
-    // مطابقة الطرف (التحويل الداخلي والمصاريف البنكية لا تحتاج طرف)
-    if (isInternalTransfer || isBankFees) {
+    // مطابقة الطرف (التحويل الداخلي لا يحتاج طرف، المصاريف البنكية الطرف اختياري)
+    if (isInternalTransfer) {
         validation.enriched.party = '';
         validation.enriched.isNewParty = false;
-        Logger.log(isInternalTransfer ? '🔄 تحويل داخلي - تخطي مطابقة الطرف' : '🏦 مصاريف بنكية - تخطي مطابقة الطرف');
+        Logger.log('🔄 تحويل داخلي - تخطي مطابقة الطرف');
+    } else if (isBankFees) {
         // المصاريف البنكية: تعيين التصنيف وطريقة الدفع تلقائياً
-        if (isBankFees) {
-            validation.enriched.classification = 'مصروفات عمومية';
-            validation.enriched.payment_method = 'تحويل بنكي';
-            validation.enriched.payment_term = 'فوري';
-            validation.enriched.payment_term_weeks = '';
-            validation.enriched.payment_term_date = '';
-            if (!transaction.item) {
-                validation.enriched.item = 'مصاريف بنكية';
+        validation.enriched.classification = 'مصروفات عمومية';
+        validation.enriched.payment_method = 'تحويل بنكي';
+        validation.enriched.payment_term = 'فوري';
+        validation.enriched.payment_term_weeks = '';
+        validation.enriched.payment_term_date = '';
+        if (!transaction.item) {
+            validation.enriched.item = 'مصاريف بنكية';
+        }
+        // المصاريف البنكية: الطرف اختياري - إذا ذُكر طرف في النص يتم مطابقته
+        if (transaction.party && context.parties) {
+            const partyMatch = matchParty(transaction.party, context.parties);
+            if (partyMatch.found) {
+                validation.enriched.party = partyMatch.match.name;
+                validation.enriched.partyType = partyMatch.match.type;
+                validation.enriched.partyScore = partyMatch.score;
+                Logger.log('🏦 مصاريف بنكية - تم ربط الطرف: ' + partyMatch.match.name);
+            } else {
+                // الطرف غير موجود - يجب طلب تأكيد
+                validation.enriched.isNewParty = true;
+                validation.enriched.newPartyName = transaction.party;
+                validation.needsPartyConfirmation = true;
+                if (partyMatch.suggestions && partyMatch.suggestions.length > 0) {
+                    validation.warnings.push({
+                        field: 'party',
+                        message: 'الطرف "' + transaction.party + '" غير موجود في المصاريف البنكية. هل تقصد أحد هؤلاء؟',
+                        suggestions: partyMatch.suggestions,
+                        isNew: true
+                    });
+                } else {
+                    validation.warnings.push({
+                        field: 'party',
+                        message: 'الطرف "' + transaction.party + '" غير موجود. هل تريد إضافته كطرف جديد؟',
+                        isNew: true
+                    });
+                }
+                Logger.log('🏦 مصاريف بنكية - طرف جديد يحتاج تأكيد: ' + transaction.party);
             }
+        } else {
+            validation.enriched.party = '';
+            validation.enriched.isNewParty = false;
+            Logger.log('🏦 مصاريف بنكية - بدون طرف');
         }
     } else if (transaction.party && context.parties) {
         const partyMatch = matchParty(transaction.party, context.parties);

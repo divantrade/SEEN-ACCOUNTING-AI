@@ -1454,20 +1454,19 @@ function handleNatureSelection(chatId, messageId, nature, session) {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 🏦 المصاريف البنكية: تخطي التصنيف والمشروع والبند والطرف → المبلغ مباشرة
+    // 🏦 المصاريف البنكية: تخطي التصنيف والمشروع والبند → سؤال عن الطرف (اختياري)
     // ═══════════════════════════════════════════════════════════
     if (nature === 'مصاريف بنكية') {
         session.data.classification = 'مصروفات عمومية';
         session.data.projectCode = '';
         session.data.projectName = '';
         session.data.item = 'مصاريف بنكية';
-        session.data.partyName = '';
         session.data.isNewParty = false;
-        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_AMOUNT;
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_PARTY;
         saveUserSession(chatId, session);
 
         editMessage(chatId, messageId, `✅ طبيعة الحركة: *${nature}*`);
-        sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.ENTER_AMOUNT, null, 'Markdown');
+        sendMessage(chatId, '👤 *اختر الطرف المرتبط بالمصاريف البنكية (اختياري):*\n\nاكتب اسم المورد/العميل أو جزء منه للبحث\n\nأو اكتب "تخطي" للتسجيل بدون طرف', null, 'Markdown');
         return;
     }
 
@@ -1736,6 +1735,18 @@ function handleUnitCountInput(chatId, text, session) {
  * معالجة البحث عن طرف
  */
 function handlePartySearch(chatId, searchText, session) {
+    // المصاريف البنكية: السماح بتخطي الطرف
+    const isBankFees = (session.data.nature || '') === 'مصاريف بنكية';
+    if (isBankFees && (searchText === 'تخطي' || searchText === 'skip' || searchText === '0')) {
+        session.data.partyName = '';
+        session.data.isNewParty = false;
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_AMOUNT;
+        saveUserSession(chatId, session);
+        sendMessage(chatId, '✅ مصاريف بنكية بدون طرف', null, 'Markdown');
+        sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.ENTER_AMOUNT, null, 'Markdown');
+        return;
+    }
+
     const parties = searchParties(searchText);
 
     const buttons = parties.slice(0, 5).map(party => ([{

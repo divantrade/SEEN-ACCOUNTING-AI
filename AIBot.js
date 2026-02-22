@@ -431,9 +431,12 @@ function processNewTransaction(chatId, text, user) {
         // ═══════════════════════════════════════════════════════════
         const isInternalTransfer = result.transaction && (result.transaction.nature || '').includes('تحويل داخلي');
         const isBankFees = result.transaction && (result.transaction.nature || '').includes('مصاريف بنكية');
-        const skipPartyAndProject = isInternalTransfer || isBankFees;
+        const hasBankFeesParty = isBankFees && result.transaction && result.transaction.party;
+        // التحويل الداخلي يتخطى الطرف والمشروع، المصاريف البنكية تتخطى المشروع فقط (الطرف اختياري)
+        const skipPartyAndProject = isInternalTransfer;
+        const skipProjectOnly = isBankFees;
 
-        // التحقق من طرف جديد يحتاج تأكيد (التحويل الداخلي والمصاريف البنكية لا تحتاج طرف)
+        // التحقق من طرف جديد يحتاج تأكيد (التحويل الداخلي لا يحتاج طرف، المصاريف البنكية الطرف اختياري)
         Logger.log('📊 Checking needsPartyConfirmation: ' + (result.validation ? result.validation.needsPartyConfirmation : 'no validation'));
         if (result.validation && result.validation.needsPartyConfirmation && !skipPartyAndProject) {
             Logger.log('✅ Needs party confirmation');
@@ -443,7 +446,7 @@ function processNewTransaction(chatId, text, user) {
 
         // ⭐ التحقق من المشروع (اختياري - يمكن التخطي) (التحويل الداخلي والمصاريف البنكية لا تحتاج مشروع)
         Logger.log('📊 Checking needsProjectSelection: ' + (result.validation ? result.validation.needsProjectSelection : 'no validation'));
-        if (result.validation && result.validation.needsProjectSelection && !skipPartyAndProject) {
+        if (result.validation && result.validation.needsProjectSelection && !skipPartyAndProject && !skipProjectOnly) {
             Logger.log('✅ Needs project selection (optional)');
             askProjectSelection(chatId, session);
             return;
@@ -451,7 +454,7 @@ function processNewTransaction(chatId, text, user) {
 
         // ⭐ التحقق من طريقة الدفع (التحويل الداخلي والمصاريف البنكية تُعيّن تلقائياً)
         Logger.log('📊 Checking needsPaymentMethod: ' + (result.validation ? result.validation.needsPaymentMethod : 'no validation'));
-        if (result.validation && result.validation.needsPaymentMethod && !skipPartyAndProject) {
+        if (result.validation && result.validation.needsPaymentMethod && !skipPartyAndProject && !skipProjectOnly) {
             Logger.log('✅ Needs payment method');
             askPaymentMethod(chatId, session);
             return;
