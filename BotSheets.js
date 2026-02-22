@@ -1229,7 +1229,9 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
         // تحديد نوع الحركة (التسوية أولاً لأنها تحتوي على كلمة "استحقاق")
         const nature = transactionData.nature || '';
         let movementType = '';
-        if (nature.includes('تسوية')) {
+        if (nature.includes('تحويل داخلي')) {
+            movementType = 'تحويل داخلي';
+        } else if (nature.includes('تسوية')) {
             movementType = CONFIG.MOVEMENT.CREDIT;
         } else if (nature.includes('استحقاق') || nature === 'تمويل') {
             movementType = CONFIG.MOVEMENT.DEBIT;

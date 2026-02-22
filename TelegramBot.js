@@ -1485,6 +1485,23 @@ function handleClassificationSelection(chatId, messageId, classification, sessio
         return;
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 🔄 التحويل الداخلي: تخطي المشروع والبند والطرف → المبلغ مباشرة
+    // ═══════════════════════════════════════════════════════════
+    if (session.transactionType === 'transfer') {
+        session.data.projectCode = '';
+        session.data.projectName = '';
+        session.data.item = 'تحويل داخلي';
+        session.data.partyName = '';
+        session.data.isNewParty = false;
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_AMOUNT;
+        saveUserSession(chatId, session);
+
+        editMessage(chatId, messageId, `✅ تصنيف التحويل: *${classification}*`);
+        sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.ENTER_AMOUNT, null, 'Markdown');
+        return;
+    }
+
     session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_PROJECT;
     saveUserSession(chatId, session);
 
@@ -1898,6 +1915,21 @@ function handleExchangeRateInput(chatId, text, session) {
  */
 function handleDetailsInput(chatId, text, session) {
     session.data.details = text;
+
+    // ═══════════════════════════════════════════════════════════
+    // 🔄 التحويل الداخلي: تخطي طريقة الدفع وشرط الدفع → المرفقات مباشرة
+    // ═══════════════════════════════════════════════════════════
+    if (session.transactionType === 'transfer') {
+        session.data.paymentMethod = 'تحويل داخلي';
+        session.data.paymentTermType = 'فوري';
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_ATTACHMENT;
+        saveUserSession(chatId, session);
+
+        sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.ASK_ATTACHMENT,
+            BOT_CONFIG.KEYBOARDS.ATTACHMENT, 'Markdown');
+        return;
+    }
+
     session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_PAYMENT_METHOD;
     saveUserSession(chatId, session);
 
@@ -2072,7 +2104,7 @@ function showTransactionSummary(chatId, session) {
         .replace('{project}', data.projectName || '-')
         .replace('{item}', data.item || '-')
         .replace('{unit_count}', unitCountDisplay)
-        .replace('{party}', data.partyName + (data.isNewParty ? ' (جديد)' : ''))
+        .replace('{party}', data.partyName ? (data.partyName + (data.isNewParty ? ' (جديد)' : '')) : '-')
         .replace('{amount}', data.amount)
         .replace('{currency}', data.currency)
         .replace('{details}', data.details || '-')
