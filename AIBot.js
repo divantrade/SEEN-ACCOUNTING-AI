@@ -426,25 +426,30 @@ function processNewTransaction(chatId, text, user) {
             return;
         }
 
-        // التحقق من طرف جديد يحتاج تأكيد
+        // ═══════════════════════════════════════════════════════════
+        // 🔄 التحويل الداخلي: تخطي الطرف والمشروع وطريقة الدفع
+        // ═══════════════════════════════════════════════════════════
+        const isInternalTransfer = result.transaction && (result.transaction.nature || '').includes('تحويل داخلي');
+
+        // التحقق من طرف جديد يحتاج تأكيد (التحويل الداخلي لا يحتاج طرف)
         Logger.log('📊 Checking needsPartyConfirmation: ' + (result.validation ? result.validation.needsPartyConfirmation : 'no validation'));
-        if (result.validation && result.validation.needsPartyConfirmation) {
+        if (result.validation && result.validation.needsPartyConfirmation && !isInternalTransfer) {
             Logger.log('✅ Needs party confirmation');
             askNewPartyConfirmation(chatId, session);
             return;
         }
 
-        // ⭐ التحقق من المشروع (اختياري - يمكن التخطي)
+        // ⭐ التحقق من المشروع (اختياري - يمكن التخطي) (التحويل الداخلي لا يحتاج مشروع)
         Logger.log('📊 Checking needsProjectSelection: ' + (result.validation ? result.validation.needsProjectSelection : 'no validation'));
-        if (result.validation && result.validation.needsProjectSelection) {
+        if (result.validation && result.validation.needsProjectSelection && !isInternalTransfer) {
             Logger.log('✅ Needs project selection (optional)');
             askProjectSelection(chatId, session);
             return;
         }
 
-        // ⭐ التحقق من طريقة الدفع
+        // ⭐ التحقق من طريقة الدفع (التحويل الداخلي يُعيّن تلقائياً)
         Logger.log('📊 Checking needsPaymentMethod: ' + (result.validation ? result.validation.needsPaymentMethod : 'no validation'));
-        if (result.validation && result.validation.needsPaymentMethod) {
+        if (result.validation && result.validation.needsPaymentMethod && !isInternalTransfer) {
             Logger.log('✅ Needs payment method');
             askPaymentMethod(chatId, session);
             return;
