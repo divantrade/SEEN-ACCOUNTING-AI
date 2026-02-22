@@ -9541,6 +9541,15 @@ function onEdit(e) {
     calculateUsdValue_(sheet, row);
     // بعد حساب M، نحتاج تحديث الرصيد O لكل حركات نفس الطرف
     recalculatePartyBalance_(sheet, row);
+    // ⚠️ التحقق من رصيد الخزينة/البنك قبل تسجيل الدفع
+    if (col === 10 && checkBalanceBeforePayment_(ss, sheet, row)) return;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // التحقق من الرصيد عند تغيير طريقة الدفع (Q=17)
+  // ═══════════════════════════════════════════════════════════
+  if (col === 17 && value) {
+    if (checkBalanceBeforePayment_(ss, sheet, row)) return;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -9630,6 +9639,92 @@ function calculateUsdValue_(sheet, row) {
   }
 
   sheet.getRange(row, 13).setValue(amountUsd); // M
+}
+
+/**
+ * التحقق من رصيد الخزينة/البنك قبل تسجيل الدفع
+ * يظهر تحذير + تأكيد إذا الرصيد صفر أو غير كافٍ
+ * @param {Spreadsheet} ss - الملف
+ * @param {Sheet} sheet - شيت الحركات
+ * @param {number} row - رقم الصف
+ * @returns {boolean} true إذا يجب إلغاء العملية
+ */
+function checkBalanceBeforePayment_(ss, sheet, row) {
+  // 1) جلب طبيعة الحركة (C = 3)
+  const nature = String(sheet.getRange(row, 3).getValue() || '');
+
+  // فقط حركات الدفع/التحصيل الفعلي (دفعة مصروف / سداد تمويل / تأمين مدفوع)
+  // لا يشمل: استحقاق (لأنه قيد محاسبي فقط بدون خروج نقد)
+  const isPayment = nature.includes('دفعة') || nature.includes('سداد') || nature.includes('تأمين مدفوع');
+  if (!isPayment) return false;
+
+  // 2) جلب طريقة الدفع (Q = 17) والعملة (K = 11) والمبلغ (J = 10)
+  const rowData = sheet.getRange(row, 10, 1, 8).getValues()[0]; // J(10) to Q(17)
+  const amount = Number(rowData[0]) || 0;                        // J: المبلغ
+  const currency = String(rowData[1] || '').trim();              // K: العملة
+  const payMethod = String(rowData[7] || '').trim();             // Q: طريقة الدفع
+
+  if (!amount || !payMethod) return false;
+
+  // 3) تحديد الشيت المناسب حسب طريقة الدفع + العملة
+  const isTRY = currency.includes('ليرة') || currency.toUpperCase() === 'TRY';
+  let accountSheetName = '';
+  let accountLabel = '';
+
+  if (payMethod.includes('نقد') || payMethod.includes('كاش') || payMethod === 'cash') {
+    accountSheetName = isTRY ? CONFIG.SHEETS.CASH_TRY : CONFIG.SHEETS.CASH_USD;
+    accountLabel = isTRY ? 'خزنة العهدة - ليرة' : 'خزنة العهدة - دولار';
+  } else if (payMethod.includes('بنك') || payMethod.includes('تحويل')) {
+    accountSheetName = isTRY ? CONFIG.SHEETS.BANK_TRY : CONFIG.SHEETS.BANK_USD;
+    accountLabel = isTRY ? 'حساب البنك - ليرة' : 'حساب البنك - دولار';
+  } else if (payMethod.includes('بطاقة')) {
+    accountSheetName = CONFIG.SHEETS.CARD_TRY || '';
+    accountLabel = 'حساب البطاقة - ليرة';
+  }
+
+  if (!accountSheetName) return false;
+
+  // 4) جلب الرصيد الحالي
+  const currentBalance = getLastBalanceFromSheet_(ss, accountSheetName);
+
+  // 5) التحقق والتحذير
+  const ui = SpreadsheetApp.getUi();
+
+  if (currentBalance <= 0) {
+    // ⛔ الرصيد صفر أو سالب
+    const response = ui.alert(
+      '⛔ تحذير - رصيد غير كافٍ',
+      '⚠️ ' + accountLabel + ' بدون رصيد!\n\n' +
+      '💰 الرصيد الحالي: ' + currentBalance.toLocaleString() + '\n' +
+      '📝 المبلغ المطلوب: ' + amount.toLocaleString() + ' ' + (currency || 'USD') + '\n\n' +
+      'هل تريد المتابعة رغم ذلك؟',
+      ui.ButtonSet.YES_NO
+    );
+    if (response === ui.Button.NO) {
+      // مسح المبلغ لمنع التسجيل
+      sheet.getRange(row, 10).setValue('');
+      sheet.getRange(row, 13).setValue(''); // M: القيمة بالدولار
+      return true;
+    }
+  } else if (currentBalance < amount) {
+    // ⚠️ الرصيد أقل من المبلغ المطلوب
+    const response = ui.alert(
+      '⚠️ تحذير - رصيد غير كافٍ',
+      '⚠️ الرصيد في ' + accountLabel + ' أقل من المبلغ المطلوب!\n\n' +
+      '💰 الرصيد الحالي: ' + currentBalance.toLocaleString() + '\n' +
+      '📝 المبلغ المطلوب: ' + amount.toLocaleString() + ' ' + (currency || 'USD') + '\n' +
+      '📉 العجز: ' + (amount - currentBalance).toLocaleString() + '\n\n' +
+      'هل تريد المتابعة رغم ذلك؟',
+      ui.ButtonSet.YES_NO
+    );
+    if (response === ui.Button.NO) {
+      sheet.getRange(row, 10).setValue('');
+      sheet.getRange(row, 13).setValue(''); // M: القيمة بالدولار
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
