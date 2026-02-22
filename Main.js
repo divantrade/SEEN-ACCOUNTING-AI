@@ -2866,11 +2866,24 @@ function generateDueReport() {
       let unpaidAmount = debit.amount;
       const projectKey = debit.project;
 
-      // ✅ تطبيق الدفعات من نفس المشروع فقط (لا نأخذ من مشاريع أخرى)
+      // ✅ الخطوة 1: تطبيق الدفعات من نفس المشروع أولاً
       if (remainingCreditByProject[projectKey] && remainingCreditByProject[projectKey] > 0) {
         const creditFromSameProject = Math.min(remainingCreditByProject[projectKey], unpaidAmount);
         unpaidAmount -= creditFromSameProject;
         remainingCreditByProject[projectKey] -= creditFromSameProject;
+      }
+
+      // ✅ الخطوة 2: إذا لم يُسدد بالكامل، تطبيق الدفعات من مشاريع أخرى (cross-project fallback)
+      if (unpaidAmount > 0.01) {
+        for (const otherProject in remainingCreditByProject) {
+          if (otherProject === projectKey) continue;
+          if (remainingCreditByProject[otherProject] > 0) {
+            const crossCredit = Math.min(remainingCreditByProject[otherProject], unpaidAmount);
+            unpaidAmount -= crossCredit;
+            remainingCreditByProject[otherProject] -= crossCredit;
+            if (unpaidAmount <= 0.01) break;
+          }
+        }
       }
 
       // إذا المبلغ مسدد بالكامل، تجاهل هذا الاستحقاق
@@ -3159,15 +3172,16 @@ function generatePartyReceivablesReport() {
 
     if (!party || amountUsd <= 0) continue;
 
-    // تحديد نوع الحركة
-    const isDebit = movementKind.indexOf('مدين') !== -1;
-    const isCredit = movementKind.indexOf('دائن') !== -1;
+    // ✅ تحديد نوع الحركة بدقة (نفس منطق تقرير البنود)
+    const isDebitAccrual = movementKind.indexOf('مدين استحقاق') !== -1;
+    const isCreditPayment = movementKind.indexOf('دائن دفعة') !== -1;
+    const isCreditSettlement = movementKind.indexOf('دائن تسوية') !== -1;
     // ✅ تمويل (دخول قرض) = دائن دفعة لكن يُعتبر دين على الشركة
     const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
     // ✅ تأمين مدفوع = دائن دفعة لكن يُعتبر مستحق لنا
     const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
 
-    if (!isDebit && !isCredit) continue;
+    if (!isDebitAccrual && !isCreditPayment && !isCreditSettlement) continue;
 
     // إنشاء سجل الطرف إذا لم يكن موجوداً
     if (!partyTotals[party]) {
@@ -3181,22 +3195,15 @@ function generatePartyReceivablesReport() {
 
     partyTotals[party].transactionCount++;
 
-    if (isDebit) {
+    if (isDebitAccrual || isInsurancePaid || isFundingIn) {
+      // ✅ مدين استحقاق أو تأمين مدفوع أو تمويل = يزيد المدين
       partyTotals[party].totalDebit += amountUsd;
-      // تحديث طبيعة الحركة إذا كانت أول حركة مدينة
       if (!partyTotals[party].nature) {
         partyTotals[party].nature = natureType;
       }
-    } else if (isCredit) {
-      // ✅ تمويل (دخول قرض) وتأمين مدفوع = دائن دفعة لكن يزيد الدين/المستحق
-      if (isFundingIn || isInsurancePaid) {
-        partyTotals[party].totalDebit += amountUsd;
-        if (!partyTotals[party].nature) {
-          partyTotals[party].nature = natureType;
-        }
-      } else {
-        partyTotals[party].totalCredit += amountUsd;
-      }
+    } else if (isCreditPayment || isCreditSettlement) {
+      // ✅ دائن دفعة أو تسوية = يزيد الدائن
+      partyTotals[party].totalCredit += amountUsd;
     }
   }
 
