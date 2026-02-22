@@ -1116,9 +1116,8 @@ function validateTransaction(transaction, context) {
         validation.enriched.payment_term = 'فوري';
         validation.enriched.payment_term_weeks = '';
         validation.enriched.payment_term_date = '';
-        if (!transaction.item) {
-            validation.enriched.item = 'مصاريف بنكية';
-        }
+        // ⭐ المصاريف البنكية: البند دائماً "مصاريف بنكية" بغض النظر عن ما رجعه Gemini
+        validation.enriched.item = 'مصاريف بنكية';
         // المصاريف البنكية: الطرف اختياري - إذا ذُكر طرف في النص يتم مطابقته
         if (transaction.party && context.parties) {
             const partyMatch = matchParty(transaction.party, context.parties);
