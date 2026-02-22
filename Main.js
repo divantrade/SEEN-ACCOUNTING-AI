@@ -118,6 +118,8 @@ function onOpen() {
     .addSubMenu(
       ui.createMenu('🏦 البنك وخزنة العهدة')
         .addItem('🔄 تحديث شيتات البنك والخزنة والبطاقة', 'rebuildBankAndCashFromTransactions')
+        .addSeparator()
+        .addItem('🔍 مطابقة التدفقات مع الأرصدة', 'reconcileCashFlowWithAccounts')
     )
 
     .addSubMenu(
@@ -10356,6 +10358,332 @@ function rebuildBankAndCashFromTransactions(silent) {
   }
   return { success: true, name: 'البنوك والخزنة والبطاقة' };
 }
+// ==================== 🔍 مطابقة التدفقات مع الأرصدة ====================
+
+/**
+ * دالة كشف فقط (Read-Only) - تقارن بين تقرير التدفقات وشيتات البنك/الخزنة
+ * لا تعدل أي بيانات - فقط تعرض الفروقات في شيت منفصل
+ */
+function reconcileCashFlowWithAccounts() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+  if (!transSheet) {
+    ui.alert('⚠️ شيت "دفتر الحركات المالية" غير موجود.');
+    return;
+  }
+
+  const data = transSheet.getDataRange().getValues();
+  if (data.length < 2) {
+    ui.alert('⚠️ لا توجد حركات في الدفتر.');
+    return;
+  }
+
+  const headers = data[0];
+  const col = {
+    transNo:        findHeaderIndex_(headers, 'رقم الحركة'),
+    date:           findHeaderIndex_(headers, 'التاريخ'),
+    type:           findHeaderIndex_(headers, 'طبيعة الحركة'),
+    classification: findHeaderIndex_(headers, 'تصنيف الحركة'),
+    item:           findHeaderIndex_(headers, 'البند'),
+    details:        findHeaderIndex_(headers, 'التفاصيل'),
+    party:          findHeaderIndex_(headers, 'اسم المورد/الجهة'),
+    amount:         findHeaderIndex_(headers, 'المبلغ بالعملة الأصلية'),
+    currency:       findHeaderIndex_(headers, ['العملة', 'العملة الأصلية']),
+    amountUsd:      findHeaderIndex_(headers, 'القيمة بالدولار'),
+    payMethod:      findHeaderIndex_(headers, 'طريقة الدفع'),
+    movement:       findHeaderIndex_(headers, 'نوع الحركة'),
+    status:         findHeaderIndex_(headers, 'حالة السداد')
+  };
+
+  // نتائج المقارنة
+  var onlyInCashFlow = [];  // في التدفقات فقط
+  var onlyInBankCash = [];  // في البنك/الخزنة فقط
+
+  var cfInTotal = 0, cfOutTotal = 0;
+  var bcInTotal = 0, bcOutTotal = 0;
+  var bothCount = 0;
+
+  // تتبع حسب العملة
+  var currencyBreakdown = {};
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var typeVal = String(row[col.type] || '').trim();
+    if (!typeVal) continue;
+
+    var classVal = col.classification >= 0 ? String(row[col.classification] || '').trim() : '';
+    var itemVal = col.item >= 0 ? String(row[col.item] || '').trim() : '';
+    var detailsVal = col.details >= 0 ? String(row[col.details] || '').trim() : '';
+    var statusVal = col.status >= 0 ? String(row[col.status] || '').trim() : '';
+    var payMethodVal = col.payMethod >= 0 ? String(row[col.payMethod] || '').trim() : '';
+    var currencyVal = col.currency >= 0 ? String(row[col.currency] || '').trim() : '';
+    var amountUsd = col.amountUsd >= 0 ? (Number(row[col.amountUsd]) || 0) : 0;
+    var amountOrig = col.amount >= 0 ? (Number(row[col.amount]) || 0) : 0;
+
+    if (!amountUsd && !amountOrig) continue;
+
+    // ═══ تصنيف التدفقات النقدية (ما يظهر في تقرير التدفقات) ═══
+    var cfDirection = '';
+    if (typeVal.indexOf('تحصيل إيراد') !== -1 || typeVal.indexOf('استرداد تأمين') !== -1) {
+      cfDirection = 'in';
+    } else if (typeVal.indexOf('تمويل') !== -1 && typeVal.indexOf('سداد تمويل') === -1) {
+      cfDirection = 'in';
+    } else if (typeVal.indexOf('دفعة مصروف') !== -1 || typeVal.indexOf('سداد تمويل') !== -1 || typeVal.indexOf('تأمين مدفوع') !== -1) {
+      cfDirection = 'out';
+    }
+
+    // ═══ تصنيف البنك/الخزنة (ما يظهر في شيتات البنك والخزنة) ═══
+    var isAccrual = typeVal.indexOf('استحقاق') !== -1 || statusVal === 'معلق';
+    var isFinancing = (typeVal.indexOf('تمويل') !== -1 && typeVal.indexOf('سداد تمويل') === -1) ||
+      classVal.indexOf('تمويل') !== -1 || detailsVal.indexOf('تمويل') !== -1 ||
+      classVal.indexOf('سلفة قصيرة') !== -1 || detailsVal.indexOf('سلفة قصيرة') !== -1;
+    var isPaidMovement = statusVal === 'عملية دفع/تحصيل' || statusVal === 'مدفوع' || statusVal === 'مدفوع جزئياً';
+    var isInternalTransfer = typeVal.indexOf('تحويل داخلي') !== -1;
+    var isBankFees = typeVal.indexOf('مصاريف بنكية') !== -1 || itemVal.indexOf('مصاريف بنكية') !== -1;
+    var hasPayMethod = !!payMethodVal && !!currencyVal;
+
+    var isInBankCash = hasPayMethod && (isPaidMovement || (isAccrual && isFinancing) || isInternalTransfer || isBankFees);
+
+    // اتجاه الحركة في البنك/الخزنة
+    var bcDirection = '';
+    if (isInBankCash) {
+      if (isInternalTransfer) {
+        bcDirection = 'transfer';
+      } else {
+        var isFundingIn = typeVal.indexOf('تمويل') !== -1 && typeVal.indexOf('سداد تمويل') === -1;
+        if (typeVal.indexOf('تحصيل') !== -1 || isFundingIn || typeVal.indexOf('استرداد') !== -1) {
+          bcDirection = 'in';
+        } else {
+          bcDirection = 'out';
+        }
+      }
+    }
+
+    // تجميع المبالغ
+    if (cfDirection === 'in') cfInTotal += amountUsd;
+    if (cfDirection === 'out') cfOutTotal += amountUsd;
+    if (bcDirection === 'in') bcInTotal += amountUsd;
+    if (bcDirection === 'out') bcOutTotal += amountUsd;
+
+    // تجميع حسب العملة
+    var curKey = currencyVal || 'غير محدد';
+    if (!currencyBreakdown[curKey]) {
+      currencyBreakdown[curKey] = { cfIn: 0, cfOut: 0, bcIn: 0, bcOut: 0 };
+    }
+    if (cfDirection === 'in') currencyBreakdown[curKey].cfIn += amountOrig;
+    if (cfDirection === 'out') currencyBreakdown[curKey].cfOut += amountOrig;
+    if (bcDirection === 'in') currencyBreakdown[curKey].bcIn += amountOrig;
+    if (bcDirection === 'out') currencyBreakdown[curKey].bcOut += amountOrig;
+
+    // بيانات الحركة للتقرير
+    var transInfo = [
+      col.transNo >= 0 ? row[col.transNo] : i,
+      col.date >= 0 ? row[col.date] : '',
+      typeVal,
+      classVal,
+      col.party >= 0 ? String(row[col.party] || '') : '',
+      currencyVal,
+      amountOrig,
+      amountUsd,
+      payMethodVal,
+      statusVal,
+      cfDirection === 'in' ? 'داخلة' : (cfDirection === 'out' ? 'خارجة' : '-'),
+      bcDirection === 'in' ? 'داخلة' : (bcDirection === 'out' ? 'خارجة' : (bcDirection === 'transfer' ? 'تحويل' : '-'))
+    ];
+
+    // تصنيف الفروقات
+    var isInCF = !!cfDirection;
+    if (isInCF && !isInBankCash) {
+      onlyInCashFlow.push(transInfo);
+    } else if (!isInCF && isInBankCash && bcDirection !== 'transfer') {
+      onlyInBankCash.push(transInfo);
+    } else if (isInCF && isInBankCash) {
+      bothCount++;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  إنشاء شيت التقرير
+  // ═══════════════════════════════════════════════════════════
+  var reportName = '🔍 تقرير المطابقة';
+  var reportSheet = ss.getSheetByName(reportName);
+  if (reportSheet) {
+    reportSheet.clear();
+  } else {
+    reportSheet = ss.insertSheet(reportName);
+  }
+
+  var r = 1; // مؤشر الصف الحالي
+
+  // ─── العنوان ───
+  reportSheet.getRange(r, 1, 1, 6).merge();
+  reportSheet.getRange(r, 1).setValue('🔍 تقرير مطابقة التدفقات النقدية مع حسابات البنك والخزنة')
+    .setFontSize(14).setFontWeight('bold').setBackground('#1a237e').setFontColor('#ffffff').setHorizontalAlignment('center');
+  r += 1;
+  reportSheet.getRange(r, 1, 1, 6).merge();
+  reportSheet.getRange(r, 1).setValue('📅 تاريخ التقرير: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'))
+    .setFontSize(10).setHorizontalAlignment('center').setBackground('#e8eaf6');
+  r += 2;
+
+  // ─── ملخص المقارنة ───
+  reportSheet.getRange(r, 1, 1, 4).merge();
+  reportSheet.getRange(r, 1).setValue('📊 ملخص المقارنة (جميع المبالغ بالدولار - عمود M)')
+    .setFontSize(12).setFontWeight('bold').setBackground('#e3f2fd');
+  r += 1;
+
+  var cfNet = cfInTotal - cfOutTotal;
+  var bcNet = bcInTotal - bcOutTotal;
+  var diff = cfNet - bcNet;
+
+  var summaryHeaders = ['البيان', 'تقرير التدفقات', 'شيتات البنك/الخزنة', 'الفرق'];
+  var summaryData = [
+    ['💰 التدفقات الداخلة', cfInTotal, bcInTotal, cfInTotal - bcInTotal],
+    ['💸 التدفقات الخارجة', cfOutTotal, bcOutTotal, cfOutTotal - bcOutTotal],
+    ['📈 الصافي', cfNet, bcNet, diff]
+  ];
+
+  reportSheet.getRange(r, 1, 1, 4).setValues([summaryHeaders]).setFontWeight('bold').setBackground('#bbdefb');
+  r += 1;
+  reportSheet.getRange(r, 1, summaryData.length, 4).setValues(summaryData);
+  reportSheet.getRange(r, 2, summaryData.length, 3).setNumberFormat('$#,##0.00');
+  // تلوين صف الصافي
+  reportSheet.getRange(r + 2, 1, 1, 4).setFontWeight('bold').setBackground('#fff9c4');
+  r += summaryData.length + 1;
+
+  // ─── أرصدة الحسابات الفعلية ───
+  reportSheet.getRange(r, 1, 1, 4).merge();
+  reportSheet.getRange(r, 1).setValue('💰 أرصدة الحسابات الفعلية (من آخر صف في كل شيت)')
+    .setFontSize(12).setFontWeight('bold').setBackground('#e8f5e9');
+  r += 1;
+
+  reportSheet.getRange(r, 1, 1, 4).setValues([['الحساب', 'الرصيد', 'العملة', 'عدد الحركات']]).setFontWeight('bold').setBackground('#c8e6c9');
+  r += 1;
+
+  var accountSheets = [
+    { name: CONFIG.SHEETS.BANK_USD, label: 'حساب البنك - دولار', cur: 'USD' },
+    { name: CONFIG.SHEETS.BANK_TRY, label: 'حساب البنك - ليرة', cur: 'TRY' },
+    { name: CONFIG.SHEETS.CASH_USD, label: 'خزنة العهدة - دولار', cur: 'USD' },
+    { name: CONFIG.SHEETS.CASH_TRY, label: 'خزنة العهدة - ليرة', cur: 'TRY' }
+  ];
+
+  var totalUsd = 0, totalTry = 0;
+  for (var a = 0; a < accountSheets.length; a++) {
+    var accInfo = accountSheets[a];
+    var accSheet = ss.getSheetByName(accInfo.name);
+    var bal = 0, txCount = 0;
+    if (accSheet && accSheet.getLastRow() >= 2) {
+      bal = Number(accSheet.getRange(accSheet.getLastRow(), 7).getValue()) || 0;
+      txCount = accSheet.getLastRow() - 1;
+    }
+    reportSheet.getRange(r, 1, 1, 4).setValues([[accInfo.label, bal, accInfo.cur, txCount + ' حركة']]);
+    if (accInfo.cur === 'USD') totalUsd += bal;
+    else totalTry += bal;
+    r += 1;
+  }
+  reportSheet.getRange(r, 1, 1, 4).setValues([['إجمالي USD', totalUsd, 'USD', '']]).setFontWeight('bold');
+  r += 1;
+  reportSheet.getRange(r, 1, 1, 4).setValues([['إجمالي TRY', totalTry, 'TRY', '']]).setFontWeight('bold');
+  r += 2;
+
+  // ─── تفصيل حسب العملة ───
+  reportSheet.getRange(r, 1, 1, 6).merge();
+  reportSheet.getRange(r, 1).setValue('💱 تفصيل التدفقات حسب العملة (بالعملة الأصلية)')
+    .setFontSize(12).setFontWeight('bold').setBackground('#fff3e0');
+  r += 1;
+
+  reportSheet.getRange(r, 1, 1, 5).setValues([['العملة', 'داخلة (تقرير)', 'خارجة (تقرير)', 'صافي التقرير', 'صافي البنك/الخزنة']]).setFontWeight('bold').setBackground('#ffe0b2');
+  r += 1;
+
+  var curKeys = Object.keys(currencyBreakdown).sort();
+  for (var c = 0; c < curKeys.length; c++) {
+    var ck = curKeys[c];
+    var cb = currencyBreakdown[ck];
+    reportSheet.getRange(r, 1, 1, 5).setValues([[
+      ck, cb.cfIn, cb.cfOut, cb.cfIn - cb.cfOut, cb.bcIn - cb.bcOut
+    ]]);
+    reportSheet.getRange(r, 2, 1, 4).setNumberFormat('#,##0.00');
+    r += 1;
+  }
+  r += 1;
+
+  // ─── إحصائيات ───
+  reportSheet.getRange(r, 1, 1, 4).merge();
+  reportSheet.getRange(r, 1).setValue('📋 إحصائيات التصنيف')
+    .setFontSize(12).setFontWeight('bold').setBackground('#f3e5f5');
+  r += 1;
+
+  var statsData = [
+    ['✅ حركات متطابقة (في الاثنين)', bothCount],
+    ['⚠️ في تقرير التدفقات فقط (لا تظهر في البنك/الخزنة)', onlyInCashFlow.length],
+    ['⚠️ في البنك/الخزنة فقط (لا تظهر في تقرير التدفقات)', onlyInBankCash.length]
+  ];
+  reportSheet.getRange(r, 1, statsData.length, 2).setValues(statsData);
+  r += statsData.length + 1;
+
+  // ─── الحركات غير المتطابقة ───
+  var detailHeaders = ['رقم الحركة', 'التاريخ', 'طبيعة الحركة', 'التصنيف', 'الطرف', 'العملة', 'المبلغ الأصلي', 'بالدولار', 'طريقة الدفع', 'حالة السداد', 'في التدفقات', 'في البنك/الخزنة'];
+
+  if (onlyInCashFlow.length > 0) {
+    reportSheet.getRange(r, 1, 1, detailHeaders.length).merge();
+    reportSheet.getRange(r, 1).setValue('⚠️ حركات في تقرير التدفقات ولكن ليست في البنك/الخزنة (' + onlyInCashFlow.length + ' حركة)')
+      .setFontSize(11).setFontWeight('bold').setBackground('#ffcdd2');
+    r += 1;
+
+    var cfOnlyTotal = 0;
+    for (var j = 0; j < onlyInCashFlow.length; j++) cfOnlyTotal += Number(onlyInCashFlow[j][7]) || 0;
+
+    reportSheet.getRange(r, 1, 1, detailHeaders.length).setValues([detailHeaders]).setFontWeight('bold').setBackground('#ef9a9a');
+    r += 1;
+    reportSheet.getRange(r, 1, onlyInCashFlow.length, detailHeaders.length).setValues(onlyInCashFlow);
+    reportSheet.getRange(r, 7, onlyInCashFlow.length, 2).setNumberFormat('#,##0.00');
+    r += onlyInCashFlow.length;
+    reportSheet.getRange(r, 1, 1, 8).setValues([['', '', '', '', '', 'الإجمالي:', '', cfOnlyTotal]]).setFontWeight('bold');
+    reportSheet.getRange(r, 8).setNumberFormat('$#,##0.00');
+    r += 2;
+  }
+
+  if (onlyInBankCash.length > 0) {
+    reportSheet.getRange(r, 1, 1, detailHeaders.length).merge();
+    reportSheet.getRange(r, 1).setValue('⚠️ حركات في البنك/الخزنة ولكن ليست في تقرير التدفقات (' + onlyInBankCash.length + ' حركة)')
+      .setFontSize(11).setFontWeight('bold').setBackground('#ffe0b2');
+    r += 1;
+
+    var bcOnlyTotal = 0;
+    for (var k = 0; k < onlyInBankCash.length; k++) bcOnlyTotal += Number(onlyInBankCash[k][7]) || 0;
+
+    reportSheet.getRange(r, 1, 1, detailHeaders.length).setValues([detailHeaders]).setFontWeight('bold').setBackground('#ffcc80');
+    r += 1;
+    reportSheet.getRange(r, 1, onlyInBankCash.length, detailHeaders.length).setValues(onlyInBankCash);
+    reportSheet.getRange(r, 7, onlyInBankCash.length, 2).setNumberFormat('#,##0.00');
+    r += onlyInBankCash.length;
+    reportSheet.getRange(r, 1, 1, 8).setValues([['', '', '', '', '', 'الإجمالي:', '', bcOnlyTotal]]).setFontWeight('bold');
+    reportSheet.getRange(r, 8).setNumberFormat('$#,##0.00');
+    r += 2;
+  }
+
+  if (onlyInCashFlow.length === 0 && onlyInBankCash.length === 0) {
+    reportSheet.getRange(r, 1, 1, 4).merge();
+    reportSheet.getRange(r, 1).setValue('✅ لا توجد فروقات - جميع الحركات متطابقة!')
+      .setFontSize(12).setFontWeight('bold').setBackground('#c8e6c9').setFontColor('#2e7d32');
+  }
+
+  // تنسيق عام
+  reportSheet.autoResizeColumns(1, detailHeaders.length);
+  reportSheet.setColumnWidth(1, 120);
+
+  // عرض الشيت
+  ss.setActiveSheet(reportSheet);
+  ui.alert(
+    '✅ تم إنشاء تقرير المطابقة\n\n' +
+    '📊 حركات متطابقة: ' + bothCount + '\n' +
+    '⚠️ في التدفقات فقط: ' + onlyInCashFlow.length + '\n' +
+    '⚠️ في البنك/الخزنة فقط: ' + onlyInBankCash.length + '\n\n' +
+    'راجع شيت "🔍 تقرير المطابقة" للتفاصيل.'
+  );
+}
+
+
 // ==================== شيتات مطابقة البنك (دولار / ليرة) ====================
 
 // إنشاء شيت مطابقة (نفس الشيت نلصق فيه كشف البنك وتظهر فيه النتيجة)
