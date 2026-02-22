@@ -5233,8 +5233,11 @@ function fixAllDropdowns() {
     weeksRange.setValues(weeksValues);
   }
 
+  // إعادة تطبيق التلوين الشرطي تلقائياً (تمويل=أخضر، مدين استحقاق=برتقالي، دائن تسوية=بنفسجي، دائن دفعة=أزرق)
+  applyConditionalFormatting(sheet, lastRow);
+
   ui.alert(
-    '✅ تم إصلاح القوائم المنسدلة!',
+    '✅ تم إصلاح القوائم المنسدلة والتلوين!',
     'تم تطبيق الـ dropdowns والـ validations على:\n\n' +
     '• عمود N (نوع الحركة)\n' +
     '• عمود K (العملة)\n' +
@@ -5243,6 +5246,7 @@ function fixAllDropdowns() {
     '• عمود S (عدد الأسابيع) - أرقام 0-52\n\n' +
     'تم تنظيف ' + nCleanedCount + ' خلية في عمود N (نوع الحركة)\n' +
     'تم تصحيح ' + fixedCount + ' خلية فارغة في عمود S\n' +
+    '✅ تم إعادة تطبيق التلوين الشرطي (4 قواعد)\n' +
     'عدد الصفوف: ' + lastRow,
     ui.ButtonSet.OK
   );
