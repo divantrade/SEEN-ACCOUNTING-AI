@@ -11164,7 +11164,17 @@ function reviewAndFixMovementTypes() {
   if (response === ui.Button.YES) {
     // تطبيق الإصلاحات
     sheet.getRange(2, 14, fixes.length, 1).setValues(fixes);
-    ui.alert('✅ تم الإصلاح\n\nتم إصلاح ' + errors.length + ' خطأ بنجاح.');
+
+    // ═══ تحديث عمود V (حالة السداد) تلقائياً بعد إصلاح عمود N ═══
+    // بدون هذا التحديث، عمود V يبقى بالقيمة القديمة المبنية على نوع الحركة الخاطئ
+    try {
+      refreshValueAndBalanceFormulas();
+    } catch (e) {
+      Logger.log('⚠️ خطأ أثناء تحديث الأرصدة بعد إصلاح نوع الحركة: ' + e.message);
+    }
+
+    ui.alert('✅ تم الإصلاح\n\nتم إصلاح ' + errors.length + ' خطأ في نوع الحركة (عمود N).\n' +
+             'وتم تحديث حالة السداد (عمود V) والأرصدة تلقائياً.');
   } else {
     ui.alert('ℹ️ تم إلغاء الإصلاح\n\nلم يتم تعديل أي بيانات.');
   }
