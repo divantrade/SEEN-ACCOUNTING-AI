@@ -1007,9 +1007,10 @@ function validateTransaction(transaction, context) {
         });
     }
 
-    // التحويل الداخلي لا يحتاج طرف
+    // التحويل الداخلي والمصاريف البنكية لا تحتاج طرف
     const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
-    if (!transaction.party && !isInternalTransfer) {
+    const isBankFees = (transaction.nature || '').includes('مصاريف بنكية');
+    if (!transaction.party && !isInternalTransfer && !isBankFees) {
         validation.missingRequired.push({
             field: 'party',
             label: 'الطرف',
@@ -1074,7 +1075,7 @@ function validateTransaction(transaction, context) {
 
     // ⭐ شروط الدفع (تعتمد على نوع الحركة)
     const nature = transaction.nature || '';
-    const isPayment = nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استلام') || nature.includes('تسوية');
+    const isPayment = nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استلام') || nature.includes('تسوية') || nature.includes('مصاريف بنكية');
 
     if (isPayment) {
         // الدفعات الفعلية: شرط الدفع "فوري" تلقائياً (تم الدفع بتاريخ الحركة)
@@ -1103,11 +1104,22 @@ function validateTransaction(transaction, context) {
         validation.enriched.payment_term_date = '';
     }
 
-    // مطابقة الطرف (التحويل الداخلي لا يحتاج طرف)
-    if (isInternalTransfer) {
+    // مطابقة الطرف (التحويل الداخلي والمصاريف البنكية لا تحتاج طرف)
+    if (isInternalTransfer || isBankFees) {
         validation.enriched.party = '';
         validation.enriched.isNewParty = false;
-        Logger.log('🔄 تحويل داخلي - تخطي مطابقة الطرف');
+        Logger.log(isInternalTransfer ? '🔄 تحويل داخلي - تخطي مطابقة الطرف' : '🏦 مصاريف بنكية - تخطي مطابقة الطرف');
+        // المصاريف البنكية: تعيين التصنيف وطريقة الدفع تلقائياً
+        if (isBankFees) {
+            validation.enriched.classification = 'مصروفات عمومية';
+            validation.enriched.payment_method = 'تحويل بنكي';
+            validation.enriched.payment_term = 'فوري';
+            validation.enriched.payment_term_weeks = '';
+            validation.enriched.payment_term_date = '';
+            if (!transaction.item) {
+                validation.enriched.item = 'مصاريف بنكية';
+            }
+        }
     } else if (transaction.party && context.parties) {
         const partyMatch = matchParty(transaction.party, context.parties);
         if (partyMatch.found) {
@@ -1335,7 +1347,8 @@ function inferMovementType(nature) {
         'استلام تمويل',
         'سداد تمويل',
         'تأمين مدفوع للقناة',
-        'تحويل داخلي'
+        'تحويل داخلي',
+        'مصاريف بنكية'
     ];
     return creditNatures.includes(nature) ? 'دائن دفعة' : 'مدين استحقاق';
 }
@@ -1390,11 +1403,13 @@ function buildTransactionSummary(transaction) {
         summary += `📋 *البند:* ${transaction.item}\n`;
     }
 
-    summary += `👤 *الطرف:* ${transaction.party}`;
-    if (transaction.isNewParty) {
-        summary += ' _(جديد)_';
+    if (transaction.party) {
+        summary += `👤 *الطرف:* ${transaction.party}`;
+        if (transaction.isNewParty) {
+            summary += ' _(جديد)_';
+        }
+        summary += '\n';
     }
-    summary += '\n';
 
     summary += `💰 *المبلغ:* ${formatNumber(transaction.amount)} ${transaction.currency}\n`;
 
@@ -1449,7 +1464,8 @@ function getTransactionEmoji(nature) {
         'استحقاق إيراد': '📥',
         'تحصيل إيراد': '💰',
         'تمويل': '🏦',
-        'سداد تمويل': '💳'
+        'سداد تمويل': '💳',
+        'مصاريف بنكية': '🏦'
     };
     return emojis[nature] || '📋';
 }
