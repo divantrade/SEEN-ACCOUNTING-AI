@@ -194,7 +194,7 @@ function onOpen() {
         .addItem('⚖️ فحص الاستحقاقات والدفعات (سريع)', 'checkAccrualPaymentBalance')
         .addItem('⚖️ تقرير الاستحقاقات والدفعات (شيت)', 'generateAccrualPaymentReport')
         .addItem('🎨 إعادة تطبيق التلوين الشرطي', 'refreshTransactionsFormatting')
-        .addItem('💵 تحديث شامل (M, O, U, V)', 'refreshValueAndBalanceFormulas')
+        .addItem('💵 تحديث شامل (M, N, O, U, V)', 'refreshValueAndBalanceFormulas')
         .addSeparator()
         .addItem('🔔 تفعيل التسجيل التلقائي', 'installActivityTriggers')
         .addItem('🔕 إيقاف التسجيل التلقائي', 'uninstallActivityTriggers')
@@ -1453,7 +1453,7 @@ function refreshDueDateFormulas() {
 }
 
 /**
- * تحديث شامل للأعمدة المحسوبة: M (القيمة بالدولار), O (الرصيد), U (تاريخ الاستحقاق), V (حالة السداد)
+ * تحديث شامل للأعمدة المحسوبة: M (القيمة بالدولار), N (نوع الحركة), O (الرصيد), U (تاريخ الاستحقاق), V (حالة السداد)
  * هذه الدالة تحسب القيم وتكتبها مباشرة (بدون معادلات) لحماية البيانات من أخطاء المستخدمين
  */
 function refreshValueAndBalanceFormulas() {
@@ -1492,6 +1492,7 @@ function refreshValueAndBalanceFormulas() {
   const data = dataRange.getValues();
 
   const valuesM = [];  // القيمة بالدولار (M) - column 13
+  const valuesN = [];  // نوع الحركة (N) - column 14 (يُعاد حسابه من C)
   const valuesO = [];  // الرصيد (O) - column 15
   const valuesU = [];  // تاريخ الاستحقاق (U) - column 21
   const valuesV = [];  // حالة السداد (V) - column 22
@@ -1507,7 +1508,10 @@ function refreshValueAndBalanceFormulas() {
     const amount = Number(row[9]) || 0;        // J: المبلغ (index 9)
     const currency = String(row[10] || '').trim().toUpperCase(); // K: العملة (index 10)
     const exchangeRate = Number(row[11]) || 0; // L: سعر الصرف (index 11)
-    const movementKind = String(row[13] || '').trim(); // N: نوع الحركة (index 13)
+    const natureType = String(row[2] || '').trim(); // C: طبيعة الحركة (index 2)
+    const oldMovementKind = String(row[13] || '').trim(); // N: نوع الحركة الحالي (index 13)
+    // ✅ إعادة حساب N من C باستخدام الدالة المركزية (يصلح التمويل تلقائياً)
+    const movementKind = natureType ? (getMovementTypeFromNature_(natureType) || oldMovementKind) : oldMovementKind;
     const paymentTermType = String(row[17] || '').trim(); // R: نوع شرط الدفع (index 17)
     const weeks = Number(row[18]) || 0;        // S: عدد الأسابيع (index 18)
     const customDate = row[19];                // T: تاريخ مخصص (index 19)
@@ -1533,6 +1537,7 @@ function refreshValueAndBalanceFormulas() {
       }
     }
     valuesM.push([hasValidConversion && amountUsd > 0 ? Math.round(amountUsd * 100) / 100 : '']);
+    valuesN.push([movementKind]); // N: نوع الحركة (مُعاد حسابه من C)
 
     // ═══════════════════════════════════════════════════════════
     // 2. حساب الرصيد (O) وحالة السداد (V)
@@ -1540,7 +1545,6 @@ function refreshValueAndBalanceFormulas() {
     // ═══════════════════════════════════════════════════════════
     let balance = '';
     let status = '';
-    const natureType = String(row[2] || '').trim(); // C: طبيعة الحركة
     const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
     const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;  // ✅ تأمين مدفوع للقناة
 
@@ -1606,6 +1610,7 @@ function refreshValueAndBalanceFormulas() {
 
   // كتابة كل القيم دفعة واحدة (بدون معادلات)
   sheet.getRange(2, 13, numRows, 1).setValues(valuesM);  // M: القيمة بالدولار
+  sheet.getRange(2, 14, numRows, 1).setValues(valuesN);  // N: نوع الحركة (مُعاد حسابه)
   sheet.getRange(2, 15, numRows, 1).setValues(valuesO);  // O: الرصيد
   sheet.getRange(2, 21, numRows, 1).setValues(valuesU);  // U: تاريخ الاستحقاق
   sheet.getRange(2, 22, numRows, 1).setValues(valuesV);  // V: حالة السداد
@@ -1620,6 +1625,7 @@ function refreshValueAndBalanceFormulas() {
     'تم حساب وكتابة القيم (بدون معادلات) في:\n\n' +
     '• M - القيمة بالدولار: المبلغ ÷ سعر الصرف (أو نفسه للدولار)\n' +
     '   ⚠️ إذا كانت العملة غير دولار ولا يوجد سعر صرف = ترك فارغ\n' +
+    '• N - نوع الحركة: يُعاد حسابه من طبيعة الحركة (C)\n' +
     '• O - الرصيد: مدين استحقاق - دائن دفعة - دائن تسوية لكل طرف\n' +
     '• U - تاريخ الاستحقاق: حسب نوع شرط الدفع\n' +
     '• V - حالة السداد: معلق / مدفوع بالكامل / عملية دفع/تحصيل\n\n' +
@@ -2647,9 +2653,9 @@ function updateAlerts(silent) {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 1. تنبيهات الاستحقاقات المدينة (فواتير يجب سدادها)
+    // 1. تنبيهات الاستحقاقات المدينة (فواتير يجب سدادها + تمويل يجب سداده)
     // ═══════════════════════════════════════════════════════════
-    if (isDebit && amountUsd > 0 && dueDate && !isPaid) {
+    if ((isDebit || isFundingIn) && amountUsd > 0 && dueDate && !isPaid) {
       const dueDateObj = new Date(dueDate);
       const daysLeft = Math.ceil((dueDateObj - today) / (1000 * 60 * 60 * 24));
 
@@ -2793,6 +2799,8 @@ function generateDueReport() {
 
     // ✅ تأمين مدفوع = دائن دفعة لكن يُعامل كاستحقاق (القناة تدين لنا)
     const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
+    // ✅ تمويل (دخول قرض) = دائن دفعة لكن يُعامل كاستحقاق (دين على الشركة)
+    const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
 
     if (!isDebitAccrual && !isCreditPayment && !isCreditSettlement) continue;
 
@@ -2807,8 +2815,8 @@ function generateDueReport() {
 
     const projectKey = project || 'بدون مشروع';
 
-    if (isDebitAccrual || isInsurancePaid) {
-      // ✅ مدين استحقاق أو تأمين مدفوع = حفظ كاستحقاق مستحق لنا
+    if (isDebitAccrual || isInsurancePaid || isFundingIn) {
+      // ✅ مدين استحقاق أو تأمين مدفوع أو تمويل (دخول قرض) = حفظ كاستحقاق مستحق
       partyData[party].debits.push({
         rowNum: rowNum,
         amount: amountUsd,
@@ -3154,6 +3162,10 @@ function generatePartyReceivablesReport() {
     // تحديد نوع الحركة
     const isDebit = movementKind.indexOf('مدين') !== -1;
     const isCredit = movementKind.indexOf('دائن') !== -1;
+    // ✅ تمويل (دخول قرض) = دائن دفعة لكن يُعتبر دين على الشركة
+    const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
+    // ✅ تأمين مدفوع = دائن دفعة لكن يُعتبر مستحق لنا
+    const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
 
     if (!isDebit && !isCredit) continue;
 
@@ -3176,7 +3188,15 @@ function generatePartyReceivablesReport() {
         partyTotals[party].nature = natureType;
       }
     } else if (isCredit) {
-      partyTotals[party].totalCredit += amountUsd;
+      // ✅ تمويل (دخول قرض) وتأمين مدفوع = دائن دفعة لكن يزيد الدين/المستحق
+      if (isFundingIn || isInsurancePaid) {
+        partyTotals[party].totalDebit += amountUsd;
+        if (!partyTotals[party].nature) {
+          partyTotals[party].nature = natureType;
+        }
+      } else {
+        partyTotals[party].totalCredit += amountUsd;
+      }
     }
   }
 
