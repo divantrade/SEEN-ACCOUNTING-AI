@@ -1453,6 +1453,24 @@ function handleNatureSelection(chatId, messageId, nature, session) {
         return;
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 🏦 المصاريف البنكية: تخطي التصنيف والمشروع والبند والطرف → المبلغ مباشرة
+    // ═══════════════════════════════════════════════════════════
+    if (nature === 'مصاريف بنكية') {
+        session.data.classification = 'مصروفات عمومية';
+        session.data.projectCode = '';
+        session.data.projectName = '';
+        session.data.item = 'مصاريف بنكية';
+        session.data.partyName = '';
+        session.data.isNewParty = false;
+        session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_AMOUNT;
+        saveUserSession(chatId, session);
+
+        editMessage(chatId, messageId, `✅ طبيعة الحركة: *${nature}*`);
+        sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.ENTER_AMOUNT, null, 'Markdown');
+        return;
+    }
+
     // الانتقال لاختيار التصنيف
     session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_CLASSIFICATION;
     saveUserSession(chatId, session);

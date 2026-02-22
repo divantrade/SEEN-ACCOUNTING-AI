@@ -670,6 +670,8 @@ function addBotTransaction(transactionData) {
 function getMovementType(nature) {
     if (nature.includes('تحويل داخلي')) {
         return CONFIG.MOVEMENT.CREDIT; // دائن دفعة
+    } else if (nature.includes('مصاريف بنكية')) {
+        return CONFIG.MOVEMENT.CREDIT; // دائن دفعة - خروج نقدية من البنك
     } else if (nature.includes('تسوية')) {
         return CONFIG.MOVEMENT.CREDIT;
     } else if (nature.includes('استحقاق') || nature === 'تمويل') {
@@ -1233,6 +1235,8 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
         let movementType = '';
         if (nature.includes('تحويل داخلي')) {
             movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة
+        } else if (nature.includes('مصاريف بنكية')) {
+            movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة - خروج نقدية من البنك
         } else if (nature.includes('تسوية')) {
             movementType = CONFIG.MOVEMENT.CREDIT;
         } else if (nature.includes('استحقاق') || nature === 'تمويل') {
