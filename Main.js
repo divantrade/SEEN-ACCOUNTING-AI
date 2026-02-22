@@ -3496,9 +3496,13 @@ function showUpcomingPayments() {
     const balance = Number(transData[i][14]) || 0; // O: الرصيد (بالدولار على مستوى الطرف)
     const party = transData[i][8];   // I: الطرف
     const project = transData[i][5];   // F: اسم المشروع
+    const natureType = String(transData[i][2] || '');  // C: طبيعة الحركة
+
+    // ✅ تمويل (دخول قرض) = دائن دفعة لكن يُعامل كمدين (دين مستحق)
+    const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
 
     // استخدام includes للتعامل مع الإيموجي
-    const isDebit = movementKind.includes(CONFIG.MOVEMENT.DEBIT) || movementKind.includes('مدين');
+    const isDebit = movementKind.includes(CONFIG.MOVEMENT.DEBIT) || movementKind.includes('مدين') || isFundingIn;
     const isPaid = status.includes(CONFIG.PAYMENT_STATUS.PAID) || status.includes('مدفوع');
     if (isDebit && balance > 0 && dueDate && !isPaid) {
       const dueDateObj = new Date(dueDate);
@@ -6415,6 +6419,7 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
 
     const movementKind = String(row[13] || '');  // N: نوع الحركة
     const amountUsd = Number(row[12]) || 0;     // M: القيمة بالدولار
+    const natureType = String(row[2] || '');     // C: طبيعة الحركة
 
     // تجاهل الحركات بدون مبلغ
     if (!amountUsd) continue;
@@ -6426,10 +6431,13 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     const details = row[7];    // H: التفاصيل
     const orderNumber = row[25] || '';  // Z: رقم الأوردر
 
+    // ✅ تمويل (دخول قرض) = دائن دفعة لكن يُعامل كمدين (دين على الشركة للممول)
+    const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
+
     let debit = 0, credit = 0;
 
     // استخدام includes للتعامل مع الإيموجي
-    if (movementKind.includes(CONFIG.MOVEMENT.DEBIT) || movementKind.includes('مدين')) {
+    if (movementKind.includes(CONFIG.MOVEMENT.DEBIT) || movementKind.includes('مدين') || isFundingIn) {
       debit = amountUsd;
       totalDebit += debit;
     } else if (movementKind.includes(CONFIG.MOVEMENT.SETTLEMENT) || movementKind.includes('تسوية')) {
