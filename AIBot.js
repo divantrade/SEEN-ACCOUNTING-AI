@@ -1404,99 +1404,46 @@ function showTransactionConfirmation(chatId, session) {
 
 
 /**
- * ⭐ حساب الرصيد الحالي للحساب من دفتر الحركات المالية
- * يحسب الرصيد مباشرة من الحركات بدون الاعتماد على شيتات البنك/الخزنة
+ * ⭐ قراءة الرصيد الحالي من شيت البنك/الخزنة مباشرة
+ * يقرأ آخر رصيد من الشيت المناسب (خلية واحدة فقط - سريع جداً)
  */
 function calculateCurrentBalance_(paymentMethod, currency) {
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+        const pm = String(paymentMethod || '');
+        const cur = String(currency || '').toUpperCase();
+
+        // تحديد اسم الشيت المناسب
+        let sheetName = '';
+        let accountName = '';
+
+        const isCash = pm.includes('نقد') || pm.includes('كاش') || pm.includes('خزنة');
+        const isBank = pm.includes('تحويل') || pm.includes('بنك');
+
+        if (isCash && (cur === 'USD' || cur.includes('دولار'))) {
+            sheetName = CONFIG.SHEETS.CASH_USD;
+            accountName = 'خزنة العهدة - دولار';
+        } else if (isCash && (cur === 'TRY' || cur.includes('ليرة'))) {
+            sheetName = CONFIG.SHEETS.CASH_TRY;
+            accountName = 'خزنة العهدة - ليرة';
+        } else if (isBank && (cur === 'USD' || cur.includes('دولار'))) {
+            sheetName = CONFIG.SHEETS.BANK_USD;
+            accountName = 'حساب البنك - دولار';
+        } else if (isBank && (cur === 'TRY' || cur.includes('ليرة'))) {
+            sheetName = CONFIG.SHEETS.BANK_TRY;
+            accountName = 'حساب البنك - ليرة';
+        }
+
+        if (!sheetName) return { success: false };
+
+        const sheet = ss.getSheetByName(sheetName);
         if (!sheet) return { success: false };
 
-        const data = sheet.getDataRange().getValues();
-        if (data.length < 2) return { success: false };
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) return { success: false };
 
-        const headers = data[0];
-        // البحث عن الأعمدة المطلوبة
-        const colType = headers.indexOf('طبيعة الحركة');
-        const colClass = headers.indexOf('تصنيف الحركة');
-        const colAmount = headers.indexOf('المبلغ بالعملة الأصلية');
-        const colCurrency = headers.indexOf('العملة');
-        const colPayMethod = headers.indexOf('طريقة الدفع');
-        const colMovement = headers.indexOf('نوع الحركة');
-        const colStatus = headers.indexOf('حالة السداد');
-        const colItem = headers.indexOf('البند');
-
-        if (colAmount === -1 || colCurrency === -1 || colPayMethod === -1) return { success: false };
-
-        // تحديد نوع الحساب واسمه
-        const pm = String(paymentMethod || '').toLowerCase();
-        const cur = String(currency || '').toUpperCase();
-        let accountName = '';
-        let matchPm = '';
-
-        if (pm.includes('نقد') || pm.includes('كاش') || pm.includes('خزنة')) {
-            accountName = 'الخزنة - ' + cur;
-            matchPm = 'cash';
-        } else if (pm.includes('تحويل') || pm.includes('بنك')) {
-            accountName = 'البنك - ' + cur;
-            matchPm = 'bank';
-        } else {
-            accountName = 'الحساب - ' + cur;
-            matchPm = 'other';
-        }
-
-        let balance = 0;
-
-        for (let i = 1; i < data.length; i++) {
-            const row = data[i];
-            const rowPayMethod = String(row[colPayMethod] || '').toLowerCase();
-            const rowCurrency = String(row[colCurrency] || '').toUpperCase();
-            const rowMovement = String(row[colMovement] || '');
-            const rowStatus = String(row[colStatus] || '');
-            const rowType = String(row[colType] || '');
-            const rowClass = String(row[colClass] || '');
-            const rowItem = colItem >= 0 ? String(row[colItem] || '') : '';
-            const rowAmount = Number(row[colAmount]) || 0;
-
-            if (!rowAmount) continue;
-
-            // مطابقة العملة
-            if (!rowCurrency.includes(cur) && !(cur === 'USD' && rowCurrency.includes('دولار'))
-                && !(cur === 'TRY' && rowCurrency.includes('ليرة'))) continue;
-
-            // مطابقة طريقة الدفع
-            let pmMatch = false;
-            if (matchPm === 'bank' && (rowPayMethod.includes('تحويل') || rowPayMethod.includes('بنك'))) pmMatch = true;
-            else if (matchPm === 'cash' && (rowPayMethod.includes('نقد') || rowPayMethod.includes('كاش') || rowPayMethod.includes('خزنة'))) pmMatch = true;
-            if (!pmMatch) continue;
-
-            // التحويل الداخلي: يُعالج خاصة
-            if (rowType.includes('تحويل داخلي')) {
-                if (matchPm === 'bank') {
-                    if (rowClass.includes('تحويل للبنك')) balance += rowAmount;
-                    else if (rowClass.includes('تحويل للخزنة')) balance -= rowAmount;
-                } else if (matchPm === 'cash') {
-                    if (rowClass.includes('تحويل للخزنة')) balance += rowAmount;
-                    else if (rowClass.includes('تحويل للبنك')) balance -= rowAmount;
-                }
-                continue;
-            }
-
-            // فقط الحركات المدفوعة فعلياً (دائن دفعة) أو المصاريف البنكية
-            const isPaid = rowStatus === 'عملية دفع/تحصيل' || rowMovement === 'دائن دفعة';
-            const isBankFee = rowItem.includes('مصاريف بنكية') || rowType.includes('مصاريف بنكية');
-            if (!isPaid && !isBankFee) continue;
-
-            // تحصيل/تمويل = فلوس داخلة
-            if (rowType.includes('تحصيل') || (rowType.includes('تمويل') && !rowType.includes('سداد تمويل'))) {
-                balance += rowAmount;
-            }
-            // دفعة/سداد = فلوس خارجة
-            else {
-                balance -= rowAmount;
-            }
-        }
+        // عمود G = 7 = الرصيد (Balance) - نفس البنية المستخدمة في getLastBalanceFromSheet_
+        const balance = Number(sheet.getRange(lastRow, 7).getValue()) || 0;
 
         return {
             success: true,
