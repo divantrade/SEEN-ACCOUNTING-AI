@@ -5151,14 +5151,27 @@ function fixAllDropdowns() {
     .setAllowInvalid(true)
     .build();
 
-  // تنظيف قيم عمود N (إزالة المسافات الزائدة والقيم غير الصحيحة)
+  // تنظيف قيم عمود N وملء الفارغ منها من عمود C
   const nRange = sheet.getRange(2, 14, lastRow, 1);
   const nValues = nRange.getValues();
+  const cValues = sheet.getRange(2, 3, lastRow, 1).getValues(); // عمود C (طبيعة الحركة)
   const validTypes = CONFIG.MOVEMENT.TYPES;
   let nCleanedCount = 0;
+  let nFilledCount = 0;
   for (let i = 0; i < nValues.length; i++) {
     const raw = nValues[i][0];
-    if (!raw) continue;
+    // إذا عمود N فارغ وعمود C فيه قيمة → نحسب نوع الحركة تلقائياً
+    if (!raw) {
+      const natureValue = cValues[i][0];
+      if (natureValue) {
+        const movementType = getMovementTypeFromNature_(String(natureValue).trim());
+        if (movementType) {
+          nValues[i][0] = movementType;
+          nFilledCount++;
+        }
+      }
+      continue;
+    }
     const cleaned = String(raw).trim().replace(/\s+/g, ' ');
     // إذا القيمة مش من الأنواع الصحيحة، نحاول نطابقها
     if (validTypes.indexOf(cleaned) !== -1) {
@@ -5175,7 +5188,7 @@ function fixAllDropdowns() {
       }
     }
   }
-  if (nCleanedCount > 0) {
+  if (nCleanedCount > 0 || nFilledCount > 0) {
     nRange.setValues(nValues);
   }
 
@@ -5245,6 +5258,7 @@ function fixAllDropdowns() {
     '• عمود R (نوع شرط الدفع)\n' +
     '• عمود S (عدد الأسابيع) - أرقام 0-52\n\n' +
     'تم تنظيف ' + nCleanedCount + ' خلية في عمود N (نوع الحركة)\n' +
+    'تم ملء ' + nFilledCount + ' خلية فارغة في عمود N من عمود C\n' +
     'تم تصحيح ' + fixedCount + ' خلية فارغة في عمود S\n' +
     '✅ تم إعادة تطبيق التلوين الشرطي (4 قواعد)\n' +
     'عدد الصفوف: ' + lastRow,
