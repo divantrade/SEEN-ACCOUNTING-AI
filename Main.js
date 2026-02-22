@@ -1029,7 +1029,7 @@ function createTransactionsSheet(ss) {
     'العملة',              // 11 - K
     'سعر الصرف',           // 12 - L
     'القيمة بالدولار',      // 13 - M
-    'نوع الحركة',           // 14 - N (مدين استحقاق / دائن دفعة)
+    'نوع الحركة',           // 14 - N (مدين استحقاق / دائن دفعة / دائن تسوية)
 
     'الرصيد',              // 15 - O
     'رقم مرجعي',           // 16 - P
@@ -5150,6 +5150,14 @@ function fixAllDropdowns() {
     .setAllowInvalid(true)
     .build();
   sheet.getRange(2, 14, lastRow, 1).setDataValidation(movementValidation);
+
+  // تحديث الملاحظة على N1 لتشمل الأنواع الثلاثة
+  sheet.getRange('N1').setNote(
+    'نوع الحركة:\n' +
+    '• مدين استحقاق = فاتورة/استحقاق على الطرف\n' +
+    '• دائن تسوية = خصم/تسوية تقلل الاستحقاق بدون دفع\n' +
+    '• دائن دفعة = دفعة/تحصيل تقلل الرصيد'
+  );
 
   // العملة (K = 11)
   const currencyValidation = SpreadsheetApp.newDataValidation()

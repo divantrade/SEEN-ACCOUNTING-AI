@@ -1487,9 +1487,16 @@ function inferPartyType(nature, classification) {
 }
 
 /**
- * استنتاج نوع الحركة (مدين/دائن)
+ * استنتاج نوع الحركة (مدين/دائن/تسوية)
  */
 function inferMovementType(nature) {
+    // دائن تسوية = خصم/تسوية من استحقاق بدون حركة نقدية
+    const settlementNatures = [
+        'تسوية استحقاق مصروف',
+        'تسوية استحقاق إيراد'
+    ];
+    if (settlementNatures.includes(nature)) return CONFIG.MOVEMENT.SETTLEMENT;
+
     // دائن دفعة = دفع/خروج نقدية أو تحصيل/دخول نقدية
     const creditNatures = [
         'دفعة مصروف',
@@ -1497,9 +1504,14 @@ function inferMovementType(nature) {
         'استلام تمويل',
         'سداد تمويل',
         'تأمين مدفوع للقناة',
-        'تحويل داخلي'
+        'تحويل داخلي',
+        'مصاريف بنكية',
+        'استرداد تأمين'
     ];
-    return creditNatures.includes(nature) ? 'دائن دفعة' : 'مدين استحقاق';
+    if (creditNatures.includes(nature)) return CONFIG.MOVEMENT.CREDIT;
+
+    // مدين استحقاق = دين/التزام ورقي بدون حركة نقدية فعلية
+    return CONFIG.MOVEMENT.DEBIT;
 }
 
 /**
