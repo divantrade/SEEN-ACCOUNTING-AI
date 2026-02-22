@@ -5149,7 +5149,36 @@ function fixAllDropdowns() {
     .requireValueInList(CONFIG.MOVEMENT.TYPES, true)
     .setAllowInvalid(true)
     .build();
-  sheet.getRange(2, 14, lastRow, 1).setDataValidation(movementValidation);
+
+  // تنظيف قيم عمود N (إزالة المسافات الزائدة والقيم غير الصحيحة)
+  const nRange = sheet.getRange(2, 14, lastRow, 1);
+  const nValues = nRange.getValues();
+  const validTypes = CONFIG.MOVEMENT.TYPES;
+  let nCleanedCount = 0;
+  for (let i = 0; i < nValues.length; i++) {
+    const raw = nValues[i][0];
+    if (!raw) continue;
+    const cleaned = String(raw).trim().replace(/\s+/g, ' ');
+    // إذا القيمة مش من الأنواع الصحيحة، نحاول نطابقها
+    if (validTypes.indexOf(cleaned) !== -1) {
+      if (cleaned !== raw) {
+        nValues[i][0] = cleaned;
+        nCleanedCount++;
+      }
+    } else {
+      // قيمة غير صحيحة - نحاول نطابقها مع أقرب نوع
+      const match = validTypes.find(function(t) { return cleaned.indexOf(t) !== -1; });
+      if (match) {
+        nValues[i][0] = match;
+        nCleanedCount++;
+      }
+    }
+  }
+  if (nCleanedCount > 0) {
+    nRange.setValues(nValues);
+  }
+
+  nRange.setDataValidation(movementValidation);
 
   // تحديث الملاحظة على N1 لتشمل الأنواع الثلاثة
   sheet.getRange('N1').setNote(
@@ -5210,6 +5239,7 @@ function fixAllDropdowns() {
     '• عمود Q (طريقة الدفع)\n' +
     '• عمود R (نوع شرط الدفع)\n' +
     '• عمود S (عدد الأسابيع) - أرقام 0-52\n\n' +
+    'تم تنظيف ' + nCleanedCount + ' خلية في عمود N (نوع الحركة)\n' +
     'تم تصحيح ' + fixedCount + ' خلية فارغة في عمود S\n' +
     'عدد الصفوف: ' + lastRow,
     ui.ButtonSet.OK
