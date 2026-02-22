@@ -668,7 +668,9 @@ function addBotTransaction(transactionData) {
  * تحديد نوع الحركة من طبيعتها
  */
 function getMovementType(nature) {
-    if (nature.includes('تسوية')) {
+    if (nature.includes('تحويل داخلي')) {
+        return CONFIG.MOVEMENT.CREDIT; // دائن دفعة
+    } else if (nature.includes('تسوية')) {
         return CONFIG.MOVEMENT.CREDIT;
     } else if (nature.includes('استحقاق') || nature === 'تمويل') {
         return CONFIG.MOVEMENT.DEBIT;
@@ -1230,7 +1232,7 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
         const nature = transactionData.nature || '';
         let movementType = '';
         if (nature.includes('تحويل داخلي')) {
-            movementType = 'تحويل داخلي';
+            movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة
         } else if (nature.includes('تسوية')) {
             movementType = CONFIG.MOVEMENT.CREDIT;
         } else if (nature.includes('استحقاق') || nature === 'تمويل') {

@@ -1920,7 +1920,9 @@ function handleDetailsInput(chatId, text, session) {
     // 🔄 التحويل الداخلي: تخطي طريقة الدفع وشرط الدفع → المرفقات مباشرة
     // ═══════════════════════════════════════════════════════════
     if (session.transactionType === 'transfer') {
-        session.data.paymentMethod = 'تحويل داخلي';
+        // تحويل للخزنة = نقدي، تحويل للبنك = تحويل بنكي
+        const classification = (session.data.classification || '').trim();
+        session.data.paymentMethod = classification.includes('خزنة') ? 'نقدي' : 'تحويل بنكي';
         session.data.paymentTermType = 'فوري';
         session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_ATTACHMENT;
         saveUserSession(chatId, session);
