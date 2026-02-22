@@ -2653,9 +2653,9 @@ function updateAlerts(silent) {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 1. تنبيهات الاستحقاقات المدينة (فواتير يجب سدادها)
+    // 1. تنبيهات الاستحقاقات المدينة (فواتير يجب سدادها + تمويل يجب سداده)
     // ═══════════════════════════════════════════════════════════
-    if (isDebit && amountUsd > 0 && dueDate && !isPaid) {
+    if ((isDebit || isFundingIn) && amountUsd > 0 && dueDate && !isPaid) {
       const dueDateObj = new Date(dueDate);
       const daysLeft = Math.ceil((dueDateObj - today) / (1000 * 60 * 60 * 24));
 
@@ -2799,6 +2799,8 @@ function generateDueReport() {
 
     // ✅ تأمين مدفوع = دائن دفعة لكن يُعامل كاستحقاق (القناة تدين لنا)
     const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
+    // ✅ تمويل (دخول قرض) = دائن دفعة لكن يُعامل كاستحقاق (دين على الشركة)
+    const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
 
     if (!isDebitAccrual && !isCreditPayment && !isCreditSettlement) continue;
 
@@ -2813,8 +2815,8 @@ function generateDueReport() {
 
     const projectKey = project || 'بدون مشروع';
 
-    if (isDebitAccrual || isInsurancePaid) {
-      // ✅ مدين استحقاق أو تأمين مدفوع = حفظ كاستحقاق مستحق لنا
+    if (isDebitAccrual || isInsurancePaid || isFundingIn) {
+      // ✅ مدين استحقاق أو تأمين مدفوع أو تمويل (دخول قرض) = حفظ كاستحقاق مستحق
       partyData[party].debits.push({
         rowNum: rowNum,
         amount: amountUsd,
@@ -3160,6 +3162,10 @@ function generatePartyReceivablesReport() {
     // تحديد نوع الحركة
     const isDebit = movementKind.indexOf('مدين') !== -1;
     const isCredit = movementKind.indexOf('دائن') !== -1;
+    // ✅ تمويل (دخول قرض) = دائن دفعة لكن يُعتبر دين على الشركة
+    const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
+    // ✅ تأمين مدفوع = دائن دفعة لكن يُعتبر مستحق لنا
+    const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
 
     if (!isDebit && !isCredit) continue;
 
@@ -3182,7 +3188,15 @@ function generatePartyReceivablesReport() {
         partyTotals[party].nature = natureType;
       }
     } else if (isCredit) {
-      partyTotals[party].totalCredit += amountUsd;
+      // ✅ تمويل (دخول قرض) وتأمين مدفوع = دائن دفعة لكن يزيد الدين/المستحق
+      if (isFundingIn || isInsurancePaid) {
+        partyTotals[party].totalDebit += amountUsd;
+        if (!partyTotals[party].nature) {
+          partyTotals[party].nature = natureType;
+        }
+      } else {
+        partyTotals[party].totalCredit += amountUsd;
+      }
     }
   }
 
