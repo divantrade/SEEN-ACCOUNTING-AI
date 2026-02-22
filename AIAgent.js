@@ -1007,7 +1007,9 @@ function validateTransaction(transaction, context) {
         });
     }
 
-    if (!transaction.party) {
+    // التحويل الداخلي لا يحتاج طرف
+    const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
+    if (!transaction.party && !isInternalTransfer) {
         validation.missingRequired.push({
             field: 'party',
             label: 'الطرف',
@@ -1101,8 +1103,12 @@ function validateTransaction(transaction, context) {
         validation.enriched.payment_term_date = '';
     }
 
-    // مطابقة الطرف
-    if (transaction.party && context.parties) {
+    // مطابقة الطرف (التحويل الداخلي لا يحتاج طرف)
+    if (isInternalTransfer) {
+        validation.enriched.party = '';
+        validation.enriched.isNewParty = false;
+        Logger.log('🔄 تحويل داخلي - تخطي مطابقة الطرف');
+    } else if (transaction.party && context.parties) {
         const partyMatch = matchParty(transaction.party, context.parties);
         if (partyMatch.found) {
             validation.enriched.party = partyMatch.match.name;
@@ -1158,8 +1164,13 @@ function validateTransaction(transaction, context) {
     }
 
     // ⭐ التحقق من طريقة الدفع (يجب أن تكون محددة)
+    // التحويل الداخلي: طريقة الدفع "تحويل داخلي" تلقائياً
+    if (isInternalTransfer) {
+        validation.enriched.payment_method = 'تحويل داخلي';
+        validation.enriched.payment_term = 'فوري';
+    }
     // القيم المسموحة: نقدي، تحويل بنكي، شيك، بطاقة، أخرى
-    if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
+    else if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
         // إذا لم تحدد أو كانت القيمة الافتراضية، نحتاج تأكيد من المستخدم
         validation.needsPaymentMethod = true;
         validation.enriched.payment_method = transaction.payment_method || null;
