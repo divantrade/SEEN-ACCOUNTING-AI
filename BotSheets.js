@@ -673,7 +673,7 @@ function getMovementType(nature) {
     } else if (nature.includes('مصاريف بنكية')) {
         return CONFIG.MOVEMENT.CREDIT; // دائن دفعة - خروج نقدية من البنك
     } else if (nature.includes('تسوية')) {
-        return CONFIG.MOVEMENT.CREDIT;
+        return CONFIG.MOVEMENT.SETTLEMENT; // دائن تسوية - خصم/تسوية بدون حركة نقدية
     } else if (nature.includes('استحقاق') || nature === 'تمويل') {
         return CONFIG.MOVEMENT.DEBIT;
     } else if (nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استرداد') || nature.includes('استلام')) {
@@ -1239,7 +1239,7 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
         } else if (nature.includes('مصاريف بنكية') || itemForMovement.includes('مصاريف بنكية')) {
             movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة - خروج نقدية من البنك
         } else if (nature.includes('تسوية')) {
-            movementType = CONFIG.MOVEMENT.CREDIT;
+            movementType = CONFIG.MOVEMENT.SETTLEMENT; // دائن تسوية - خصم/تسوية بدون حركة نقدية
         } else if (nature.includes('استحقاق') || nature === 'تمويل') {
             movementType = CONFIG.MOVEMENT.DEBIT;
         } else if (nature.includes('دفعة') || nature.includes('تحصيل') || nature.includes('سداد') || nature.includes('استرداد') || nature.includes('استلام')) {
