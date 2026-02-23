@@ -8625,7 +8625,8 @@ function createTrialBalanceSheet(ss) {
 
 /**
  * إعادة بناء ميزان المراجعة
- * ميزان المراجعة يعرض أرصدة جميع الحسابات للتحقق من توازن المدين والدائن
+ * ⭐ يبني الأرصدة بالكامل من الحركات بالقيد المزدوج (مدين = دائن لكل حركة)
+ * بدون الاعتماد على شيتات البنك لضمان التوازن الرياضي
  * @param {boolean} silent - إذا كان true لا يظهر رسالة تأكيد
  */
 function rebuildTrialBalance(silent) {
@@ -8667,79 +8668,116 @@ function rebuildTrialBalance(silent) {
     };
   });
 
-  // إضافة أرصدة النقدية من شيتات البنك والخزنة
-  // ⭐ حسابات الدولار تُضاف مباشرة، حسابات الليرة تُحوَّل للدولار أولاً
-  const tryRate = getLatestTryRate_(transData);
+  // ⭐ دالة مساعدة: تحديد حساب النقدية حسب العملة وطريقة الدفع
+  function detectCashAccount_(currencyVal, payMethodVal) {
+    const cur = String(currencyVal || '').toLowerCase();
+    const pm = String(payMethodVal || '').toLowerCase();
 
-  const cashBalances = {
-    '1111': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.BANK_USD),
-    '1112': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.BANK_TRY) / tryRate : 0,
-    '1113': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CASH_USD),
-    '1114': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CASH_TRY) / tryRate : 0,
-    '1115': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CARD_TRY) / tryRate : 0
-  };
+    const isUsd = cur.includes('usd') || cur.includes('دولار') || cur.includes('$');
+    const isTry = cur.includes('try') || cur.includes('ليرة') || cur.includes('tl');
+    const isCard = pm.includes('بطاقة') || pm.includes('كريدت') || pm.includes('credit') || pm.includes('visa') || pm.includes('ماستر');
+    const isCash = pm.includes('نقد') || pm.includes('كاش') || pm.includes('خزنة') || pm.includes('عهدة') || pm.includes('cash');
 
-  // إضافة أرصدة النقدية كمدين (لأنها أصول)
-  Object.keys(cashBalances).forEach(code => {
-    if (accountBalances[code] && cashBalances[code] > 0) {
-      accountBalances[code].debit = cashBalances[code];
-    }
-  });
+    if (isCard) return '1115';           // البطاقة - ليرة
+    if (isCash && isUsd) return '1113';  // خزنة - دولار
+    if (isCash && isTry) return '1114';  // خزنة - ليرة
+    if (isUsd) return '1111';            // البنك - دولار (الافتراضي للدولار)
+    if (isTry) return '1112';            // البنك - ليرة (الافتراضي لليرة)
+    return '1111';                       // الافتراضي: بنك دولار
+  }
 
-  // حساب الأرصدة من دفتر الحركات
+  // ⭐ حساب الأرصدة من دفتر الحركات بالقيد المزدوج الكامل
   for (let i = 1; i < transData.length; i++) {
     const row = transData[i];
     const natureType = String(row[2] || '');
+    const classification = String(row[3] || '');
     const amountUsd = Number(row[12]) || 0;
+    const currency = String(row[10] || '');
+    const payMethod = String(row[16] || '');
 
     if (!amountUsd) continue;
 
-    // استحقاق مصروف: مدين مصروفات، دائن ذمم الموردين
+    // تحديد حساب النقدية لهذه الحركة
+    const cashAccount = detectCashAccount_(currency, payMethod);
+
+    // ═══ استحقاق مصروف: مدين مصروفات، دائن ذمم الموردين ═══
     if (natureType.includes('استحقاق مصروف')) {
       accountBalances['5100'].debit += amountUsd;
       accountBalances['2111'].credit += amountUsd;
     }
-    // دفعة مصروف: مدين ذمم الموردين، دائن النقدية
+    // ═══ دفعة مصروف: مدين ذمم الموردين، دائن النقدية ═══
     else if (natureType.includes('دفعة مصروف')) {
       accountBalances['2111'].debit += amountUsd;
-      // النقدية تُخصم (لكن أرصدتها من شيتات البنك)
+      accountBalances[cashAccount].credit += amountUsd;
     }
-    // استحقاق إيراد: مدين ذمم العملاء، دائن الإيرادات
+    // ═══ استحقاق إيراد: مدين ذمم العملاء، دائن الإيرادات ═══
     else if (natureType.includes('استحقاق إيراد')) {
       accountBalances['1121'].debit += amountUsd;
       accountBalances['4110'].credit += amountUsd;
     }
-    // تحصيل إيراد: مدين النقدية، دائن ذمم العملاء
+    // ═══ تحصيل إيراد: مدين النقدية، دائن ذمم العملاء ═══
     else if (natureType.includes('تحصيل إيراد')) {
+      accountBalances[cashAccount].debit += amountUsd;
       accountBalances['1121'].credit += amountUsd;
     }
-    // تمويل: مدين النقدية، دائن القروض
+    // ═══ تمويل (قرض جديد): مدين النقدية، دائن القروض ═══
     else if (natureType.includes('تمويل') &&
       !natureType.includes('سداد تمويل') &&
       !natureType.includes('استلام تمويل')) {
+      accountBalances[cashAccount].debit += amountUsd;
       accountBalances['2121'].credit += amountUsd;
     }
-    // سداد تمويل: مدين القروض، دائن النقدية
+    // ═══ استلام تمويل: مجرد حركة نقدية (القرض مسجل بالفعل) - تُتجاهل ═══
+    // ═══ سداد تمويل: مدين القروض، دائن النقدية ═══
     else if (natureType.includes('سداد تمويل')) {
       accountBalances['2121'].debit += amountUsd;
+      accountBalances[cashAccount].credit += amountUsd;
     }
-    // تأمين مدفوع
+    // ═══ تأمين مدفوع: مدين التأمينات، دائن النقدية ═══
     else if (natureType.includes('تأمين مدفوع')) {
       accountBalances['1122'].debit += amountUsd;
+      accountBalances[cashAccount].credit += amountUsd;
     }
-    // استرداد تأمين
+    // ═══ استرداد تأمين: مدين النقدية، دائن التأمينات ═══
     else if (natureType.includes('استرداد تأمين')) {
+      accountBalances[cashAccount].debit += amountUsd;
       accountBalances['1122'].credit += amountUsd;
     }
-    // ⭐ تسوية استحقاق مصروف: عكس الاستحقاق (مدين ذمم الموردين، دائن مصروفات)
+    // ═══ تسوية استحقاق مصروف: مدين ذمم الموردين، دائن مصروفات ═══
     else if (natureType.includes('تسوية استحقاق مصروف')) {
       accountBalances['2111'].debit += amountUsd;
       accountBalances['5100'].credit += amountUsd;
     }
-    // ⭐ تسوية استحقاق إيراد: عكس الاستحقاق (مدين إيرادات، دائن ذمم العملاء)
+    // ═══ تسوية استحقاق إيراد: مدين إيرادات، دائن ذمم العملاء ═══
     else if (natureType.includes('تسوية استحقاق إيراد')) {
       accountBalances['4110'].debit += amountUsd;
       accountBalances['1121'].credit += amountUsd;
+    }
+    // ═══ تحويل داخلي: مدين حساب الوجهة، دائن حساب المصدر ═══
+    else if (natureType.includes('تحويل داخلي')) {
+      const isTransferToCash = classification.includes('تحويل للخزنة') || classification.includes('تحويل للكاش');
+      const isTransferToBank = classification.includes('تحويل للبنك');
+
+      const cur = String(currency).toLowerCase();
+      const isUsd = cur.includes('usd') || cur.includes('دولار') || cur.includes('$');
+      const bankAcc = isUsd ? '1111' : '1112';
+      const cashAcc = isUsd ? '1113' : '1114';
+
+      if (isTransferToCash) {
+        accountBalances[cashAcc].debit += amountUsd;
+        accountBalances[bankAcc].credit += amountUsd;
+      } else if (isTransferToBank) {
+        accountBalances[bankAcc].debit += amountUsd;
+        accountBalances[cashAcc].credit += amountUsd;
+      } else {
+        accountBalances[cashAcc].debit += amountUsd;
+        accountBalances[bankAcc].credit += amountUsd;
+      }
+    }
+    // ═══ مصاريف بنكية: مدين عمولات بنكية، دائن النقدية ═══
+    else if (natureType.includes('مصاريف بنكية')) {
+      accountBalances['5310'].debit += amountUsd;
+      accountBalances[cashAccount].credit += amountUsd;
     }
   }
 
