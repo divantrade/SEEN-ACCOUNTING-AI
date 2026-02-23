@@ -1056,9 +1056,21 @@ function validateTransaction(transaction, context) {
     Logger.log('   - !transaction.project: ' + !transaction.project);
 
     if (needsProject && !transaction.project) {
-        // ⭐ لا نضيفه كحقل إلزامي، بل كسؤال اختياري
-        Logger.log('📋 Project is optional - will ask with skip option');
-        validation.needsProjectSelection = true;
+        // ⭐ إذا كان هناك مشروع واحد فقط، نختاره تلقائياً بدلاً من سؤال المستخدم
+        if (context.projects && context.projects.length === 1) {
+            const singleProject = context.projects[0];
+            const projectName = typeof singleProject === 'object' ? singleProject.name : singleProject;
+            const projectCode = typeof singleProject === 'object' ? (singleProject.code || '') : '';
+            transaction.project = projectName;
+            transaction.project_code = projectCode;
+            validation.enriched.project = projectName;
+            validation.enriched.project_code = projectCode;
+            Logger.log('✅ مشروع واحد فقط متاح - تم اختياره تلقائياً: ' + projectName);
+        } else {
+            // أكثر من مشروع - نسأل المستخدم
+            Logger.log('📋 Project is optional - will ask with skip option');
+            validation.needsProjectSelection = true;
+        }
     }
 
     // مطابقة المشروع
