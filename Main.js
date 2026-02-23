@@ -7905,13 +7905,17 @@ function rebuildBalanceSheet(silent) {
   let totalRevenueAccrual = 0;
   let totalRevenueCollection = 0;
 
-  // 3. الذمم الدائنة (مستحق للموردين) = استحقاق مصروف - دفعة مصروف
+  // 3. الذمم الدائنة (مستحق للموردين) = استحقاق مصروف - دفعة مصروف - تسوية مصروف
   let totalExpenseAccrual = 0;
   let totalExpensePayment = 0;
+  let totalExpenseSettlement = 0;
 
   // 4. التمويل (القروض) = تمويل - سداد تمويل
   let totalFunding = 0;
   let totalFundingRepayment = 0;
+
+  // 5. تسوية إيراد
+  let totalRevenueSettlement = 0;
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
@@ -7927,6 +7931,10 @@ function rebuildBalanceSheet(silent) {
     if (natureType.includes('تحصيل إيراد')) {
       totalRevenueCollection += amountUsd;
     }
+    // ⭐ تسوية استحقاق إيراد (تقلل الذمم المدينة)
+    if (natureType.includes('تسوية استحقاق إيراد')) {
+      totalRevenueSettlement += amountUsd;
+    }
 
     // مصروفات
     if (natureType.includes('استحقاق مصروف')) {
@@ -7934,6 +7942,10 @@ function rebuildBalanceSheet(silent) {
     }
     if (natureType.includes('دفعة مصروف')) {
       totalExpensePayment += amountUsd;
+    }
+    // ⭐ تسوية استحقاق مصروف (تقلل الذمم الدائنة)
+    if (natureType.includes('تسوية استحقاق مصروف')) {
+      totalExpenseSettlement += amountUsd;
     }
 
     // تمويل
@@ -7948,11 +7960,17 @@ function rebuildBalanceSheet(silent) {
   }
 
   // ===== حساب الإجماليات =====
-  const receivables = totalRevenueAccrual - totalRevenueCollection;  // الذمم المدينة
-  const payables = totalExpenseAccrual - totalExpensePayment;        // الذمم الدائنة
+  const receivables = totalRevenueAccrual - totalRevenueCollection - totalRevenueSettlement;  // الذمم المدينة
+  const payables = totalExpenseAccrual - totalExpensePayment - totalExpenseSettlement;          // الذمم الدائنة
   const loansPayable = totalFunding - totalFundingRepayment;         // القروض
 
-  const totalCash = cashUsd + pettyUsd;  // إجمالي النقدية بالدولار (TRY يحتاج تحويل)
+  // ⭐ تحويل أرصدة الليرة للدولار باستخدام آخر سعر صرف
+  const tryRate = getLatestTryRate_(data);
+  const cashTryUsd = tryRate > 0 ? cashTry / tryRate : 0;
+  const pettyTryUsd = tryRate > 0 ? pettyTry / tryRate : 0;
+  const cardTryUsd = tryRate > 0 ? cardTry / tryRate : 0;
+
+  const totalCash = cashUsd + pettyUsd + cashTryUsd + pettyTryUsd + cardTryUsd;
   const totalAssets = totalCash + receivables;
   const totalLiabilities = payables + loansPayable;
   const equity = totalAssets - totalLiabilities;
@@ -7970,9 +7988,9 @@ function rebuildBalanceSheet(silent) {
   rows.push(['الأصول المتداولة:', '', '']);
   rows.push(['    النقدية - البنك (دولار)', cashUsd, '']);
   rows.push(['    النقدية - خزنة العهدة (دولار)', pettyUsd, '']);
-  if (cashTry !== 0) rows.push(['    البنك (ليرة) - للتحويل', cashTry, '']);
-  if (pettyTry !== 0) rows.push(['    خزنة العهدة (ليرة) - للتحويل', pettyTry, '']);
-  if (cardTry !== 0) rows.push(['    البطاقة (ليرة) - للتحويل', cardTry, '']);
+  if (cashTryUsd !== 0) rows.push(['    البنك (ليرة → دولار)', cashTryUsd, '']);
+  if (pettyTryUsd !== 0) rows.push(['    خزنة العهدة (ليرة → دولار)', pettyTryUsd, '']);
+  if (cardTryUsd !== 0) rows.push(['    البطاقة (ليرة → دولار)', cardTryUsd, '']);
   rows.push(['    الذمم المدينة (مستحق من العملاء)', receivables, '']);
   rows.push(['إجمالي الأصول', '', totalAssets]);
   rows.push(['', '', '']);
@@ -8476,6 +8494,20 @@ function rebuildGeneralLedger(silent, filterAccount) {
       entries.push({ account: '5310', name: 'عمولات بنكية', debit: amountUsd, credit: 0 });
       entries.push({ account: bankAccount, name: bankName, debit: 0, credit: amountUsd });
     }
+    // ═══════════════════════════════════════════════════════════
+    // ⭐ تسوية استحقاق مصروف (عكس الاستحقاق - دفتر الأستاذ)
+    // ═══════════════════════════════════════════════════════════
+    else if (natureType.includes('تسوية استحقاق مصروف')) {
+      entries.push({ account: '2111', name: 'ذمم الموردين', debit: amountUsd, credit: 0 });
+      entries.push({ account: '5100', name: 'مصروفات الإنتاج', debit: 0, credit: amountUsd });
+    }
+    // ═══════════════════════════════════════════════════════════
+    // ⭐ تسوية استحقاق إيراد (عكس الاستحقاق - دفتر الأستاذ)
+    // ═══════════════════════════════════════════════════════════
+    else if (natureType.includes('تسوية استحقاق إيراد')) {
+      entries.push({ account: '4110', name: 'إيرادات عقود الأفلام', debit: amountUsd, credit: 0 });
+      entries.push({ account: '1121', name: 'ذمم العملاء', debit: 0, credit: amountUsd });
+    }
 
     // إضافة القيود
     entries.forEach(entry => {
@@ -8636,12 +8668,15 @@ function rebuildTrialBalance(silent) {
   });
 
   // إضافة أرصدة النقدية من شيتات البنك والخزنة
+  // ⭐ حسابات الدولار تُضاف مباشرة، حسابات الليرة تُحوَّل للدولار أولاً
+  const tryRate = getLatestTryRate_(transData);
+
   const cashBalances = {
     '1111': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.BANK_USD),
-    '1112': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.BANK_TRY),
+    '1112': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.BANK_TRY) / tryRate : 0,
     '1113': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CASH_USD),
-    '1114': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CASH_TRY),
-    '1115': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CARD_TRY)
+    '1114': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CASH_TRY) / tryRate : 0,
+    '1115': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CARD_TRY) / tryRate : 0
   };
 
   // إضافة أرصدة النقدية كمدين (لأنها أصول)
@@ -8695,6 +8730,16 @@ function rebuildTrialBalance(silent) {
     // استرداد تأمين
     else if (natureType.includes('استرداد تأمين')) {
       accountBalances['1122'].credit += amountUsd;
+    }
+    // ⭐ تسوية استحقاق مصروف: عكس الاستحقاق (مدين ذمم الموردين، دائن مصروفات)
+    else if (natureType.includes('تسوية استحقاق مصروف')) {
+      accountBalances['2111'].debit += amountUsd;
+      accountBalances['5100'].credit += amountUsd;
+    }
+    // ⭐ تسوية استحقاق إيراد: عكس الاستحقاق (مدين إيرادات، دائن ذمم العملاء)
+    else if (natureType.includes('تسوية استحقاق إيراد')) {
+      accountBalances['4110'].debit += amountUsd;
+      accountBalances['1121'].credit += amountUsd;
     }
   }
 
@@ -8945,6 +8990,20 @@ function rebuildJournalEntries(silent) {
       // مصاريف بنكية: مدين عمولات بنكية، دائن حساب البنك
       entries.push({ account: '5310', name: 'عمولات بنكية', debit: amountUsd, credit: 0 });
       entries.push({ account: bankAccount, name: bankName, debit: 0, credit: amountUsd });
+    }
+    // ═══════════════════════════════════════════════════════════
+    // ⭐ تسوية استحقاق مصروف (عكس الاستحقاق - قيود اليومية)
+    // ═══════════════════════════════════════════════════════════
+    else if (natureType.includes('تسوية استحقاق مصروف')) {
+      entries.push({ account: '2111', name: 'ذمم الموردين', debit: amountUsd, credit: 0 });
+      entries.push({ account: '5100', name: 'مصروفات الإنتاج', debit: 0, credit: amountUsd });
+    }
+    // ═══════════════════════════════════════════════════════════
+    // ⭐ تسوية استحقاق إيراد (عكس الاستحقاق - قيود اليومية)
+    // ═══════════════════════════════════════════════════════════
+    else if (natureType.includes('تسوية استحقاق إيراد')) {
+      entries.push({ account: '4110', name: 'إيرادات عقود الأفلام', debit: amountUsd, credit: 0 });
+      entries.push({ account: '1121', name: 'ذمم العملاء', debit: 0, credit: amountUsd });
     }
 
     if (entries.length > 0) {
@@ -9204,6 +9263,23 @@ function createCashFlowSheet(ss) {
 }
 
 // ========= لوحة التحكم =========
+
+/**
+ * ⭐ استخراج آخر سعر صرف للّيرة من بيانات الحركات
+ * يبحث من آخر صف لأول صف عن حركة بعملة TRY/ليرة ولها سعر صرف
+ * @param {Array[]} transData - بيانات الحركات (شاملة الهيدر)
+ * @returns {number} - سعر الصرف أو 0 إذا لم يُعثر عليه
+ */
+function getLatestTryRate_(transData) {
+  for (let i = transData.length - 1; i >= 1; i--) {
+    const currency = String(transData[i][10] || '').toLowerCase(); // K: العملة
+    const rate = Number(transData[i][11]) || 0;                    // L: سعر الصرف
+    if (rate > 0 && (currency.includes('try') || currency.includes('ليرة') || currency.includes('tl'))) {
+      return rate;
+    }
+  }
+  return 0;
+}
 
 /**
  * قراءة آخر رصيد من شيت حساب (بنك / خزنة / بطاقة)
