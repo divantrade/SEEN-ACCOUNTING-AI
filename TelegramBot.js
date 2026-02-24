@@ -155,6 +155,7 @@ function setBotCommands() {
         { command: 'finance', description: '🏦 تمويل (قرض/سداد)' },
         { command: 'insurance', description: '🔐 تأمين (دفع/استرداد)' },
         { command: 'transfer', description: '🔄 تحويل داخلي' },
+        { command: 'exchange', description: '💱 تغيير عملة' },
         { command: 'status', description: '📊 حالة حركاتك' },
         { command: 'help', description: '❓ المساعدة' },
         { command: 'cancel', description: '❌ إلغاء' }
@@ -204,6 +205,7 @@ function resetBotMenuCompletely() {
         { command: 'finance', description: '🏦 تمويل (قرض/سداد)' },
         { command: 'insurance', description: '🔐 تأمين (دفع/استرداد)' },
         { command: 'transfer', description: '🔄 تحويل داخلي' },
+        { command: 'exchange', description: '💱 تغيير عملة' },
         { command: 'status', description: '📊 حالة حركاتك' },
         { command: 'help', description: '❓ المساعدة' },
         { command: 'cancel', description: '❌ إلغاء' }
@@ -1116,6 +1118,12 @@ function handleCommand(chatId, command, session) {
             startTransferFlow(chatId, session);
             break;
 
+        case '/exchange':
+        case '/تغيير':
+            logToSheet('Starting exchange flow...');
+            startExchangeFlow(chatId, session);
+            break;
+
         case '/status':
         case '/حالة':
             logToSheet('Showing status...');
@@ -1278,6 +1286,23 @@ function startTransferFlow(chatId, session) {
 }
 
 /**
+ * بدء تدفق تغيير العملة
+ */
+function startExchangeFlow(chatId, session) {
+    session.transactionType = 'exchange';
+    session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_NATURE;
+    session.data = {};
+    session.data.nature = 'تغيير عملة';
+    saveUserSession(chatId, session);
+
+    // تغيير العملة → ننتقل مباشرة لاختيار التصنيف (بيع/شراء دولار)
+    sendMessage(chatId, '💱 *تغيير عملة*\n\n📊 اختر نوع التغيير:', BOT_CONFIG.KEYBOARDS.CLASSIFICATION_EXCHANGE, 'Markdown');
+
+    session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_CLASSIFICATION;
+    saveUserSession(chatId, session);
+}
+
+/**
  * معالجة النص المُدخل
  */
 function handleTextInput(chatId, text, session) {
@@ -1424,6 +1449,10 @@ function getClassificationKeyboard(nature) {
     if (nature.includes('تأمين') || nature.includes('استرداد تأمين')) {
         return BOT_CONFIG.KEYBOARDS.CLASSIFICATION_INSURANCE;
     }
+    // تصنيفات تغيير العملة
+    if (nature.includes('تغيير عملة')) {
+        return BOT_CONFIG.KEYBOARDS.CLASSIFICATION_EXCHANGE;
+    }
     // تصنيفات التحويل
     if (nature.includes('تحويل')) {
         return BOT_CONFIG.KEYBOARDS.CLASSIFICATION_TRANSFER;
@@ -1451,6 +1480,13 @@ function handleNatureSelection(chatId, messageId, nature, session) {
         saveUserSession(chatId, session);
         showEditFieldSelection(chatId, messageId, session);
         return;
+    }
+
+    // تحديد نوع الحركة تلقائياً من الطبيعة المختارة
+    if (nature === 'تغيير عملة') {
+        session.transactionType = 'exchange';
+    } else if (nature === 'تحويل داخلي') {
+        session.transactionType = 'transfer';
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1503,18 +1539,19 @@ function handleClassificationSelection(chatId, messageId, classification, sessio
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 🔄 التحويل الداخلي: تخطي المشروع والبند والطرف → المبلغ مباشرة
+    // 🔄 التحويل الداخلي / 💱 تغيير العملة: تخطي المشروع والبند والطرف → المبلغ مباشرة
     // ═══════════════════════════════════════════════════════════
-    if (session.transactionType === 'transfer') {
+    if (session.transactionType === 'transfer' || session.transactionType === 'exchange') {
         session.data.projectCode = '';
         session.data.projectName = '';
-        session.data.item = 'تحويل داخلي';
+        session.data.item = session.transactionType === 'exchange' ? 'تغيير عملة' : 'تحويل داخلي';
         session.data.partyName = '';
         session.data.isNewParty = false;
         session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_AMOUNT;
         saveUserSession(chatId, session);
 
-        editMessage(chatId, messageId, `✅ تصنيف التحويل: *${classification}*`);
+        const label = session.transactionType === 'exchange' ? 'نوع التغيير' : 'تصنيف التحويل';
+        editMessage(chatId, messageId, `✅ ${label}: *${classification}*`);
         sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.ENTER_AMOUNT, null, 'Markdown');
         return;
     }

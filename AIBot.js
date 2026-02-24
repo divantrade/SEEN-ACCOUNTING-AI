@@ -193,7 +193,7 @@ function looksLikeNewTransaction_(text) {
     if (!text) return false;
     const transactionKeywords = [
         'استحقاق', 'دفعة', 'تحصيل', 'مصاريف بنكية', 'عمولة بنكية', 'رسوم بنكية',
-        'مصاريف تحويل', 'عمولة تحويل', 'تحويل داخلي', 'سداد', 'تمويل', 'سلفة',
+        'مصاريف تحويل', 'عمولة تحويل', 'تحويل داخلي', 'تغيير عملة', 'صرفت', 'صرافة', 'سداد', 'تمويل', 'سلفة',
         'تسوية', 'إيراد', 'مصروف', 'فاتورة', 'تأمين', 'استرداد',
         'دولار', 'ليرة', 'جنيه', 'USD', 'TRY', 'EGP',
         'بتاريخ', 'نقدي', 'كاش', 'تحويل بنكي'
@@ -481,13 +481,14 @@ function processNewTransaction(chatId, text, user) {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // 🔄 التحويل الداخلي: تخطي الطرف والمشروع وطريقة الدفع
+        // 🔄 التحويل الداخلي / تغيير العملة: تخطي الطرف والمشروع
         // ═══════════════════════════════════════════════════════════
         const isInternalTransfer = result.transaction && (result.transaction.nature || '').includes('تحويل داخلي');
+        const isCurrencyExchange = result.transaction && (result.transaction.nature || '').includes('تغيير عملة');
         const isBankFees = result.transaction && ((result.transaction.item || '').includes('مصاريف بنكية') || (result.validation && result.validation.enriched && result.validation.enriched.isBankFees));
         const hasBankFeesParty = isBankFees && result.transaction && result.transaction.party;
-        // التحويل الداخلي يتخطى الطرف والمشروع، المصاريف البنكية تتخطى المشروع فقط (الطرف اختياري)
-        const skipPartyAndProject = isInternalTransfer;
+        // التحويل الداخلي وتغيير العملة يتخطوا الطرف والمشروع، المصاريف البنكية تتخطى المشروع فقط (الطرف اختياري)
+        const skipPartyAndProject = isInternalTransfer || isCurrencyExchange;
         const skipProjectOnly = isBankFees;
 
         // التحقق من طرف جديد يحتاج تأكيد (التحويل الداخلي لا يحتاج طرف، المصاريف البنكية الطرف اختياري)
@@ -1248,7 +1249,8 @@ function continueValidation(chatId, session) {
     const itemForCV = (session.transaction && session.transaction.item) || '';
     const isBankFeesCV = itemForCV.includes('مصاريف بنكية') || (session.validation && session.validation.enriched && session.validation.enriched.isBankFees);
     const isInternalTransferCV = nature.includes('تحويل داخلي');
-    const skipProjectAndPayment = isBankFeesCV || isInternalTransferCV;
+    const isCurrencyExchangeCV = nature.includes('تغيير عملة');
+    const skipProjectAndPayment = isBankFeesCV || isInternalTransferCV || isCurrencyExchangeCV;
 
     // ⭐ التحقق من المشروع (اختياري - يُتخطى للمصاريف البنكية والتحويل الداخلي)
     if (session.validation.needsProjectSelection && !skipProjectAndPayment) {
