@@ -678,6 +678,18 @@ function loadItems(ss) {
         result.natures = Array.from(naturesSet);
         result.classifications = Array.from(classificationsSet);
 
+        // ⭐ ضمان وجود "تغيير عملة" في القائمة حتى لو لم يكن في شيت البنود
+        if (!result.natures.includes('تغيير عملة')) {
+            result.natures.push('تغيير عملة');
+        }
+        // ⭐ ضمان تصنيفات تغيير العملة
+        if (!result.classifications.includes('بيع دولار')) {
+            result.classifications.push('بيع دولار');
+        }
+        if (!result.classifications.includes('شراء دولار')) {
+            result.classifications.push('شراء دولار');
+        }
+
         Logger.log('📋 Loaded from Items sheet: ' + result.items.length + ' items, ' +
                    result.natures.length + ' natures, ' + result.classifications.length + ' classifications');
 
@@ -1007,8 +1019,9 @@ function validateTransaction(transaction, context) {
         });
     }
 
-    // التحويل الداخلي لا يحتاج طرف، المصاريف البنكية الطرف اختياري
+    // التحويل الداخلي وتغيير العملة لا يحتاجان طرف، المصاريف البنكية الطرف اختياري
     const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
+    const isCurrencyExchange = (transaction.nature || '').includes('تغيير عملة');
     // ⭐ كشف المصاريف البنكية: بالبند أو بالطبيعة القديمة (للتوافق) أو بالكلمات المفتاحية
     const isBankFees = (transaction.item || '').includes('مصاريف بنكية')
         || (transaction.nature || '').includes('مصاريف بنكية')
@@ -1024,7 +1037,14 @@ function validateTransaction(transaction, context) {
         validation.enriched.isBankFees = true;
         Logger.log('🏦 مصاريف بنكية: تصحيح الطبيعة إلى "دفعة مصروف" والبند إلى "مصاريف بنكية"');
     }
-    if (!transaction.party && !isInternalTransfer && !isBankFees) {
+    // ⭐ تغيير العملة: ضبط البند والـ item
+    if (isCurrencyExchange) {
+        transaction.item = 'تغيير عملة';
+        validation.enriched.item = 'تغيير عملة';
+        validation.enriched.isCurrencyExchange = true;
+        Logger.log('💱 تغيير عملة: تم ضبط البند');
+    }
+    if (!transaction.party && !isInternalTransfer && !isBankFees && !isCurrencyExchange) {
         validation.missingRequired.push({
             field: 'party',
             label: 'الطرف',
@@ -1355,6 +1375,22 @@ function analyzeTransaction(userMessage) {
                 };
             }
 
+            // ⭐ خطة بديلة: إذا فشل Gemini والنص يبدو كتغيير عملة، حلّله يدوياً
+            const exchangeFallback = tryParseCurrencyExchange_(userMessage);
+            if (exchangeFallback) {
+                Logger.log('✅ Currency exchange fallback parser succeeded');
+                const validation = validateTransaction(exchangeFallback, context);
+                return {
+                    success: true,
+                    transaction: validation.enriched,
+                    validation: validation,
+                    needsInput: validation.missingRequired.length > 0,
+                    missingFields: validation.missingRequired,
+                    warnings: validation.warnings,
+                    confidence: 0.85
+                };
+            }
+
             return {
                 success: false,
                 error: aiResult.error || AI_CONFIG.AI_MESSAGES.ERROR_PARSE,
@@ -1481,6 +1517,99 @@ function tryParseBankFees_(text) {
         details: details,
         unit_count: null,
         exchange_rate: null,
+        confidence: 0.85
+    };
+}
+
+/**
+ * ⭐ محلل بديل لتغيير العملة - يعمل عند فشل Gemini
+ * يكتشف عمليات الصرافة (صرفت دولار، غيرت عملة، تصريف، إلخ)
+ */
+function tryParseCurrencyExchange_(text) {
+    if (!text) return null;
+
+    // كشف تغيير العملة بالكلمات المفتاحية
+    const exchangeKeywords = ['تغيير عملة', 'غيرت عملة', 'صرفت', 'صرافة', 'تصريف',
+        'غيرت دولار', 'غيرت ليرة', 'حولت دولار', 'حولت ليرة',
+        'بعت دولار', 'شريت دولار', 'اشتريت دولار',
+        'صرفت دولار', 'صرفت ليرة', 'exchange'];
+    const isExchange = exchangeKeywords.some(kw => text.includes(kw));
+    if (!isExchange) return null;
+
+    Logger.log('💱 Currency exchange fallback parser: detected exchange in text');
+
+    // استخراج المبلغ
+    let amount = null;
+    const normalizedText = text.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    const amountMatch = normalizedText.match(/(\d+(?:[.,]\d+)?)\s*(?:دولار|ليرة|جنيه|USD|TRY|EGP|\$)/i)
+        || normalizedText.match(/(?:بقيمة|بمبلغ|صرفت|غيرت)\s*(\d+(?:[.,]\d+)?)/i)
+        || normalizedText.match(/(\d+(?:[.,]\d+)?)/);
+    if (amountMatch) {
+        amount = parseFloat(amountMatch[1].replace(',', '.'));
+    }
+    if (!amount) return null;
+
+    // تحديد نوع العملية (بيع أو شراء دولار)
+    let classification = 'بيع دولار'; // الافتراضي
+    if (/شريت|اشتريت|شراء/.test(text)) {
+        classification = 'شراء دولار';
+    } else if (/بعت|بيع|صرفت\s*دولار|غيرت\s*دولار|حولت\s*دولار/.test(text)) {
+        classification = 'بيع دولار';
+    }
+
+    // استخراج العملة المصدر
+    let currency = 'USD';
+    if (classification === 'بيع دولار') {
+        currency = 'USD'; // المبلغ بالدولار
+    } else {
+        // شراء دولار - المبلغ قد يكون بالليرة
+        if (/ليرة|TRY|TL/i.test(text)) currency = 'TRY';
+        else currency = 'USD';
+    }
+
+    // استخراج سعر الصرف
+    let exchangeRate = null;
+    const rateMatch = normalizedText.match(/(?:بسعر|بكورس|سعر الصرف|الكورس|على سعر|ع سعر)\s*(\d+(?:[.,]\d+)?)/i)
+        || normalizedText.match(/(\d+(?:[.,]\d+)?)\s*(?:كورس|سعر)/i);
+    if (rateMatch) {
+        exchangeRate = parseFloat(rateMatch[1].replace(',', '.'));
+    }
+
+    // استخراج التاريخ
+    let dueDate = 'TODAY';
+    const dateMatch = text.match(/(?:بتاريخ\s*)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dateMatch) {
+        const day = dateMatch[1].padStart(2, '0');
+        const month = dateMatch[2].padStart(2, '0');
+        const year = dateMatch[3];
+        dueDate = `${year}-${month}-${day}`;
+    }
+
+    // استخراج التفاصيل
+    let details = text.trim();
+
+    Logger.log('💱 Parsed exchange: amount=' + amount + ', currency=' + currency +
+        ', classification=' + classification + ', rate=' + exchangeRate + ', date=' + dueDate);
+
+    return {
+        success: true,
+        is_shared_order: false,
+        nature: 'تغيير عملة',
+        classification: classification,
+        project: null,
+        project_code: null,
+        item: 'تغيير عملة',
+        party: null,
+        amount: amount,
+        currency: currency,
+        payment_method: null,
+        payment_term: 'فوري',
+        payment_term_weeks: null,
+        payment_term_date: null,
+        due_date: dueDate,
+        details: details,
+        unit_count: null,
+        exchange_rate: exchangeRate,
         confidence: 0.85
     };
 }
