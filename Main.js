@@ -10319,6 +10319,7 @@ function rebuildBankAndCashFromTransactions(silent) {
     amountUsd: findHeaderIndex_(headers, 'القيمة بالدولار'),
     refNo: findHeaderIndex_(headers, 'رقم مرجعي'),
     payMethod: findHeaderIndex_(headers, 'طريقة الدفع'),
+    movement: findHeaderIndex_(headers, 'نوع الحركة'),
     status: findHeaderIndex_(headers, 'حالة السداد'),
     notes: findHeaderIndex_(headers, 'ملاحظات')
   };
@@ -10436,11 +10437,22 @@ function rebuildBankAndCashFromTransactions(silent) {
     const itemVal = col.item >= 0 ? String(row[col.item] || '').trim() : '';
     const isBankFees = typeVal.indexOf('مصاريف بنكية') !== -1 || itemVal.indexOf('مصاريف بنكية') !== -1;
 
-    // 🔴 استبعاد كل الاستحقاقات غير الممولة
-    // 🔴 واستبعاد أي حركة غير مدفوعة فعليًا وليست استحقاق تمويل وليست تحويل داخلي وليست مصاريف بنكية
-    if (!isPaidMovement && !(isAccrual && isFinancing) && !isInternalTransfer && !isBankFees) {
-      // يعني: ليست حركة مدفوعة، وليست استحقاق تمويل، وليست تحويل داخلي، وليست مصاريف بنكية ⇒ مالهاش أثر نقدي
-      continue;
+    // 🔴 استبعاد الحركات التي لا تؤثر على النقدية
+    // نستخدم عمود N (نوع الحركة) كمصدر أساسي عند توفره
+    const movementVal = col.movement >= 0 ? String(row[col.movement] || '').trim() : '';
+
+    if (movementVal) {
+      // عمود N متوفر → يُستخدم كمصدر أساسي لتحديد الأثر النقدي
+      // "دائن دفعة" = حركة نقدية فعلية → تُدرج
+      // "مدين استحقاق" = دين ورقي بدون نقدية → فقط لو تمويل
+      // "دائن تسوية" = تسوية بدون نقدية → تُستبعد
+      if (movementVal === CONFIG.MOVEMENT.SETTLEMENT) continue;
+      if (movementVal === CONFIG.MOVEMENT.DEBIT && !isFinancing) continue;
+    } else {
+      // عمود N فارغ → fallback للمنطق القديم (حالة السداد + التصنيفات)
+      if (!isPaidMovement && !(isAccrual && isFinancing) && !isInternalTransfer && !isBankFees) {
+        continue;
+      }
     }
 
     // 5) تحديد الحساب المناسب
