@@ -7070,7 +7070,7 @@ function rebuildExpenseSummaryReport(silent) {
     if (!item || !amountUsd) continue;
     // استخدام includes للتعامل مع القيم التي تحتوي على إيموجي
     const typeStr = String(type || '');
-    if (!typeStr.includes('استحقاق مصروف') && !typeStr.includes('دفعة مصروف')) continue;
+    if (!typeStr.includes('استحقاق مصروف') && !typeStr.includes('دفعة مصروف') && !typeStr.includes('تسوية استحقاق مصروف')) continue;
 
     const key = item + '||' + classification;
     if (!map[key]) {
@@ -7079,13 +7079,18 @@ function rebuildExpenseSummaryReport(silent) {
         classification,
         totalAccrual: 0,
         totalPaid: 0,
+        totalSettlement: 0,
         accrualCount: 0,
         paymentCount: 0
       };
     }
     const v = map[key];
 
-    if (typeStr.includes('استحقاق مصروف')) {
+    // تسوية استحقاق مصروف: تخفيض الاستحقاق (يجب فحصه قبل استحقاق مصروف لأنه يحتوي عليه كنص فرعي)
+    if (typeStr.includes('تسوية استحقاق مصروف')) {
+      v.totalAccrual -= amountUsd;
+      v.totalSettlement += amountUsd;
+    } else if (typeStr.includes('استحقاق مصروف')) {
       v.totalAccrual += amountUsd;
       v.accrualCount++;
     } else if (typeStr.includes('دفعة مصروف')) {
@@ -7164,7 +7169,7 @@ function rebuildRevenueSummaryReport(silent) {
     const type = row[2];       // C: طبيعة الحركة
     // استخدام includes للتعامل مع القيم التي تحتوي على إيموجي
     const typeStr = String(type || '');
-    if (!typeStr.includes('استحقاق إيراد') && !typeStr.includes('تحصيل إيراد')) continue;
+    if (!typeStr.includes('استحقاق إيراد') && !typeStr.includes('تحصيل إيراد') && !typeStr.includes('تسوية استحقاق إيراد')) continue;
 
     const projectCode = row[4];              // E: كود المشروع
     const amountUsd = Number(row[12]) || 0;// M: القيمة بالدولار
@@ -7178,12 +7183,18 @@ function rebuildRevenueSummaryReport(silent) {
         channel: info.channel || row[8] || '', // I: اسم العميل/القناة لو مش موجود في المشاريع
         expected: 0,
         received: 0,
+        settlement: 0,
         lastDate: null
       };
     }
 
     const v = map[projectCode];
-    if (typeStr.includes('استحقاق إيراد')) {
+    // تسوية استحقاق إيراد: تخفيض الاستحقاق (يجب فحصه قبل استحقاق إيراد لأنه يحتوي عليه كنص فرعي)
+    if (typeStr.includes('تسوية استحقاق إيراد')) {
+      v.expected -= amountUsd;
+      v.settlement += amountUsd;
+    }
+    else if (typeStr.includes('استحقاق إيراد')) {
       v.expected += amountUsd;
     }
     if (typeStr.includes('تحصيل إيراد')) {
@@ -7727,15 +7738,27 @@ function rebuildIncomeStatement(silent) {
 
     if (!amountUsd) continue;
 
+    // تسوية استحقاق إيراد: تخفيض الإيرادات (يجب فحصه قبل استحقاق إيراد لأنه يحتوي عليه كنص فرعي)
+    if (natureType.includes('تسوية استحقاق إيراد')) {
+      const key = projectCode || clientName || 'إيرادات أخرى';
+      revenues[key] = (revenues[key] || 0) - amountUsd;
+      totalRevenue -= amountUsd;
+    }
     // الإيرادات (استحقاق إيراد)
-    if (natureType.includes('استحقاق إيراد')) {
+    else if (natureType.includes('استحقاق إيراد')) {
       const key = projectCode || clientName || 'إيرادات أخرى';
       revenues[key] = (revenues[key] || 0) + amountUsd;
       totalRevenue += amountUsd;
     }
 
+    // تسوية استحقاق مصروف: تخفيض المصروفات (يجب فحصه قبل استحقاق مصروف لأنه يحتوي عليه كنص فرعي)
+    if (natureType.includes('تسوية استحقاق مصروف')) {
+      const key = classification || 'مصروفات أخرى';
+      expenses[key] = (expenses[key] || 0) - amountUsd;
+      totalExpense -= amountUsd;
+    }
     // المصروفات (استحقاق مصروف)
-    if (natureType.includes('استحقاق مصروف')) {
+    else if (natureType.includes('استحقاق مصروف')) {
       const key = classification || 'مصروفات أخرى';
       expenses[key] = (expenses[key] || 0) + amountUsd;
       totalExpense += amountUsd;
@@ -7924,28 +7947,26 @@ function rebuildBalanceSheet(silent) {
 
     if (!amountUsd) continue;
 
-    // إيرادات
-    if (natureType.includes('استحقاق إيراد')) {
+    // إيرادات (تسوية يجب فحصها قبل استحقاق لأنها تحتويه كنص فرعي)
+    if (natureType.includes('تسوية استحقاق إيراد')) {
+      totalRevenueSettlement += amountUsd;
+    }
+    else if (natureType.includes('استحقاق إيراد')) {
       totalRevenueAccrual += amountUsd;
     }
     if (natureType.includes('تحصيل إيراد')) {
       totalRevenueCollection += amountUsd;
     }
-    // ⭐ تسوية استحقاق إيراد (تقلل الذمم المدينة)
-    if (natureType.includes('تسوية استحقاق إيراد')) {
-      totalRevenueSettlement += amountUsd;
-    }
 
-    // مصروفات
-    if (natureType.includes('استحقاق مصروف')) {
+    // مصروفات (تسوية يجب فحصها قبل استحقاق لأنها تحتويه كنص فرعي)
+    if (natureType.includes('تسوية استحقاق مصروف')) {
+      totalExpenseSettlement += amountUsd;
+    }
+    else if (natureType.includes('استحقاق مصروف')) {
       totalExpenseAccrual += amountUsd;
     }
     if (natureType.includes('دفعة مصروف')) {
       totalExpensePayment += amountUsd;
-    }
-    // ⭐ تسوية استحقاق مصروف (تقلل الذمم الدائنة)
-    if (natureType.includes('تسوية استحقاق مصروف')) {
-      totalExpenseSettlement += amountUsd;
     }
 
     // تمويل
@@ -8259,8 +8280,12 @@ function updateAccountBalances_(ss, chartSheet) {
 
     if (!amountUsd) continue;
 
-    // الإيرادات
-    if (natureType.includes('استحقاق إيراد')) {
+    // الإيرادات (تسوية يجب فحصها قبل استحقاق لأنها تحتويه كنص فرعي)
+    if (natureType.includes('تسوية استحقاق إيراد')) {
+      balances['1121'] -= amountUsd;  // تخفيض ذمم العملاء
+      balances['4110'] -= amountUsd;  // تخفيض الإيرادات
+    }
+    else if (natureType.includes('استحقاق إيراد')) {
       balances['1121'] += amountUsd;  // ذمم العملاء (مدين)
       balances['4110'] += amountUsd;  // إيرادات (دائن)
     }
@@ -8268,8 +8293,12 @@ function updateAccountBalances_(ss, chartSheet) {
       balances['1121'] -= amountUsd;  // تخفيض ذمم العملاء
     }
 
-    // المصروفات
-    if (natureType.includes('استحقاق مصروف')) {
+    // المصروفات (تسوية يجب فحصها قبل استحقاق لأنها تحتويه كنص فرعي)
+    if (natureType.includes('تسوية استحقاق مصروف')) {
+      balances['2111'] -= amountUsd;  // تخفيض ذمم الموردين
+      balances['5100'] -= amountUsd;  // تخفيض المصروفات
+    }
+    else if (natureType.includes('استحقاق مصروف')) {
       balances['2111'] += amountUsd;  // ذمم الموردين (دائن)
       balances['5100'] += amountUsd;  // مصروفات (مدين)
     }
@@ -8423,7 +8452,17 @@ function rebuildGeneralLedger(silent, filterAccount) {
     // تحديد الحسابات المدينة والدائنة حسب طبيعة الحركة
     let entries = [];
 
-    if (natureType.includes('استحقاق مصروف')) {
+    // ═══ تسوية استحقاق مصروف (يجب فحصه قبل استحقاق مصروف لأنه يحتويه كنص فرعي) ═══
+    if (natureType.includes('تسوية استحقاق مصروف')) {
+      entries.push({ account: '2111', name: 'ذمم الموردين', debit: amountUsd, credit: 0 });
+      entries.push({ account: '5100', name: 'مصروفات الإنتاج', debit: 0, credit: amountUsd });
+    }
+    // ═══ تسوية استحقاق إيراد (يجب فحصه قبل استحقاق إيراد لأنه يحتويه كنص فرعي) ═══
+    else if (natureType.includes('تسوية استحقاق إيراد')) {
+      entries.push({ account: '4110', name: 'إيرادات عقود الأفلام', debit: amountUsd, credit: 0 });
+      entries.push({ account: '1121', name: 'ذمم العملاء', debit: 0, credit: amountUsd });
+    }
+    else if (natureType.includes('استحقاق مصروف')) {
       // مصروف: مدين مصروفات، دائن ذمم الموردين
       entries.push({ account: '5100', name: 'مصروفات الإنتاج', debit: amountUsd, credit: 0 });
       entries.push({ account: '2111', name: 'ذمم الموردين', debit: 0, credit: amountUsd });
@@ -8493,20 +8532,6 @@ function rebuildGeneralLedger(silent, filterAccount) {
       // مصاريف بنكية: مدين عمولات بنكية، دائن حساب البنك
       entries.push({ account: '5310', name: 'عمولات بنكية', debit: amountUsd, credit: 0 });
       entries.push({ account: bankAccount, name: bankName, debit: 0, credit: amountUsd });
-    }
-    // ═══════════════════════════════════════════════════════════
-    // ⭐ تسوية استحقاق مصروف (عكس الاستحقاق - دفتر الأستاذ)
-    // ═══════════════════════════════════════════════════════════
-    else if (natureType.includes('تسوية استحقاق مصروف')) {
-      entries.push({ account: '2111', name: 'ذمم الموردين', debit: amountUsd, credit: 0 });
-      entries.push({ account: '5100', name: 'مصروفات الإنتاج', debit: 0, credit: amountUsd });
-    }
-    // ═══════════════════════════════════════════════════════════
-    // ⭐ تسوية استحقاق إيراد (عكس الاستحقاق - دفتر الأستاذ)
-    // ═══════════════════════════════════════════════════════════
-    else if (natureType.includes('تسوية استحقاق إيراد')) {
-      entries.push({ account: '4110', name: 'إيرادات عقود الأفلام', debit: amountUsd, credit: 0 });
-      entries.push({ account: '1121', name: 'ذمم العملاء', debit: 0, credit: amountUsd });
     }
 
     // إضافة القيود
@@ -8706,8 +8731,18 @@ function rebuildTrialBalance(silent) {
 
     if (!amountUsd) continue;
 
+    // ═══ تسوية استحقاق مصروف: مدين ذمم الموردين، دائن مصروفات (يجب فحصه قبل استحقاق مصروف) ═══
+    if (natureType.includes('تسوية استحقاق مصروف')) {
+      accountBalances['2111'].debit += amountUsd;
+      accountBalances['5100'].credit += amountUsd;
+    }
+    // ═══ تسوية استحقاق إيراد: مدين إيرادات، دائن ذمم العملاء (يجب فحصه قبل استحقاق إيراد) ═══
+    else if (natureType.includes('تسوية استحقاق إيراد')) {
+      accountBalances['4110'].debit += amountUsd;
+      accountBalances['1121'].credit += amountUsd;
+    }
     // ═══ استحقاق مصروف: مدين مصروفات، دائن ذمم الموردين (بدون نقدية) ═══
-    if (natureType.includes('استحقاق مصروف')) {
+    else if (natureType.includes('استحقاق مصروف')) {
       accountBalances['5100'].debit += amountUsd;
       accountBalances['2111'].credit += amountUsd;
     }
@@ -8742,16 +8777,6 @@ function rebuildTrialBalance(silent) {
     // ═══ استرداد تأمين: دائن التأمينات (النقدية من شيت البنك) ═══
     else if (natureType.includes('استرداد تأمين')) {
       accountBalances['1122'].credit += amountUsd;
-    }
-    // ═══ تسوية استحقاق مصروف: مدين ذمم الموردين، دائن مصروفات ═══
-    else if (natureType.includes('تسوية استحقاق مصروف')) {
-      accountBalances['2111'].debit += amountUsd;
-      accountBalances['5100'].credit += amountUsd;
-    }
-    // ═══ تسوية استحقاق إيراد: مدين إيرادات، دائن ذمم العملاء ═══
-    else if (natureType.includes('تسوية استحقاق إيراد')) {
-      accountBalances['4110'].debit += amountUsd;
-      accountBalances['1121'].credit += amountUsd;
     }
     // ═══ مصاريف بنكية: مدين عمولات بنكية (النقدية من شيت البنك) ═══
     else if (natureType.includes('مصاريف بنكية')) {
@@ -8966,7 +8991,17 @@ function rebuildJournalEntries(silent) {
     // تحديد القيد حسب طبيعة الحركة
     let entries = [];
 
-    if (natureType.includes('استحقاق مصروف')) {
+    // ═══ تسوية استحقاق مصروف (يجب فحصه قبل استحقاق مصروف لأنه يحتويه كنص فرعي) ═══
+    if (natureType.includes('تسوية استحقاق مصروف')) {
+      entries.push({ account: '2111', name: 'ذمم الموردين', debit: amountUsd, credit: 0 });
+      entries.push({ account: '5100', name: 'مصروفات الإنتاج', debit: 0, credit: amountUsd });
+    }
+    // ═══ تسوية استحقاق إيراد (يجب فحصه قبل استحقاق إيراد لأنه يحتويه كنص فرعي) ═══
+    else if (natureType.includes('تسوية استحقاق إيراد')) {
+      entries.push({ account: '4110', name: 'إيرادات عقود الأفلام', debit: amountUsd, credit: 0 });
+      entries.push({ account: '1121', name: 'ذمم العملاء', debit: 0, credit: amountUsd });
+    }
+    else if (natureType.includes('استحقاق مصروف')) {
       entries.push({ account: '5100', name: 'مصروفات الإنتاج', debit: amountUsd, credit: 0 });
       entries.push({ account: '2111', name: 'ذمم الموردين', debit: 0, credit: amountUsd });
     }
@@ -9028,20 +9063,6 @@ function rebuildJournalEntries(silent) {
       // مصاريف بنكية: مدين عمولات بنكية، دائن حساب البنك
       entries.push({ account: '5310', name: 'عمولات بنكية', debit: amountUsd, credit: 0 });
       entries.push({ account: bankAccount, name: bankName, debit: 0, credit: amountUsd });
-    }
-    // ═══════════════════════════════════════════════════════════
-    // ⭐ تسوية استحقاق مصروف (عكس الاستحقاق - قيود اليومية)
-    // ═══════════════════════════════════════════════════════════
-    else if (natureType.includes('تسوية استحقاق مصروف')) {
-      entries.push({ account: '2111', name: 'ذمم الموردين', debit: amountUsd, credit: 0 });
-      entries.push({ account: '5100', name: 'مصروفات الإنتاج', debit: 0, credit: amountUsd });
-    }
-    // ═══════════════════════════════════════════════════════════
-    // ⭐ تسوية استحقاق إيراد (عكس الاستحقاق - قيود اليومية)
-    // ═══════════════════════════════════════════════════════════
-    else if (natureType.includes('تسوية استحقاق إيراد')) {
-      entries.push({ account: '4110', name: 'إيرادات عقود الأفلام', debit: amountUsd, credit: 0 });
-      entries.push({ account: '1121', name: 'ذمم العملاء', debit: 0, credit: amountUsd });
     }
 
     if (entries.length > 0) {
@@ -9168,10 +9189,17 @@ function performYearEndClosing() {
     const transDate = new Date(date);
     if (transDate.getFullYear() !== closingYear) continue;
 
-    if (natureType.includes('استحقاق إيراد')) {
+    // تسوية يجب فحصها قبل استحقاق لأنها تحتويه كنص فرعي
+    if (natureType.includes('تسوية استحقاق إيراد')) {
+      totalRevenue -= amountUsd;
+    }
+    else if (natureType.includes('استحقاق إيراد')) {
       totalRevenue += amountUsd;
     }
-    if (natureType.includes('استحقاق مصروف')) {
+    if (natureType.includes('تسوية استحقاق مصروف')) {
+      totalExpenses -= amountUsd;
+    }
+    else if (natureType.includes('استحقاق مصروف')) {
       totalExpenses += amountUsd;
     }
   }
