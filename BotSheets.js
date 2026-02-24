@@ -668,7 +668,7 @@ function addBotTransaction(transactionData) {
  * تحديد نوع الحركة من طبيعتها
  */
 function getMovementType(nature) {
-    if (nature.includes('تحويل داخلي')) {
+    if (nature.includes('تحويل داخلي') || nature.includes('تغيير عملة')) {
         return CONFIG.MOVEMENT.CREDIT; // دائن دفعة
     } else if (nature.includes('مصاريف بنكية')) {
         return CONFIG.MOVEMENT.CREDIT; // دائن دفعة - خروج نقدية من البنك
@@ -1234,7 +1234,7 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
         const nature = transactionData.nature || '';
         let movementType = '';
         const itemForMovement = transactionData.item || '';
-        if (nature.includes('تحويل داخلي')) {
+        if (nature.includes('تحويل داخلي') || nature.includes('تغيير عملة')) {
             movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة
         } else if (nature.includes('مصاريف بنكية') || itemForMovement.includes('مصاريف بنكية')) {
             movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة - خروج نقدية من البنك
