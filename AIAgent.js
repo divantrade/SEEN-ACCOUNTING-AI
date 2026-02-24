@@ -1228,8 +1228,8 @@ function validateTransaction(transaction, context) {
         }
     }
 
-    // مطابقة البند (تخطي المصاريف البنكية والتحويل الداخلي - البند يتعيّن تلقائياً)
-    if (transaction.item && context.items && !isBankFees && !isInternalTransfer) {
+    // مطابقة البند (تخطي المصاريف البنكية والتحويل الداخلي وتغيير العملة - البند يتعيّن تلقائياً)
+    if (transaction.item && context.items && !isBankFees && !isInternalTransfer && !isCurrencyExchange) {
         const itemMatch = matchItem(transaction.item, context.items);
         if (itemMatch.found) {
             validation.enriched.item = itemMatch.match;
