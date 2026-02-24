@@ -7276,7 +7276,10 @@ function rebuildCashFlowReport(silent) {
       map[monthKey] = { monthKey, accruals: 0, payments: 0, revenues: 0 };
     }
 
-    if (typeStr.includes('استحقاق مصروف')) {
+    if (typeStr.includes('تسوية استحقاق مصروف')) {
+      // تسوية = تخفيض الاستحقاق (لا تؤثر على التدفق النقدي الفعلي)
+      map[monthKey].accruals -= amountUsd;
+    } else if (typeStr.includes('استحقاق مصروف')) {
       map[monthKey].accruals += amountUsd;
     } else if (typeStr.includes('دفعة مصروف') ||
                typeStr.includes('تأمين مدفوع') ||
@@ -11855,8 +11858,9 @@ function generateProjectBudgetReport() {
     const amountUsd = Number(transData[i][colM]) || 0;
     const natureType = String(transData[i][colC] || '').trim();
 
-    // فقط المصروفات (استحقاق مصروف) - استبعاد الإيرادات
+    // فقط المصروفات (استحقاق مصروف) - استبعاد الإيرادات والتسويات
     if (natureType.indexOf('استحقاق مصروف') === -1) continue;
+    if (natureType.indexOf('تسوية') !== -1) continue;  // استبعاد تسوية استحقاق مصروف
     if (!item || amountUsd <= 0) continue;
 
     // تجميع حسب البند
@@ -16119,6 +16123,7 @@ function generateCombinedBudgetReport(projectCodes) {
         const natureType = String(transData[i][colC] || '').trim();
 
         if (natureType.indexOf('استحقاق مصروف') === -1) continue;
+        if (natureType.indexOf('تسوية') !== -1) continue;  // استبعاد تسوية استحقاق مصروف
         if (!item || amountUsd <= 0) continue;
 
         actualExpenses[item] = (actualExpenses[item] || 0) + amountUsd;
