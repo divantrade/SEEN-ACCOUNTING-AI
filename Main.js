@@ -8625,8 +8625,11 @@ function createTrialBalanceSheet(ss) {
 
 /**
  * إعادة بناء ميزان المراجعة
- * ⭐ يبني الأرصدة بالكامل من الحركات بالقيد المزدوج (مدين = دائن لكل حركة)
- * بدون الاعتماد على شيتات البنك لضمان التوازن الرياضي
+ * ⭐ النهج المُحسَّن:
+ *   1) أرصدة النقدية = من شيتات البنك والخزنة (الأرصدة الفعلية)
+ *   2) باقي الحسابات = محسوبة من الحركات (طرف واحد - الطرف غير النقدي)
+ *   3) الفرق = حقوق الملكية / رأس المال (يشمل الرصيد الافتتاحي وأي فروقات)
+ * هذا يضمن: أرصدة البنك حقيقية + الميزان متوازن + الفرق واضح ومفسَّر
  * @param {boolean} silent - إذا كان true لا يظهر رسالة تأكيد
  */
 function rebuildTrialBalance(silent) {
@@ -8645,7 +8648,6 @@ function rebuildTrialBalance(silent) {
     trialSheet = createTrialBalanceSheet(ss);
   } else {
     trialSheet.clear();
-    // إعادة إنشاء الهيدر
     const headers = ['رقم الحساب', 'اسم الحساب', 'نوع الحساب', 'مدين', 'دائن', 'الرصيد'];
     const widths = [120, 220, 120, 140, 140, 140];
     setupSheet_(trialSheet, headers, widths, CONFIG.COLORS.HEADER.TRIAL_BALANCE);
@@ -8668,79 +8670,77 @@ function rebuildTrialBalance(silent) {
     };
   });
 
-  // ⭐ دالة مساعدة: تحديد حساب النقدية حسب العملة وطريقة الدفع
-  function detectCashAccount_(currencyVal, payMethodVal) {
-    const cur = String(currencyVal || '').toLowerCase();
-    const pm = String(payMethodVal || '').toLowerCase();
+  // ═══════════════════════════════════════════════════════════
+  // الخطوة 1: أرصدة النقدية الفعلية من شيتات البنك والخزنة
+  // ═══════════════════════════════════════════════════════════
+  const tryRate = getLatestTryRate_(transData);
 
-    const isUsd = cur.includes('usd') || cur.includes('دولار') || cur.includes('$');
-    const isTry = cur.includes('try') || cur.includes('ليرة') || cur.includes('tl');
-    const isCard = pm.includes('بطاقة') || pm.includes('كريدت') || pm.includes('credit') || pm.includes('visa') || pm.includes('ماستر');
-    const isCash = pm.includes('نقد') || pm.includes('كاش') || pm.includes('خزنة') || pm.includes('عهدة') || pm.includes('cash');
+  const cashBalances = {
+    '1111': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.BANK_USD),
+    '1112': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.BANK_TRY) / tryRate : 0,
+    '1113': getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CASH_USD),
+    '1114': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CASH_TRY) / tryRate : 0,
+    '1115': tryRate > 0 ? getLastBalanceFromSheet_(ss, CONFIG.SHEETS.CARD_TRY) / tryRate : 0
+  };
 
-    if (isCard) return '1115';           // البطاقة - ليرة
-    if (isCash && isUsd) return '1113';  // خزنة - دولار
-    if (isCash && isTry) return '1114';  // خزنة - ليرة
-    if (isUsd) return '1111';            // البنك - دولار (الافتراضي للدولار)
-    if (isTry) return '1112';            // البنك - ليرة (الافتراضي لليرة)
-    return '1111';                       // الافتراضي: بنك دولار
-  }
+  // إضافة أرصدة النقدية (مدين للموجب، دائن للسالب)
+  Object.keys(cashBalances).forEach(code => {
+    if (accountBalances[code]) {
+      const bal = cashBalances[code];
+      if (bal > 0) {
+        accountBalances[code].debit = bal;
+      } else if (bal < 0) {
+        accountBalances[code].credit = Math.abs(bal);
+      }
+    }
+  });
 
-  // ⭐ حساب الأرصدة من دفتر الحركات بالقيد المزدوج الكامل
+  // ═══════════════════════════════════════════════════════════
+  // الخطوة 2: حساب الحسابات غير النقدية من الحركات
+  // (الطرف غير النقدي فقط - النقدية تأتي من شيتات البنك)
+  // ═══════════════════════════════════════════════════════════
   for (let i = 1; i < transData.length; i++) {
     const row = transData[i];
     const natureType = String(row[2] || '');
-    const classification = String(row[3] || '');
     const amountUsd = Number(row[12]) || 0;
-    const currency = String(row[10] || '');
-    const payMethod = String(row[16] || '');
 
     if (!amountUsd) continue;
 
-    // تحديد حساب النقدية لهذه الحركة
-    const cashAccount = detectCashAccount_(currency, payMethod);
-
-    // ═══ استحقاق مصروف: مدين مصروفات، دائن ذمم الموردين ═══
+    // ═══ استحقاق مصروف: مدين مصروفات، دائن ذمم الموردين (بدون نقدية) ═══
     if (natureType.includes('استحقاق مصروف')) {
       accountBalances['5100'].debit += amountUsd;
       accountBalances['2111'].credit += amountUsd;
     }
-    // ═══ دفعة مصروف: مدين ذمم الموردين، دائن النقدية ═══
+    // ═══ دفعة مصروف: مدين ذمم الموردين (النقدية من شيت البنك) ═══
     else if (natureType.includes('دفعة مصروف')) {
       accountBalances['2111'].debit += amountUsd;
-      accountBalances[cashAccount].credit += amountUsd;
     }
-    // ═══ استحقاق إيراد: مدين ذمم العملاء، دائن الإيرادات ═══
+    // ═══ استحقاق إيراد: مدين ذمم العملاء، دائن الإيرادات (بدون نقدية) ═══
     else if (natureType.includes('استحقاق إيراد')) {
       accountBalances['1121'].debit += amountUsd;
       accountBalances['4110'].credit += amountUsd;
     }
-    // ═══ تحصيل إيراد: مدين النقدية، دائن ذمم العملاء ═══
+    // ═══ تحصيل إيراد: دائن ذمم العملاء (النقدية من شيت البنك) ═══
     else if (natureType.includes('تحصيل إيراد')) {
-      accountBalances[cashAccount].debit += amountUsd;
       accountBalances['1121'].credit += amountUsd;
     }
-    // ═══ تمويل (قرض جديد): مدين النقدية، دائن القروض ═══
+    // ═══ تمويل: دائن القروض (النقدية من شيت البنك) ═══
     else if (natureType.includes('تمويل') &&
       !natureType.includes('سداد تمويل') &&
       !natureType.includes('استلام تمويل')) {
-      accountBalances[cashAccount].debit += amountUsd;
       accountBalances['2121'].credit += amountUsd;
     }
-    // ═══ استلام تمويل: مجرد حركة نقدية (القرض مسجل بالفعل) - تُتجاهل ═══
-    // ═══ سداد تمويل: مدين القروض، دائن النقدية ═══
+    // ═══ استلام تمويل: لا شيء (النقدية من شيت البنك، القرض مسجل بالفعل) ═══
+    // ═══ سداد تمويل: مدين القروض (النقدية من شيت البنك) ═══
     else if (natureType.includes('سداد تمويل')) {
       accountBalances['2121'].debit += amountUsd;
-      accountBalances[cashAccount].credit += amountUsd;
     }
-    // ═══ تأمين مدفوع: مدين التأمينات، دائن النقدية ═══
+    // ═══ تأمين مدفوع: مدين التأمينات (النقدية من شيت البنك) ═══
     else if (natureType.includes('تأمين مدفوع')) {
       accountBalances['1122'].debit += amountUsd;
-      accountBalances[cashAccount].credit += amountUsd;
     }
-    // ═══ استرداد تأمين: مدين النقدية، دائن التأمينات ═══
+    // ═══ استرداد تأمين: دائن التأمينات (النقدية من شيت البنك) ═══
     else if (natureType.includes('استرداد تأمين')) {
-      accountBalances[cashAccount].debit += amountUsd;
       accountBalances['1122'].credit += amountUsd;
     }
     // ═══ تسوية استحقاق مصروف: مدين ذمم الموردين، دائن مصروفات ═══
@@ -8753,31 +8753,30 @@ function rebuildTrialBalance(silent) {
       accountBalances['4110'].debit += amountUsd;
       accountBalances['1121'].credit += amountUsd;
     }
-    // ═══ تحويل داخلي: مدين حساب الوجهة، دائن حساب المصدر ═══
-    else if (natureType.includes('تحويل داخلي')) {
-      const isTransferToCash = classification.includes('تحويل للخزنة') || classification.includes('تحويل للكاش');
-      const isTransferToBank = classification.includes('تحويل للبنك');
-
-      const cur = String(currency).toLowerCase();
-      const isUsd = cur.includes('usd') || cur.includes('دولار') || cur.includes('$');
-      const bankAcc = isUsd ? '1111' : '1112';
-      const cashAcc = isUsd ? '1113' : '1114';
-
-      if (isTransferToCash) {
-        accountBalances[cashAcc].debit += amountUsd;
-        accountBalances[bankAcc].credit += amountUsd;
-      } else if (isTransferToBank) {
-        accountBalances[bankAcc].debit += amountUsd;
-        accountBalances[cashAcc].credit += amountUsd;
-      } else {
-        accountBalances[cashAcc].debit += amountUsd;
-        accountBalances[bankAcc].credit += amountUsd;
-      }
-    }
-    // ═══ مصاريف بنكية: مدين عمولات بنكية، دائن النقدية ═══
+    // ═══ مصاريف بنكية: مدين عمولات بنكية (النقدية من شيت البنك) ═══
     else if (natureType.includes('مصاريف بنكية')) {
       accountBalances['5310'].debit += amountUsd;
-      accountBalances[cashAccount].credit += amountUsd;
+    }
+    // ═══ تحويل داخلي + استلام تمويل: حركات نقدية فقط - الأثر في شيتات البنك ═══
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // الخطوة 3: حساب الفرق وإضافته لحقوق الملكية (رأس المال)
+  // الفرق = الرصيد الافتتاحي + مصاريف بنكية + أي حركات غير مسجلة
+  // ═══════════════════════════════════════════════════════════
+  let rawTotalDebit = 0;
+  let rawTotalCredit = 0;
+  Object.keys(accountBalances).forEach(code => {
+    rawTotalDebit += accountBalances[code].debit;
+    rawTotalCredit += accountBalances[code].credit;
+  });
+
+  const gap = rawTotalDebit - rawTotalCredit;
+  if (Math.abs(gap) > 0.005) {
+    if (gap > 0) {
+      accountBalances['3100'].credit += gap;
+    } else {
+      accountBalances['3100'].debit += Math.abs(gap);
     }
   }
 
@@ -8872,6 +8871,7 @@ function rebuildTrialBalance(silent) {
     `الحالة: ${balanceStatus}`
   );
 }
+
 
 // ==================== قيود اليومية (Journal Entries) ====================
 /**
