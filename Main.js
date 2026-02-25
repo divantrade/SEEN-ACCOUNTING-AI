@@ -7973,6 +7973,10 @@ function rebuildBalanceSheet(silent) {
   // 5. تسوية إيراد
   let totalRevenueSettlement = 0;
 
+  // 6. التأمينات المدفوعة = تأمين مدفوع - استرداد تأمين
+  let totalInsurancePaid = 0;
+  let totalInsuranceRecovered = 0;
+
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const natureType = String(row[2] || '');  // C: طبيعة الحركة
@@ -8011,6 +8015,14 @@ function rebuildBalanceSheet(silent) {
     if (natureType.includes('سداد تمويل')) {
       totalFundingRepayment += amountUsd;
     }
+
+    // تأمينات
+    if (natureType.includes('تأمين مدفوع')) {
+      totalInsurancePaid += amountUsd;
+    }
+    if (natureType.includes('استرداد تأمين')) {
+      totalInsuranceRecovered += amountUsd;
+    }
   }
 
   // ===== حساب الإجماليات =====
@@ -8025,7 +8037,8 @@ function rebuildBalanceSheet(silent) {
   const cardTryUsd = tryRate > 0 ? cardTry / tryRate : 0;
 
   const totalCash = cashUsd + pettyUsd + cashTryUsd + pettyTryUsd + cardTryUsd;
-  const totalAssets = totalCash + receivables;
+  const insuranceDeposits = totalInsurancePaid - totalInsuranceRecovered;  // التأمينات المدفوعة (صافي)
+  const totalAssets = totalCash + receivables + insuranceDeposits;
   const totalLiabilities = payables + loansPayable;
   const equity = totalAssets - totalLiabilities;
 
@@ -8046,6 +8059,7 @@ function rebuildBalanceSheet(silent) {
   if (pettyTryUsd !== 0) rows.push(['    خزنة العهدة (ليرة → دولار)', pettyTryUsd, '']);
   if (cardTryUsd !== 0) rows.push(['    البطاقة (ليرة → دولار)', cardTryUsd, '']);
   rows.push(['    الذمم المدينة (مستحق من العملاء)', receivables, '']);
+  if (insuranceDeposits !== 0) rows.push(['    التأمينات المدفوعة', insuranceDeposits, '']);
   rows.push(['إجمالي الأصول', '', totalAssets]);
   rows.push(['', '', '']);
 
