@@ -1367,7 +1367,7 @@ function applyConditionalFormatting(sheet, lastRow) {
   rules.push(
     SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied('=AND($N2="دائن دفعة",$C2="تغيير عملة")')
-      .setBackground('#f8bbd0')  // وردي فاتح
+      .setBackground(CONFIG.COLORS.BG.LIGHT_PINK)  // وردي فاتح
       .setRanges([dataRange])
       .build()
   );

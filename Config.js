@@ -152,7 +152,7 @@ const CONFIG = {
             LIGHT_GREEN_2: '#f1f8e9',
             LIGHT_GREEN_3: '#c8e6c9',
             LIGHT_YELLOW: '#fff9c4',
-            LIGHT_PINK: '#f8bbd0',      // وردي فاتح (تغيير عملة)
+            LIGHT_PINK: '#fce4ec',      // وردي فاتح (تغيير عملة)
             LIGHT_CYAN: '#b2ebf2',      // سماوي فاتح (تحويل داخلي)
             ZEBRA_ODD: '#f5f5f5',
             GRAY: '#eeeeee',
