@@ -1379,11 +1379,11 @@ function applyConditionalFormatting(sheet, lastRow) {
   );
 
   // ═══════════════════════════════════════════════════════════
-  // 6. دفعة = أزرق فاتح
+  // 6. دفعة = أزرق فاتح (باستثناء تغيير عملة وتحويل داخلي - لهم لون خاص)
   // ═══════════════════════════════════════════════════════════
   rules.push(
     SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND($N2<>"",$N2="دائن دفعة")')
+      .whenFormulaSatisfied('=AND($N2="دائن دفعة",ISERROR(SEARCH("تغيير عملة",$C2)),ISERROR(SEARCH("تحويل داخلي",$C2)))')
       .setBackground(CONFIG.COLORS.BG.LIGHT_BLUE)
       .setRanges([dataRange])
       .build()
