@@ -1357,7 +1357,29 @@ function applyConditionalFormatting(sheet, lastRow) {
   );
 
   // ═══════════════════════════════════════════════════════════
-  // 4. دفعة = أزرق فاتح
+  // 4. تغيير عملة = وردي فاتح (قبل دائن دفعة لأن تغيير العملة نوعها دائن دفعة أيضاً)
+  // ═══════════════════════════════════════════════════════════
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=AND($C2<>"",ISNUMBER(SEARCH("تغيير عملة",$C2)))')
+      .setBackground('#f8bbd0')  // وردي فاتح
+      .setRanges([dataRange])
+      .build()
+  );
+
+  // ═══════════════════════════════════════════════════════════
+  // 5. تحويل داخلي = سماوي فاتح (قبل دائن دفعة)
+  // ═══════════════════════════════════════════════════════════
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=AND($C2<>"",ISNUMBER(SEARCH("تحويل داخلي",$C2)))')
+      .setBackground('#b2ebf2')  // سماوي فاتح
+      .setRanges([dataRange])
+      .build()
+  );
+
+  // ═══════════════════════════════════════════════════════════
+  // 6. دفعة = أزرق فاتح
   // ═══════════════════════════════════════════════════════════
   rules.push(
     SpreadsheetApp.newConditionalFormatRule()
