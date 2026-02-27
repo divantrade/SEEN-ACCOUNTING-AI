@@ -678,6 +678,10 @@ function loadItems(ss) {
         result.natures = Array.from(naturesSet);
         result.classifications = Array.from(classificationsSet);
 
+        // ⭐ ضمان وجود "تصريف عملات" في القائمة حتى لو لم يكن في شيت البنود
+        if (!result.natures.includes('تصريف عملات')) {
+            result.natures.push('تصريف عملات');
+        }
         // ⭐ ضمان تصنيفات تصريف العملات
         if (!result.classifications.includes('بيع دولار')) {
             result.classifications.push('بيع دولار');
@@ -1017,7 +1021,14 @@ function validateTransaction(transaction, context) {
 
     // التحويل الداخلي وتصريف العملات لا يحتاجان طرف، المصاريف البنكية الطرف اختياري
     const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
-    const isCurrencyExchange = (transaction.nature || '').includes('تصريف عملات');
+    // ⭐ قبول 'تغيير عملة' (من Gemini أحياناً) و 'تصريف عملات' (الاسم الرسمي)
+    const isCurrencyExchange = (transaction.nature || '').includes('تصريف عملات') || (transaction.nature || '').includes('تغيير عملة');
+    // ⭐ توحيد: إذا أرجع Gemini 'تغيير عملة'، نحوّلها لـ 'تصريف عملات'
+    if (isCurrencyExchange && !(transaction.nature || '').includes('تصريف عملات')) {
+        transaction.nature = 'تصريف عملات';
+        validation.enriched.nature = 'تصريف عملات';
+        Logger.log('💱 تم تحويل "تغيير عملة" → "تصريف عملات"');
+    }
     // ⭐ كشف المصاريف البنكية: بالبند أو بالطبيعة القديمة (للتوافق) أو بالكلمات المفتاحية
     const isBankFees = (transaction.item || '').includes('مصاريف بنكية')
         || (transaction.nature || '').includes('مصاريف بنكية')
