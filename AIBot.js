@@ -484,10 +484,10 @@ function processNewTransaction(chatId, text, user) {
         // 🔄 التحويل الداخلي / تغيير العملة: تخطي الطرف والمشروع
         // ═══════════════════════════════════════════════════════════
         const isInternalTransfer = result.transaction && (result.transaction.nature || '').includes('تحويل داخلي');
-        const isCurrencyExchange = result.transaction && (result.transaction.nature || '').includes('تغيير عملة');
+        const isCurrencyExchange = result.transaction && (result.transaction.nature || '').includes('تصريف عملات');
         const isBankFees = result.transaction && ((result.transaction.item || '').includes('مصاريف بنكية') || (result.validation && result.validation.enriched && result.validation.enriched.isBankFees));
         const hasBankFeesParty = isBankFees && result.transaction && result.transaction.party;
-        // التحويل الداخلي وتغيير العملة يتخطوا الطرف والمشروع، المصاريف البنكية تتخطى المشروع فقط (الطرف اختياري)
+        // التحويل الداخلي وتصريف العملات يتخطى الطرف والمشروع، المصاريف البنكية تتخطى المشروع فقط
         const skipPartyAndProject = isInternalTransfer || isCurrencyExchange;
         const skipProjectOnly = isBankFees;
 
@@ -1286,7 +1286,7 @@ function continueValidation(chatId, session) {
     const itemForCV = (session.transaction && session.transaction.item) || '';
     const isBankFeesCV = itemForCV.includes('مصاريف بنكية') || (session.validation && session.validation.enriched && session.validation.enriched.isBankFees);
     const isInternalTransferCV = nature.includes('تحويل داخلي');
-    const isCurrencyExchangeCV = nature.includes('تغيير عملة');
+    const isCurrencyExchangeCV = nature.includes('تصريف عملات');
     const skipProjectAndPayment = isBankFeesCV || isInternalTransferCV || isCurrencyExchangeCV;
 
     // ⭐ التحقق من المشروع (اختياري - يُتخطى للمصاريف البنكية والتحويل الداخلي)
