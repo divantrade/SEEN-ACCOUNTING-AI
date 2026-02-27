@@ -155,7 +155,7 @@ function setBotCommands() {
         { command: 'finance', description: '🏦 تمويل (قرض/سداد)' },
         { command: 'insurance', description: '🔐 تأمين (دفع/استرداد)' },
         { command: 'transfer', description: '🔄 تحويل داخلي' },
-        { command: 'exchange', description: '💱 تصريف عملات' },
+        { command: 'exchange', description: '💱 تغيير عملة' },
         { command: 'status', description: '📊 حالة حركاتك' },
         { command: 'help', description: '❓ المساعدة' },
         { command: 'cancel', description: '❌ إلغاء' }
@@ -205,7 +205,7 @@ function resetBotMenuCompletely() {
         { command: 'finance', description: '🏦 تمويل (قرض/سداد)' },
         { command: 'insurance', description: '🔐 تأمين (دفع/استرداد)' },
         { command: 'transfer', description: '🔄 تحويل داخلي' },
-        { command: 'exchange', description: '💱 تصريف عملات' },
+        { command: 'exchange', description: '💱 تغيير عملة' },
         { command: 'status', description: '📊 حالة حركاتك' },
         { command: 'help', description: '❓ المساعدة' },
         { command: 'cancel', description: '❌ إلغاء' }
@@ -1292,11 +1292,11 @@ function startExchangeFlow(chatId, session) {
     session.transactionType = 'exchange';
     session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_NATURE;
     session.data = {};
-    session.data.nature = 'تصريف عملات';
+    session.data.nature = 'تغيير عملة';
     saveUserSession(chatId, session);
 
-    // تصريف العملات → ننتقل مباشرة لاختيار التصنيف (بيع/شراء دولار)
-    sendMessage(chatId, '💱 *تصريف عملات*\n\n📊 اختر نوع التصريف:', BOT_CONFIG.KEYBOARDS.CLASSIFICATION_EXCHANGE, 'Markdown');
+    // تغيير العملة → ننتقل مباشرة لاختيار التصنيف (بيع/شراء دولار)
+    sendMessage(chatId, '💱 *تغيير عملة*\n\n📊 اختر نوع التغيير:', BOT_CONFIG.KEYBOARDS.CLASSIFICATION_EXCHANGE, 'Markdown');
 
     session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_CLASSIFICATION;
     saveUserSession(chatId, session);
@@ -1450,7 +1450,7 @@ function getClassificationKeyboard(nature) {
         return BOT_CONFIG.KEYBOARDS.CLASSIFICATION_INSURANCE;
     }
     // تصنيفات تغيير العملة
-    if (nature.includes('تصريف عملات')) {
+    if (nature.includes('تغيير عملة')) {
         return BOT_CONFIG.KEYBOARDS.CLASSIFICATION_EXCHANGE;
     }
     // تصنيفات التحويل
@@ -1483,7 +1483,7 @@ function handleNatureSelection(chatId, messageId, nature, session) {
     }
 
     // تحديد نوع الحركة تلقائياً من الطبيعة المختارة
-    if (nature === 'تصريف عملات') {
+    if (nature === 'تغيير عملة') {
         session.transactionType = 'exchange';
     } else if (nature === 'تحويل داخلي') {
         session.transactionType = 'transfer';
@@ -1544,7 +1544,7 @@ function handleClassificationSelection(chatId, messageId, classification, sessio
     if (session.transactionType === 'transfer' || session.transactionType === 'exchange') {
         session.data.projectCode = '';
         session.data.projectName = '';
-        session.data.item = session.transactionType === 'exchange' ? 'تصريف عملات' : 'تحويل داخلي';
+        session.data.item = session.transactionType === 'exchange' ? 'تغيير عملة' : 'تحويل داخلي';
         session.data.partyName = '';
         session.data.isNewParty = false;
         session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_AMOUNT;

@@ -193,7 +193,7 @@ function looksLikeNewTransaction_(text) {
     if (!text) return false;
     const transactionKeywords = [
         'استحقاق', 'دفعة', 'تحصيل', 'مصاريف بنكية', 'عمولة بنكية', 'رسوم بنكية',
-        'مصاريف تحويل', 'عمولة تحويل', 'تحويل داخلي', 'تصريف عملات', 'صرفت', 'صرافة', 'سداد', 'تمويل', 'سلفة',
+        'مصاريف تحويل', 'عمولة تحويل', 'تحويل داخلي', 'تغيير عملة', 'صرفت', 'صرافة', 'سداد', 'تمويل', 'سلفة',
         'تسوية', 'إيراد', 'مصروف', 'فاتورة', 'تأمين', 'استرداد',
         'دولار', 'ليرة', 'جنيه', 'USD', 'TRY', 'EGP',
         'بتاريخ', 'نقدي', 'كاش', 'تحويل بنكي'
@@ -475,8 +475,8 @@ function processNewTransaction(chatId, text, user) {
         const isInternalTransfer = result.transaction && (result.transaction.nature || '').includes('تحويل داخلي');
         const txClassification = result.transaction ? (result.transaction.classification || '').trim() : '';
         const isCurrencyExchange = result.transaction && (
-            (result.transaction.nature || '').includes('تصريف عملات') ||
             (result.transaction.nature || '').includes('تغيير عملة') ||
+            (result.transaction.nature || '').includes('تصريف عملات') ||
             txClassification === 'بيع دولار' ||
             txClassification === 'شراء دولار'
         );
@@ -1280,7 +1280,7 @@ function continueValidation(chatId, session) {
     const itemForCV = (session.transaction && session.transaction.item) || '';
     const isBankFeesCV = itemForCV.includes('مصاريف بنكية') || (session.validation && session.validation.enriched && session.validation.enriched.isBankFees);
     const isInternalTransferCV = nature.includes('تحويل داخلي');
-    const isCurrencyExchangeCV = nature.includes('تصريف عملات');
+    const isCurrencyExchangeCV = nature.includes('تغيير عملة') || nature.includes('تصريف عملات');
     const skipProjectAndPayment = isBankFeesCV || isInternalTransferCV || isCurrencyExchangeCV;
 
     // ⭐ التحقق من المشروع (اختياري - يُتخطى للمصاريف البنكية والتحويل الداخلي)
