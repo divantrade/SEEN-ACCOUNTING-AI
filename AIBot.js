@@ -193,7 +193,7 @@ function looksLikeNewTransaction_(text) {
     if (!text) return false;
     const transactionKeywords = [
         'استحقاق', 'دفعة', 'تحصيل', 'مصاريف بنكية', 'عمولة بنكية', 'رسوم بنكية',
-        'مصاريف تحويل', 'عمولة تحويل', 'تحويل داخلي', 'تغيير عملة', 'صرفت', 'صرافة', 'سداد', 'تمويل', 'سلفة',
+        'مصاريف تحويل', 'عمولة تحويل', 'تحويل داخلي', 'تصريف عملات', 'صرفت', 'صرافة', 'سداد', 'تمويل', 'سلفة',
         'تسوية', 'إيراد', 'مصروف', 'فاتورة', 'تأمين', 'استرداد',
         'دولار', 'ليرة', 'جنيه', 'USD', 'TRY', 'EGP',
         'بتاريخ', 'نقدي', 'كاش', 'تحويل بنكي'
@@ -1036,36 +1036,7 @@ function handleAIExchangeRateInput(chatId, text, session) {
     session.transaction.exchangeRate = rate;
     session.transaction.exchange_rate = rate;
     session.validation.enriched.exchangeRate = rate;
-    session.validation.enriched.exchange_rate = rate;
     session.validation.needsExchangeRate = false;
-
-    // ⭐ تغيير العملة: تصحيح المبلغ عند إدخال سعر الصرف لاحقاً
-    const nature = (session.transaction.nature || '');
-    const classification = (session.transaction.classification || '');
-    if (nature.includes('تغيير عملة') && classification.includes('بيع دولار')) {
-        // لو المبلغ مسجّل بالدولار ← نحوّله لليرة
-        if (session.transaction.currency === 'USD' || session.validation.enriched._originalDollarAmount) {
-            const dollarAmount = session.validation.enriched._originalDollarAmount || session.transaction.amount;
-            const tryAmount = dollarAmount * rate;
-            Logger.log('💱 بيع دولار (بعد إدخال السعر): ' + dollarAmount + ' USD × ' + rate + ' = ' + tryAmount + ' TRY');
-            session.transaction.amount = tryAmount;
-            session.transaction.currency = 'TRY';
-            session.validation.enriched.amount = tryAmount;
-            session.validation.enriched.currency = 'TRY';
-        }
-    } else if (nature.includes('تغيير عملة') && classification.includes('شراء دولار')) {
-        // شراء دولار: لو المبلغ بالليرة ← نحوّله لدولار
-        if (session.transaction.currency === 'TRY') {
-            const tryAmount = session.transaction.amount;
-            const usdAmount = tryAmount / rate;
-            Logger.log('💱 شراء دولار (بعد إدخال السعر): ' + tryAmount + ' TRY ÷ ' + rate + ' = ' + usdAmount + ' USD');
-            session.transaction.amount = usdAmount;
-            session.transaction.currency = 'USD';
-            session.validation.enriched.amount = usdAmount;
-            session.validation.enriched.currency = 'USD';
-        }
-    }
-
     saveAIUserSession(chatId, session);
 
     sendAIMessage(chatId, `✅ تم تحديد سعر الصرف: *${rate}*`, { parse_mode: 'Markdown' });

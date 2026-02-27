@@ -1362,33 +1362,11 @@ function applyConditionalFormatting(sheet, lastRow) {
   );
 
   // ═══════════════════════════════════════════════════════════
-  // 4. تغيير عملة = وردي فاتح (N=دائن دفعة + C=تغيير عملة)
+  // 4. دفعة = أزرق فاتح
   // ═══════════════════════════════════════════════════════════
   rules.push(
     SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND($N2="دائن دفعة",$C2="تغيير عملة")')
-      .setBackground(CONFIG.COLORS.BG.LIGHT_PINK)  // وردي فاتح
-      .setRanges([dataRange])
-      .build()
-  );
-
-  // ═══════════════════════════════════════════════════════════
-  // 5. تحويل داخلي = سماوي فاتح (N=دائن دفعة + C=تحويل داخلي)
-  // ═══════════════════════════════════════════════════════════
-  rules.push(
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND($N2="دائن دفعة",$C2="تحويل داخلي")')
-      .setBackground('#b2ebf2')  // سماوي فاتح
-      .setRanges([dataRange])
-      .build()
-  );
-
-  // ═══════════════════════════════════════════════════════════
-  // 6. دفعة عادية = أزرق فاتح (N=دائن دفعة + C ليس تغيير عملة أو تحويل داخلي)
-  // ═══════════════════════════════════════════════════════════
-  rules.push(
-    SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND($N2="دائن دفعة",$C2<>"تغيير عملة",$C2<>"تحويل داخلي")')
+      .whenFormulaSatisfied('=AND($N2<>"",$N2="دائن دفعة")')
       .setBackground(CONFIG.COLORS.BG.LIGHT_BLUE)
       .setRanges([dataRange])
       .build()
@@ -1419,8 +1397,6 @@ function refreshTransactionsFormatting() {
     '• 🏦 تمويل (دخول قرض) = أخضر فاتح 🟩\n' +
     '• مدين استحقاق = برتقالي فاتح 🟧\n' +
     '• دائن تسوية = بنفسجي فاتح 🟪\n' +
-    '• 💱 تغيير عملة = وردي فاتح 🩷\n' +
-    '• 🔄 تحويل داخلي = سماوي فاتح 🩵\n' +
     '• دائن دفعة = أزرق فاتح 🟦\n\n' +
     'النطاق: ' + lastRow + ' صف',
     SpreadsheetApp.getUi().ButtonSet.OK
@@ -8842,7 +8818,7 @@ function rebuildTrialBalance(silent) {
     else if (natureType.includes('مصاريف بنكية')) {
       accountBalances['5310'].debit += amountUsd;
     }
-    // ═══ تحويل داخلي + تغيير عملة + استلام تمويل: حركات نقدية فقط - الأثر في شيتات البنك ═══
+    // ═══ تحويل داخلي + استلام تمويل: حركات نقدية فقط - الأثر في شيتات البنك ═══
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -10503,9 +10479,8 @@ function rebuildBankAndCashFromTransactions(silent) {
       statusVal === CONFIG.PAYMENT_STATUS.PAID ||
       statusVal === 'مدفوع جزئياً';
 
-    // 5) تحديد هل هي تحويل داخلي أو تغيير عملة؟
+    // 5) تحديد هل هي تحويل داخلي؟
     const isInternalTransfer = typeVal.indexOf('تحويل داخلي') !== -1;
-    const isCurrencyExchange = typeVal.indexOf('تغيير عملة') !== -1;
 
     // 5b) تحديد هل هي تصريف عملات؟
     const isCurrencyExchange = typeVal.indexOf('تصريف عملات') !== -1;
@@ -10810,7 +10785,7 @@ function reconcileCashFlowWithAccounts() {
       classVal.indexOf('سلفة قصيرة') !== -1 || detailsVal.indexOf('سلفة قصيرة') !== -1;
     var isPaidMovement = statusVal === 'عملية دفع/تحصيل' || statusVal === 'مدفوع' || statusVal === 'مدفوع جزئياً';
     var isInternalTransfer = typeVal.indexOf('تحويل داخلي') !== -1;
-    var isCurrencyExchange = typeVal.indexOf('تغيير عملة') !== -1;
+    var isCurrencyExchange = typeVal.indexOf('تصريف عملات') !== -1;
     var isBankFees = typeVal.indexOf('مصاريف بنكية') !== -1 || itemVal.indexOf('مصاريف بنكية') !== -1;
     var hasPayMethod = !!payMethodVal && !!currencyVal;
 
@@ -14823,12 +14798,11 @@ function quickTransactionEntry() {
     '4. تحصيل إيراد\n' +
     '5. تمويل\n' +
     '6. تحويل داخلي\n' +
-    '7. تغيير عملة\n' +
-    '8. مصاريف بنكية',
+    '7. مصاريف بنكية',
     ui.ButtonSet.OK_CANCEL
   );
   if (natureResponse.getSelectedButton() !== ui.Button.OK) return;
-  const natureTypes = ['استحقاق مصروف', 'دفعة مصروف', 'استحقاق إيراد', 'تحصيل إيراد', 'تمويل', 'تحويل داخلي', 'تغيير عملة', 'مصاريف بنكية'];
+  const natureTypes = ['استحقاق مصروف', 'دفعة مصروف', 'استحقاق إيراد', 'تحصيل إيراد', 'تمويل', 'تحويل داخلي', 'مصاريف بنكية'];
   const natureType = natureTypes[parseInt(natureResponse.getResponseText()) - 1] || 'استحقاق مصروف';
 
   // 3. البند والتصنيف
@@ -14943,16 +14917,13 @@ function saveTransactionData(formData) {
   const exchangeRate = Number(formData.exchangeRate) || 1;
 
   // تحديد نوع الحركة (N)
-  // ✅ تغيير عملة وتحويل داخلي = دائن دفعة (حركة نقدية فعلية)
   let movementType = '';
   if (formData.natureType.includes('تسوية استحقاق')) {
     movementType = 'دائن تسوية';
   } else if (formData.natureType.includes('استحقاق')) {
     movementType = 'مدين استحقاق';
   } else if (formData.natureType.includes('دفعة') || formData.natureType.includes('تحصيل') ||
-    formData.natureType.includes('سداد') || formData.natureType.includes('استرداد') ||
-    formData.natureType.includes('تغيير عملة') || formData.natureType.includes('تحويل داخلي') ||
-    formData.natureType.includes('مصاريف بنكية')) {
+    formData.natureType.includes('سداد') || formData.natureType.includes('استرداد')) {
     movementType = 'دائن دفعة';
   }
 

@@ -668,7 +668,7 @@ function addBotTransaction(transactionData) {
  * تحديد نوع الحركة من طبيعتها
  */
 function getMovementType(nature) {
-    if (nature.includes('تحويل داخلي') || nature.includes('تغيير عملة')) {
+    if (nature.includes('تحويل داخلي')) {
         return CONFIG.MOVEMENT.CREDIT; // دائن دفعة
     } else if (nature.includes('مصاريف بنكية')) {
         return CONFIG.MOVEMENT.CREDIT; // دائن دفعة - خروج نقدية من البنك
