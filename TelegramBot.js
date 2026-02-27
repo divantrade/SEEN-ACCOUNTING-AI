@@ -2687,7 +2687,7 @@ function submitEditedTransaction(chatId, messageId, session) {
             partyName: session.data.partyName,
             amount: session.data.amount,
             currency: session.data.currency || 'USD',
-            exchangeRate: session.data.exchangeRate || 1,
+            exchangeRate: session.data.exchangeRate || 0,
             paymentMethod: session.data.paymentMethod,
             paymentTermType: session.data.paymentTermType || 'فوري',
             weeks: session.data.weeks,

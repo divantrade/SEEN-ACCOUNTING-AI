@@ -1277,6 +1277,8 @@ function validateTransaction(transaction, context) {
         } else {
             validation.enriched.payment_method = 'تحويل بنكي';
         }
+        // ⭐ البند = "تحويل داخلي" (مطابق لقاعدة البنود) - الاتجاه يُحدد بالتصنيف
+        validation.enriched.item = 'تحويل داخلي';
         validation.enriched.payment_term = 'فوري';
         validation.enriched.payment_term_weeks = '';
         validation.enriched.payment_term_date = '';
@@ -1301,6 +1303,8 @@ function validateTransaction(transaction, context) {
         } else {
             validation.enriched.payment_method = transaction.payment_method || 'نقدي';
         }
+        // ⭐ البند = "تغيير عملة" (مطابق لقاعدة البنود)
+        validation.enriched.item = 'تغيير عملة';
         validation.enriched.payment_term = 'فوري';
         validation.enriched.payment_term_weeks = '';
         validation.enriched.payment_term_date = '';
