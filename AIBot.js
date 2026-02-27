@@ -473,9 +473,12 @@ function processNewTransaction(chatId, text, user) {
         // 🔄 التحويل الداخلي / تصريف العملات: تخطي الطرف والمشروع
         // ═══════════════════════════════════════════════════════════
         const isInternalTransfer = result.transaction && (result.transaction.nature || '').includes('تحويل داخلي');
+        const txClassification = result.transaction ? (result.transaction.classification || '').trim() : '';
         const isCurrencyExchange = result.transaction && (
             (result.transaction.nature || '').includes('تصريف عملات') ||
-            (result.transaction.nature || '').includes('تغيير عملة')
+            (result.transaction.nature || '').includes('تغيير عملة') ||
+            txClassification === 'بيع دولار' ||
+            txClassification === 'شراء دولار'
         );
         const isBankFees = result.transaction && ((result.transaction.item || '').includes('مصاريف بنكية') || (result.validation && result.validation.enriched && result.validation.enriched.isBankFees));
         const hasBankFeesParty = isBankFees && result.transaction && result.transaction.party;

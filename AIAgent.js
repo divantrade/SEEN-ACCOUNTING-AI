@@ -543,7 +543,18 @@ function loadItemsCached() {
 
     if (cached) {
         try {
-            return JSON.parse(cached);
+            const parsedCache = JSON.parse(cached);
+            // ⭐ ضمان وجود 'تصريف عملات' حتى في البيانات المحفوظة في الكاش
+            if (parsedCache.natures && !parsedCache.natures.includes('تصريف عملات')) {
+                parsedCache.natures.push('تصريف عملات');
+            }
+            if (parsedCache.classifications && !parsedCache.classifications.includes('بيع دولار')) {
+                parsedCache.classifications.push('بيع دولار');
+            }
+            if (parsedCache.classifications && !parsedCache.classifications.includes('شراء دولار')) {
+                parsedCache.classifications.push('شراء دولار');
+            }
+            return parsedCache;
         } catch (e) {
             // Cache تالف
         }
@@ -1021,13 +1032,17 @@ function validateTransaction(transaction, context) {
 
     // التحويل الداخلي وتصريف العملات لا يحتاجان طرف، المصاريف البنكية الطرف اختياري
     const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
-    // ⭐ قبول 'تغيير عملة' (من Gemini أحياناً) و 'تصريف عملات' (الاسم الرسمي)
-    const isCurrencyExchange = (transaction.nature || '').includes('تصريف عملات') || (transaction.nature || '').includes('تغيير عملة');
-    // ⭐ توحيد: إذا أرجع Gemini 'تغيير عملة'، نحوّلها لـ 'تصريف عملات'
+    // ⭐ كشف تصريف العملات: بالطبيعة أو بالتصنيف (بيع/شراء دولار = تصريف عملات حتى لو Gemini أرجع طبيعة خاطئة)
+    const classificationVal = (transaction.classification || '').trim();
+    const isCurrencyExchange = (transaction.nature || '').includes('تصريف عملات')
+        || (transaction.nature || '').includes('تغيير عملة')
+        || classificationVal === 'بيع دولار'
+        || classificationVal === 'شراء دولار';
+    // ⭐ توحيد: إذا كشفنا تصريف عملات بأي طريقة، نصحح الطبيعة
     if (isCurrencyExchange && !(transaction.nature || '').includes('تصريف عملات')) {
+        Logger.log('💱 تم تصحيح الطبيعة من "' + transaction.nature + '" → "تصريف عملات" (كُشفت من التصنيف: ' + classificationVal + ')');
         transaction.nature = 'تصريف عملات';
         validation.enriched.nature = 'تصريف عملات';
-        Logger.log('💱 تم تحويل "تغيير عملة" → "تصريف عملات"');
     }
     // ⭐ كشف المصاريف البنكية: بالبند أو بالطبيعة القديمة (للتوافق) أو بالكلمات المفتاحية
     const isBankFees = (transaction.item || '').includes('مصاريف بنكية')
