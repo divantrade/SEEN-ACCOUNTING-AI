@@ -1349,8 +1349,9 @@ function validateTransaction(transaction, context) {
 
         // ⭐ إذا كانت العملة غير دولار، يجب تحديد سعر الصرف
         // ⚠️ إذا كان سعر الصرف = 1 للعملات غير الدولار، يُعتبر غير صحيح (مثلاً TRY/USD لا يمكن أن يكون 1)
+        // ⚠️ لكن التحويل الداخلي بنفس العملة لا يحتاج سعر صرف
         const rateValue = Number(transaction.exchange_rate) || 0;
-        if (transaction.currency !== 'USD' && (rateValue <= 1)) {
+        if (transaction.currency !== 'USD' && (rateValue <= 1) && !isInternalTransfer) {
             validation.needsExchangeRate = true;
         }
         // ⭐ تغيير العملة: دائماً يحتاج سعر صرف (حتى لو العملة USD في شراء دولار)
