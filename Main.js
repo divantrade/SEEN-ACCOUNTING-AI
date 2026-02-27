@@ -8551,7 +8551,7 @@ function rebuildGeneralLedger(silent, filterAccount) {
     // ═══════════════════════════════════════════════════════════
     // 💱 تصريف العملات (بيع/شراء دولار) - القيود المحاسبية
     // ═══════════════════════════════════════════════════════════
-    else if (natureType.includes('تصريف عملات')) {
+    else if (natureType.includes('تغيير عملة')) {
       const isBuyDollarJE = classification.includes('شراء دولار');
       if (isBuyDollarJE) {
         entries.push({ account: bankAccount, name: bankName, debit: amountUsd, credit: 0 });
@@ -9095,7 +9095,7 @@ function rebuildJournalEntries(silent) {
     // ═══════════════════════════════════════════════════════════
     // 💱 تصريف العملات (بيع/شراء دولار)
     // ═══════════════════════════════════════════════════════════
-    else if (natureType.includes('تصريف عملات')) {
+    else if (natureType.includes('تغيير عملة')) {
       const isBuyDollarJE2 = classification.includes('شراء دولار');
       if (isBuyDollarJE2) {
         entries.push({ account: bankAccount, name: bankName, debit: amountUsd, credit: 0 });
@@ -10482,8 +10482,8 @@ function rebuildBankAndCashFromTransactions(silent) {
     // 5) تحديد هل هي تحويل داخلي؟
     const isInternalTransfer = typeVal.indexOf('تحويل داخلي') !== -1;
 
-    // 5b) تحديد هل هي تصريف عملات؟
-    const isCurrencyExchange = typeVal.indexOf('تصريف عملات') !== -1;
+    // 5b) تحديد هل هي تغيير عملة؟
+    const isCurrencyExchange = typeVal.indexOf('تغيير عملة') !== -1;
 
     // 6) تحديد هل هي مصاريف بنكية؟ (بالطبيعة أو بالبند)
     const itemVal = col.item >= 0 ? String(row[col.item] || '').trim() : '';
@@ -10594,7 +10594,7 @@ function rebuildBankAndCashFromTransactions(silent) {
       continue;
     }
     // ═══════════════════════════════════════════════════════════
-    // 💱 معالجة تصريف العملات (تبديل بين دولار وليرة)
+    // 💱 معالجة تغيير العملة (تبديل بين دولار وليرة)
     // ═══════════════════════════════════════════════════════════
     if (isCurrencyExchange) {
       const isBuyDollar = classVal.indexOf('شراء دولار') !== -1;
@@ -10602,10 +10602,19 @@ function rebuildBankAndCashFromTransactions(silent) {
 
       // سعر الصرف من عمود L
       const exchangeRate = col.rate >= 0 ? (Number(row[col.rate]) || 0) : 0;
-      // المبلغ بالدولار (عمود J يحتوي المبلغ بالدولار دائماً لتصريف العملات)
-      const usdAmount = amount;
-      // المبلغ بالليرة = الدولار × سعر الصرف
-      const tryAmount = exchangeRate > 0 ? Math.round(usdAmount * exchangeRate * 100) / 100 : 0;
+      // ⭐ كشف العملة من عمود K لتحديد المبالغ بشكل صحيح
+      const currencyVal = col.currency >= 0 ? String(row[col.currency] || '').trim().toUpperCase() : 'USD';
+      const amountUsdFromSheet = col.amountUsd >= 0 ? (Number(row[col.amountUsd]) || 0) : 0;
+      let usdAmount, tryAmount;
+      if (currencyVal === 'TRY' || currencyVal === 'ليرة') {
+        // المبلغ بالليرة في عمود J، والدولار في عمود M
+        tryAmount = amount;
+        usdAmount = amountUsdFromSheet > 0 ? amountUsdFromSheet : (exchangeRate > 0 ? Math.round(amount / exchangeRate * 100) / 100 : 0);
+      } else {
+        // المبلغ بالدولار في عمود J
+        usdAmount = amount;
+        tryAmount = exchangeRate > 0 ? Math.round(usdAmount * exchangeRate * 100) / 100 : 0;
+      }
 
       // تحديد المكان (خزنة أو بنك) من طريقة الدفع
       const pm = String(payMethodVal || '').toLowerCase();
@@ -10613,30 +10622,30 @@ function rebuildBankAndCashFromTransactions(silent) {
       const usdKey = isCash ? 'cashUsd' : 'bankUsd';
       const tryKey = isCash ? 'cashTry' : 'bankTry';
 
-      if (isSellDollar && accounts[usdKey] && accounts[tryKey] && tryAmount > 0) {
+      if (isSellDollar && accounts[usdKey] && accounts[tryKey] && usdAmount > 0 && tryAmount > 0) {
         // بيع دولار: خصم من صندوق الدولار + إضافة لصندوق الليرة
         accounts[usdKey].balance -= usdAmount;
         accounts[usdKey].rows.push([
-          date, 'تصريف عملات - بيع ' + usdAmount + ' دولار', transNo, refNo, 0, usdAmount, accounts[usdKey].balance, notes
+          date, 'تغيير عملة - بيع ' + usdAmount + ' دولار', transNo, refNo, 0, usdAmount, accounts[usdKey].balance, notes
         ]);
 
         accounts[tryKey].balance += tryAmount;
         accounts[tryKey].rows.push([
-          date, 'تصريف عملات - شراء ' + tryAmount + ' ليرة', transNo, refNo, tryAmount, 0, accounts[tryKey].balance, notes
+          date, 'تغيير عملة - شراء ' + tryAmount + ' ليرة', transNo, refNo, tryAmount, 0, accounts[tryKey].balance, notes
         ]);
-      } else if (isBuyDollar && accounts[usdKey] && accounts[tryKey] && tryAmount > 0) {
+      } else if (isBuyDollar && accounts[usdKey] && accounts[tryKey] && usdAmount > 0 && tryAmount > 0) {
         // شراء دولار: إضافة لصندوق الدولار + خصم من صندوق الليرة
         accounts[usdKey].balance += usdAmount;
         accounts[usdKey].rows.push([
-          date, 'تصريف عملات - شراء ' + usdAmount + ' دولار', transNo, refNo, usdAmount, 0, accounts[usdKey].balance, notes
+          date, 'تغيير عملة - شراء ' + usdAmount + ' دولار', transNo, refNo, usdAmount, 0, accounts[usdKey].balance, notes
         ]);
 
         accounts[tryKey].balance -= tryAmount;
         accounts[tryKey].rows.push([
-          date, 'تصريف عملات - بيع ' + tryAmount + ' ليرة', transNo, refNo, 0, tryAmount, accounts[tryKey].balance, notes
+          date, 'تغيير عملة - بيع ' + tryAmount + ' ليرة', transNo, refNo, 0, tryAmount, accounts[tryKey].balance, notes
         ]);
       }
-      // تصريف العملات تم معالجته
+      // تغيير العملة تم معالجته
       continue;
     }
     // ═══════════════════════════════════════════════════════════
@@ -10785,7 +10794,7 @@ function reconcileCashFlowWithAccounts() {
       classVal.indexOf('سلفة قصيرة') !== -1 || detailsVal.indexOf('سلفة قصيرة') !== -1;
     var isPaidMovement = statusVal === 'عملية دفع/تحصيل' || statusVal === 'مدفوع' || statusVal === 'مدفوع جزئياً';
     var isInternalTransfer = typeVal.indexOf('تحويل داخلي') !== -1;
-    var isCurrencyExchange = typeVal.indexOf('تصريف عملات') !== -1;
+    var isCurrencyExchange = typeVal.indexOf('تغيير عملة') !== -1;
     var isBankFees = typeVal.indexOf('مصاريف بنكية') !== -1 || itemVal.indexOf('مصاريف بنكية') !== -1;
     var hasPayMethod = !!payMethodVal && !!currencyVal;
 

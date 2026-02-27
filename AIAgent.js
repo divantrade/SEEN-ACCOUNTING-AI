@@ -544,9 +544,9 @@ function loadItemsCached() {
     if (cached) {
         try {
             const parsedCache = JSON.parse(cached);
-            // ⭐ ضمان وجود 'تصريف عملات' حتى في البيانات المحفوظة في الكاش
-            if (parsedCache.natures && !parsedCache.natures.includes('تصريف عملات')) {
-                parsedCache.natures.push('تصريف عملات');
+            // ⭐ ضمان وجود 'تغيير عملة' حتى في البيانات المحفوظة في الكاش
+            if (parsedCache.natures && !parsedCache.natures.includes('تغيير عملة')) {
+                parsedCache.natures.push('تغيير عملة');
             }
             if (parsedCache.classifications && !parsedCache.classifications.includes('بيع دولار')) {
                 parsedCache.classifications.push('بيع دولار');
@@ -689,9 +689,9 @@ function loadItems(ss) {
         result.natures = Array.from(naturesSet);
         result.classifications = Array.from(classificationsSet);
 
-        // ⭐ ضمان وجود "تصريف عملات" في القائمة حتى لو لم يكن في شيت البنود
-        if (!result.natures.includes('تصريف عملات')) {
-            result.natures.push('تصريف عملات');
+        // ⭐ ضمان وجود "تغيير عملة" في القائمة حتى لو لم يكن في شيت البنود
+        if (!result.natures.includes('تغيير عملة')) {
+            result.natures.push('تغيير عملة');
         }
         // ⭐ ضمان تصنيفات تصريف العملات
         if (!result.classifications.includes('بيع دولار')) {
@@ -1032,17 +1032,17 @@ function validateTransaction(transaction, context) {
 
     // التحويل الداخلي وتصريف العملات لا يحتاجان طرف، المصاريف البنكية الطرف اختياري
     const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
-    // ⭐ كشف تصريف العملات: بالطبيعة أو بالتصنيف (بيع/شراء دولار = تصريف عملات حتى لو Gemini أرجع طبيعة خاطئة)
+    // ⭐ كشف تغيير العملة: بالطبيعة أو بالتصنيف (بيع/شراء دولار = تغيير عملة حتى لو Gemini أرجع طبيعة خاطئة)
     const classificationVal = (transaction.classification || '').trim();
-    const isCurrencyExchange = (transaction.nature || '').includes('تصريف عملات')
-        || (transaction.nature || '').includes('تغيير عملة')
+    const isCurrencyExchange = (transaction.nature || '').includes('تغيير عملة')
+        || (transaction.nature || '').includes('تصريف عملات')
         || classificationVal === 'بيع دولار'
         || classificationVal === 'شراء دولار';
-    // ⭐ توحيد: إذا كشفنا تصريف عملات بأي طريقة، نصحح الطبيعة
-    if (isCurrencyExchange && !(transaction.nature || '').includes('تصريف عملات')) {
-        Logger.log('💱 تم تصحيح الطبيعة من "' + transaction.nature + '" → "تصريف عملات" (كُشفت من التصنيف: ' + classificationVal + ')');
-        transaction.nature = 'تصريف عملات';
-        validation.enriched.nature = 'تصريف عملات';
+    // ⭐ توحيد: إذا كشفنا تغيير عملة بأي طريقة، نصحح الطبيعة لتطابق قاعدة البنود
+    if (isCurrencyExchange && !(transaction.nature || '').includes('تغيير عملة')) {
+        Logger.log('💱 تم تصحيح الطبيعة من "' + transaction.nature + '" → "تغيير عملة" (كُشفت من التصنيف: ' + classificationVal + ')');
+        transaction.nature = 'تغيير عملة';
+        validation.enriched.nature = 'تغيير عملة';
     }
     // ⭐ كشف المصاريف البنكية: بالبند أو بالطبيعة القديمة (للتوافق) أو بالكلمات المفتاحية
     const isBankFees = (transaction.item || '').includes('مصاريف بنكية')
@@ -1169,7 +1169,7 @@ function validateTransaction(transaction, context) {
     if (isInternalTransfer || isCurrencyExchange) {
         validation.enriched.party = '';
         validation.enriched.isNewParty = false;
-        Logger.log('🔄 ' + (isCurrencyExchange ? 'تصريف عملات' : 'تحويل داخلي') + ' - تخطي مطابقة الطرف');
+        Logger.log('🔄 ' + (isCurrencyExchange ? 'تغيير عملة' : 'تحويل داخلي') + ' - تخطي مطابقة الطرف');
     } else if (isBankFees) {
         // المصاريف البنكية: تعيين التصنيف وطريقة الدفع تلقائياً
         validation.enriched.classification = 'مصروفات عمومية';
@@ -1289,7 +1289,7 @@ function validateTransaction(transaction, context) {
         validation.needsExchangeRate = false;
         validation.enriched.exchangeRate = transaction.exchange_rate || 0;
     }
-    // ⭐ تصريف عملات: يحتاج سعر صرف دائماً + لا يحتاج طرف أو مشروع
+    // ⭐ تغيير عملة: يحتاج سعر صرف دائماً + لا يحتاج طرف أو مشروع
     else if (isCurrencyExchange) {
         const classification = (transaction.classification || '').trim();
         if (classification.includes('خزنة') || classification.includes('نقد') || classification.includes('كاش')) {
@@ -1307,21 +1307,15 @@ function validateTransaction(transaction, context) {
         validation.needsProjectSelection = false;
         validation.enriched.party = '';
         validation.enriched.isNewParty = false;
-        // تصريف العملات يحتاج سعر صرف دائماً
+        // تغيير العملة يحتاج سعر صرف دائماً
         const rateVal = Number(transaction.exchange_rate) || 0;
         if (rateVal <= 1) {
             validation.needsExchangeRate = true;
         }
-        // تطبيع العملة: المبلغ يُسجل دائماً بالدولار
-        if (transaction.currency === 'TRY' && rateVal > 1) {
-            // المستخدم ذكر المبلغ بالليرة - نحوله لدولار
-            validation.enriched.amount = Math.round((transaction.amount / rateVal) * 100) / 100;
-            validation.enriched.currency = 'USD';
-            validation.enriched.exchangeRate = rateVal;
-            Logger.log('💱 تصريف عملات: تحويل ' + transaction.amount + ' TRY → ' + validation.enriched.amount + ' USD بسعر ' + rateVal);
-        } else {
-            validation.enriched.currency = 'USD';
-        }
+        // ⭐ الحفاظ على العملة الأصلية - لا نحوّل لدولار
+        // BotSheets.js يحسب عمود M (القيمة بالدولار) تلقائياً
+        validation.enriched.exchangeRate = rateVal;
+        Logger.log('💱 تغيير عملة: المبلغ ' + transaction.amount + ' ' + transaction.currency + ' بسعر ' + rateVal);
     }
     // القيم المسموحة: نقدي، تحويل بنكي، شيك، بطاقة، أخرى
     else if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
@@ -1594,7 +1588,7 @@ function tryParseCurrencyExchange_(text) {
     if (!text) return null;
 
     // كشف تغيير العملة بالكلمات المفتاحية
-    const exchangeKeywords = ['تصريف عملات', 'تغيير عملة', 'غيرت عملة', 'صرفت', 'صرافة', 'تصريف',
+    const exchangeKeywords = ['تغيير عملة', 'تصريف عملات', 'غيرت عملة', 'صرفت', 'صرافة', 'تصريف',
         'غيرت دولار', 'غيرت ليرة', 'حولت دولار', 'حولت ليرة',
         'بعت دولار', 'شريت دولار', 'اشتريت دولار',
         'صرفت دولار', 'صرفت ليرة', 'exchange'];
@@ -1659,11 +1653,11 @@ function tryParseCurrencyExchange_(text) {
     return {
         success: true,
         is_shared_order: false,
-        nature: 'تصريف عملات',
+        nature: 'تغيير عملة',
         classification: classification,
         project: null,
         project_code: null,
-        item: 'تصريف عملات',
+        item: 'تغيير عملة',
         party: null,
         amount: amount,
         currency: currency,

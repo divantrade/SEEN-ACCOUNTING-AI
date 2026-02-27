@@ -375,26 +375,27 @@ const AI_CONFIG = {
   - ⚠️ **مهم جداً**: التحويل الداخلي **لا يحتاج طرف** (party = null) لأنه بين حسابات الشركة نفسها
   - التصنيف يكون "تحويل للبنك" أو "تحويل للخزنة" حسب اتجاه التحويل
   - "البنك" و"الخزنة" و"خزنة العهدة" ليست أطراف بل حسابات داخلية
-  - ⚠️ **فرق مهم**: التحويل الداخلي = نفس العملة بين حسابين (دولار→دولار أو ليرة→ليرة). أما تغيير العملة فهو "تصريف عملات"
-- **تصريف عملات**: تبديل/تغيير عملة (بيع دولار أو شراء دولار)
+  - ⚠️ **فرق مهم**: التحويل الداخلي = نفس العملة بين حسابين (دولار→دولار أو ليرة→ليرة). أما تبديل العملة فهو "تغيير عملة"
+- **تغيير عملة**: تبديل/تصريف عملة (بيع دولار أو شراء دولار)
   - كلمات مفتاحية: غيرت دولار، بعت دولار، اشتريت دولار، غيرت ليرة، صرفت دولار، صرفت ليرة، تصريف، تبديل عملة، تغيير عملة، حولت دولار لليرة، حولت ليرة لدولار
-  - ⚠️ **مهم جداً**: تصريف العملات **لا يحتاج طرف** (party = null)
+  - ⚠️ **مهم جداً**: تغيير العملة **لا يحتاج طرف** (party = null)
   - التصنيف يكون "بيع دولار" (إذا أعطى دولار وأخذ ليرة) أو "شراء دولار" (إذا أعطى ليرة وأخذ دولار)
-  - المبلغ يُسجل بالدولار دائماً (amount = المبلغ بالدولار)
+  - ⚠️ **مهم جداً: المبلغ يُسجل بالعملة الأصلية التي ذكرها المستخدم**:
+    * إذا ذكر المبلغ بالليرة → amount = المبلغ بالليرة، currency = "TRY"
+    * إذا ذكر المبلغ بالدولار → amount = المبلغ بالدولار، currency = "USD"
   - سعر الصرف مطلوب دائماً (exchange_rate = كم ليرة مقابل 1 دولار)
-  - إذا ذكر المستخدم المبلغ بالليرة: amount = المبلغ بالليرة / سعر الصرف
   - payment_method: "نقدي" (إذا من الخزينة أو كاش أو نقداً) أو "تحويل بنكي" (إذا من البنك)
   - project → null, payment_term → "فوري"
   - **⭐ أمثلة كاملة مع JSON المتوقع:**
 
     **مثال 1:** "غيرت 500 دولار بسعر 43"
-    → {"success":true,"is_shared_order":false,"nature":"تصريف عملات","classification":"بيع دولار","project":null,"project_code":null,"item":"تصريف عملات","party":null,"amount":500,"currency":"USD","exchange_rate":43,"payment_method":"نقدي","payment_term":"فوري","due_date":"TODAY","details":"","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"تغيير عملة","classification":"بيع دولار","project":null,"project_code":null,"item":"تغيير عملة","party":null,"amount":500,"currency":"USD","exchange_rate":43,"payment_method":"نقدي","payment_term":"فوري","due_date":"TODAY","details":"","confidence":0.95}
 
     **مثال 2:** "غيرت دولار الي ليرة ما يعادل 19370 ليرة سعر صرف 43.7 نقدا"
-    → {"success":true,"is_shared_order":false,"nature":"تصريف عملات","classification":"بيع دولار","project":null,"project_code":null,"item":"تصريف عملات","party":null,"amount":443.02,"currency":"USD","exchange_rate":43.7,"payment_method":"نقدي","payment_term":"فوري","due_date":"TODAY","details":"","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"تغيير عملة","classification":"بيع دولار","project":null,"project_code":null,"item":"تغيير عملة","party":null,"amount":19370,"currency":"TRY","exchange_rate":43.7,"payment_method":"نقدي","payment_term":"فوري","due_date":"TODAY","details":"","confidence":0.95}
 
     **مثال 3:** "اشتريت 200 دولار بسعر 43.5 من البنك"
-    → {"success":true,"is_shared_order":false,"nature":"تصريف عملات","classification":"شراء دولار","project":null,"project_code":null,"item":"تصريف عملات","party":null,"amount":200,"currency":"USD","exchange_rate":43.5,"payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"TODAY","details":"","confidence":0.95}
+    → {"success":true,"is_shared_order":false,"nature":"تغيير عملة","classification":"شراء دولار","project":null,"project_code":null,"item":"تغيير عملة","party":null,"amount":200,"currency":"USD","exchange_rate":43.5,"payment_method":"تحويل بنكي","payment_term":"فوري","due_date":"TODAY","details":"","confidence":0.95}
 
 - **مصاريف بنكية (عمولات البنك)**: عمولات ومصاريف يفرضها البنك على التحويلات الواردة أو الصادرة
   - ⚠️ **مهم جداً: المصاريف البنكية ليست طبيعة حركة مستقلة!** هي **دفعة مصروف** والبند هو **مصاريف بنكية**

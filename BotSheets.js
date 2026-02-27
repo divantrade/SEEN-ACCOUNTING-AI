@@ -1239,7 +1239,7 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
         const nature = transactionData.nature || '';
         let movementType = '';
         const itemForMovement = transactionData.item || '';
-        if (nature.includes('تصريف عملات')) {
+        if (nature.includes('تغيير عملة')) {
             movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة - حركة نقدية فعلية
         } else if (nature.includes('تحويل داخلي')) {
             movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة
