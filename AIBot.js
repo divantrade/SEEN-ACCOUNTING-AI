@@ -530,9 +530,9 @@ function processNewTransaction(chatId, text, user) {
             return;
         }
 
-        // ⭐ التحقق من شرط الدفع (للاستحقاقات فقط)
+        // ⭐ التحقق من شرط الدفع (للاستحقاقات فقط - يُتخطى للتحويل الداخلي والمصاريف البنكية)
         Logger.log('📊 Checking needsPaymentTerm: ' + (result.validation ? result.validation.needsPaymentTerm : 'no validation'));
-        if (result.validation && result.validation.needsPaymentTerm) {
+        if (result.validation && result.validation.needsPaymentTerm && !isInternalTransfer && !isBankFees) {
             Logger.log('✅ Needs payment term');
             askPaymentTerm(chatId, session);
             return;
@@ -1274,8 +1274,8 @@ function continueValidation(chatId, session) {
         return;
     }
 
-    // التحقق من شرط الدفع (للاستحقاقات)
-    if (session.validation.needsPaymentTerm) {
+    // التحقق من شرط الدفع (للاستحقاقات - يُتخطى للتحويل الداخلي والمصاريف البنكية)
+    if (session.validation.needsPaymentTerm && !skipProjectAndPayment) {
         askPaymentTerm(chatId, session);
         return;
     }

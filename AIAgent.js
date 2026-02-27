@@ -1243,6 +1243,12 @@ function validateTransaction(transaction, context) {
             validation.enriched.payment_method = 'تحويل بنكي';
         }
         validation.enriched.payment_term = 'فوري';
+        validation.enriched.payment_term_weeks = '';
+        validation.enriched.payment_term_date = '';
+        // ⭐ التحويل الداخلي فوري دائماً - لا نسأل عن شرط الدفع
+        validation.needsPaymentTerm = false;
+        validation.needsPaymentMethod = false;
+        validation.needsProjectSelection = false;
     }
     // القيم المسموحة: نقدي، تحويل بنكي، شيك، بطاقة، أخرى
     else if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
