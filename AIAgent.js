@@ -678,11 +678,7 @@ function loadItems(ss) {
         result.natures = Array.from(naturesSet);
         result.classifications = Array.from(classificationsSet);
 
-        // ⭐ ضمان وجود "تغيير عملة" في القائمة حتى لو لم يكن في شيت البنود
-        if (!result.natures.includes('تغيير عملة')) {
-            result.natures.push('تغيير عملة');
-        }
-        // ⭐ ضمان تصنيفات تغيير العملة
+        // ⭐ ضمان تصنيفات تصريف العملات
         if (!result.classifications.includes('بيع دولار')) {
             result.classifications.push('بيع دولار');
         }
@@ -1572,7 +1568,7 @@ function tryParseCurrencyExchange_(text) {
     if (!text) return null;
 
     // كشف تغيير العملة بالكلمات المفتاحية
-    const exchangeKeywords = ['تغيير عملة', 'غيرت عملة', 'صرفت', 'صرافة', 'تصريف',
+    const exchangeKeywords = ['تصريف عملات', 'تغيير عملة', 'غيرت عملة', 'صرفت', 'صرافة', 'تصريف',
         'غيرت دولار', 'غيرت ليرة', 'حولت دولار', 'حولت ليرة',
         'بعت دولار', 'شريت دولار', 'اشتريت دولار',
         'صرفت دولار', 'صرفت ليرة', 'exchange'];
@@ -1637,11 +1633,11 @@ function tryParseCurrencyExchange_(text) {
     return {
         success: true,
         is_shared_order: false,
-        nature: 'تغيير عملة',
+        nature: 'تصريف عملات',
         classification: classification,
         project: null,
         project_code: null,
-        item: 'تغيير عملة',
+        item: 'تصريف عملات',
         party: null,
         amount: amount,
         currency: currency,
