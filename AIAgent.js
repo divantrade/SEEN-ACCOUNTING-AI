@@ -1309,7 +1309,7 @@ function validateTransaction(transaction, context) {
     // ⭐ التحقق من تاريخ استحقاق السلفة/التمويل
     // إذا كانت الحركة تمويل (دخول قرض) أو سلفة، يجب السؤال عن تاريخ السداد
     const classification = transaction.classification || '';
-    const isLoan = nature.includes('تمويل') || classification.includes('سلفة');
+    const isLoan = (nature.includes('تمويل') && !nature.includes('سداد تمويل')) || classification.includes('سلفة');
     if (isLoan && !transaction.loan_due_date) {
         validation.needsLoanDueDate = true;
         validation.enriched.loan_due_date = null;
