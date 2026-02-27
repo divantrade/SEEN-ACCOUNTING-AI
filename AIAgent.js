@@ -1749,9 +1749,10 @@ function calculateUSDAmount(amount, currency, exchangeRate) {
  * الحصول على سعر الصرف الافتراضي
  */
 function getDefaultExchangeRate(currency) {
-    // يمكن تحديث هذه القيم أو جلبها من مصدر خارجي
+    // ⭐ أسعار تقريبية افتراضية - يمكن تحديثها من مصدر خارجي
+    // آخر تحديث: فبراير 2026
     const rates = {
-        'TRY': 32.0,
+        'TRY': 38.0,
         'EGP': 50.0,
         'USD': 1.0
     };
@@ -1762,62 +1763,68 @@ function getDefaultExchangeRate(currency) {
  * بناء رسالة التأكيد للحركة
  */
 function buildTransactionSummary(transaction) {
+    // ⭐ دالة مساعدة لتنظيف النصوص من أحرف Markdown التي تسبب أخطاء في Telegram
+    function esc(val) {
+        if (!val) return '';
+        return String(val).replace(/[*_`\[]/g, '');
+    }
+
     const emoji = getTransactionEmoji(transaction.nature);
     const typeLabel = getTypeLabel(transaction.nature);
 
-    let summary = `${emoji} *${typeLabel}*\n`;
+    let summary = `${emoji} *${esc(typeLabel)}*\n`;
     summary += '━━━━━━━━━━━━━━━━\n';
 
     // عرض المشروع مع الكود
     if (transaction.project) {
-        let projectDisplay = transaction.project;
+        let projectDisplay = esc(transaction.project);
         if (transaction.project_code) {
-            projectDisplay = `${transaction.project} (${transaction.project_code})`;
+            projectDisplay = `${esc(transaction.project)} (${esc(transaction.project_code)})`;
         }
         summary += `🎬 *المشروع:* ${projectDisplay}\n`;
     }
 
-    summary += `📁 *التصنيف:* ${transaction.classification}\n`;
+    summary += `📁 *التصنيف:* ${esc(transaction.classification)}\n`;
 
     if (transaction.item) {
-        summary += `📋 *البند:* ${transaction.item}\n`;
+        summary += `📋 *البند:* ${esc(transaction.item)}\n`;
     }
 
     if (transaction.party) {
-        summary += `👤 *الطرف:* ${transaction.party}`;
+        summary += `👤 *الطرف:* ${esc(transaction.party)}`;
         if (transaction.isNewParty) {
-            summary += ' _(جديد)_';
+            summary += ' (جديد)';
         }
         summary += '\n';
     }
 
-    summary += `💰 *المبلغ:* ${formatNumber(transaction.amount)} ${transaction.currency}\n`;
+    summary += `💰 *المبلغ:* ${formatNumber(transaction.amount)} ${esc(transaction.currency)}\n`;
 
     if (transaction.currency !== 'USD') {
         const usdAmount = calculateUSDAmount(transaction.amount, transaction.currency, transaction.exchangeRate);
         summary += `💵 *بالدولار:* ${formatNumber(usdAmount)} USD\n`;
     }
 
-    summary += `📅 *التاريخ:* ${transaction.due_date}\n`;
+    summary += `📅 *التاريخ:* ${esc(transaction.due_date)}\n`;
 
     if (transaction.payment_method) {
-        summary += `💳 *طريقة الدفع:* ${transaction.payment_method}\n`;
+        summary += `💳 *طريقة الدفع:* ${esc(transaction.payment_method)}\n`;
     }
 
     // عرض شرط الدفع
     if (transaction.payment_term) {
-        let termDisplay = transaction.payment_term;
+        let termDisplay = esc(transaction.payment_term);
         if (transaction.payment_term === 'بعد التسليم' && transaction.payment_term_weeks) {
             termDisplay = `بعد التسليم (${transaction.payment_term_weeks} أسبوع)`;
         } else if (transaction.payment_term === 'تاريخ مخصص' && transaction.payment_term_date) {
-            termDisplay = `تاريخ مخصص: ${transaction.payment_term_date}`;
+            termDisplay = `تاريخ مخصص: ${esc(transaction.payment_term_date)}`;
         }
         summary += `⏰ *شرط الدفع:* ${termDisplay}\n`;
     }
 
     // ⭐ عرض تاريخ استحقاق السلفة/التمويل
     if (transaction.loan_due_date) {
-        summary += `📆 *تاريخ السداد:* ${transaction.loan_due_date}\n`;
+        summary += `📆 *تاريخ السداد:* ${esc(transaction.loan_due_date)}\n`;
     }
 
     // عرض عدد الوحدات إذا موجود
@@ -1826,7 +1833,7 @@ function buildTransactionSummary(transaction) {
     }
 
     if (transaction.details) {
-        summary += `📝 *التفاصيل:* ${transaction.details}\n`;
+        summary += `📝 *التفاصيل:* ${esc(transaction.details)}\n`;
     }
 
     summary += '━━━━━━━━━━━━━━━━';

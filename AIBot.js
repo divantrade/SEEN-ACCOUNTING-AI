@@ -76,11 +76,25 @@ function processAIBotUpdates() {
                             }
                         } catch (error) {
                             Logger.log('Update Processing Error: ' + error.message);
+                            Logger.log('Stack: ' + (error.stack || 'N/A'));
+                            // ⭐ محاولة إبلاغ المستخدم بالخطأ
+                            try {
+                                var errChatId = (update.message && update.message.chat && update.message.chat.id) ||
+                                    (update.callback_query && update.callback_query.message && update.callback_query.message.chat && update.callback_query.message.chat.id);
+                                if (errChatId) {
+                                    sendAIMessage(errChatId, '⚠️ حدث خطأ أثناء المعالجة. يرجى المحاولة مرة أخرى أو إرسال /cancel ثم إعادة المحاولة.', { parse_mode: null });
+                                }
+                            } catch (notifyErr) {
+                                Logger.log('Failed to notify user of error: ' + notifyErr.message);
+                            }
                         }
                     });
 
                     // ⚡ تحسين: تحديث في الذاكرة فقط (بدون Properties في كل دورة)
                     currentUpdateId = updates[updates.length - 1].update_id;
+
+                    // ⭐ حفظ الـ offset بعد كل batch لمنع إعادة المعالجة عند الخطأ
+                    try { setAILastUpdateId(currentUpdateId); } catch (saveErr) { /* ignore */ }
                 }
             } catch (fetchError) {
                 Logger.log('🔥 Polling fetch error: ' + fetchError.message);
@@ -1467,19 +1481,10 @@ function showTransactionConfirmation(chatId, session) {
         Logger.log('⚠️ فشل فحص الرصيد: ' + e.message);
     }
 
-    const confirmResult = sendAIMessage(chatId, summary + balanceWarning, {
+    sendAIMessage(chatId, summary + balanceWarning, {
         parse_mode: 'Markdown',
         reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.CONFIRMATION)
     });
-
-    // ⭐ التحقق من نجاح إرسال رسالة التأكيد
-    if (!confirmResult || !confirmResult.ok) {
-        Logger.log('⚠️ Failed to send confirmation message: ' + JSON.stringify(confirmResult));
-        // إعادة المحاولة بدون تنسيق
-        sendAIMessage(chatId, summary + balanceWarning + '\n\n✅ تأكيد | ✏️ تعديل | ❌ إلغاء\n(اكتب: تأكيد / تعديل / الغاء)', {
-            reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.CONFIRMATION)
-        });
-    }
 }
 
 
@@ -2883,8 +2888,45 @@ function getAIUserSession(chatId) {
 function saveAIUserSession(chatId, session) {
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
-    // حفظ لمدة 6 ساعات (21600 ثانية)
-    cache.put(key, JSON.stringify(session), 21600);
+    try {
+        const jsonStr = JSON.stringify(session);
+        // ⭐ CacheService has 100KB limit per value - trim if needed
+        if (jsonStr.length > 90000) {
+            Logger.log('⚠️ Session too large (' + jsonStr.length + ' chars), trimming...');
+            // حذف البيانات الثقيلة غير الضرورية
+            if (session.smartPayment && session.smartPayment.accruals) {
+                session.smartPayment.accruals.rawData = undefined;
+            }
+            if (session.validation && session.validation.rawContext) {
+                session.validation.rawContext = undefined;
+            }
+        }
+        // حفظ لمدة 6 ساعات (21600 ثانية)
+        cache.put(key, JSON.stringify(session), 21600);
+    } catch (e) {
+        Logger.log('⚠️ Session save failed: ' + e.message + ' - resetting to minimal');
+        // حفظ نسخة مصغرة من الجلسة
+        try {
+            const minimal = {
+                state: session.state,
+                transaction: session.transaction,
+                validation: session.validation ? {
+                    enriched: session.validation.enriched,
+                    needsProjectSelection: session.validation.needsProjectSelection,
+                    needsPaymentMethod: session.validation.needsPaymentMethod,
+                    needsCurrency: session.validation.needsCurrency,
+                    needsExchangeRate: session.validation.needsExchangeRate,
+                    needsPaymentTerm: session.validation.needsPaymentTerm,
+                    needsPartyConfirmation: session.validation.needsPartyConfirmation,
+                    needsLoanDueDate: session.validation.needsLoanDueDate
+                } : null,
+                smartPaymentChecked: session.smartPaymentChecked || false
+            };
+            cache.put(key, JSON.stringify(minimal), 21600);
+        } catch (e2) {
+            Logger.log('❌ Even minimal session save failed: ' + e2.message);
+        }
+    }
 }
 
 /**
@@ -2929,18 +2971,56 @@ function checkAIUserPermission(chatId, user) {
 // ==================== إرسال الرسائل ====================
 
 /**
+ * تنظيف نص Markdown من الأحرف التي تسبب خطأ في Telegram API
+ * يزيل أو يهرب الأحرف غير المتوازنة (* _ ` [)
+ */
+function sanitizeMarkdown_(text) {
+    if (!text) return text;
+    // حساب عدد أحرف التنسيق - إذا كانت فردية (غير متوازنة)، نزيل التنسيق
+    var cleaned = String(text);
+    // إصلاح النجمات غير المتوازنة (Bold)
+    var starCount = (cleaned.match(/\*/g) || []).length;
+    if (starCount % 2 !== 0) {
+        // نزيل آخر نجمة غير مقفلة
+        var lastStar = cleaned.lastIndexOf('*');
+        cleaned = cleaned.substring(0, lastStar) + cleaned.substring(lastStar + 1);
+    }
+    // إصلاح الشرطات السفلية غير المتوازنة (Italic)
+    var underCount = (cleaned.match(/_/g) || []).length;
+    if (underCount % 2 !== 0) {
+        var lastUnder = cleaned.lastIndexOf('_');
+        cleaned = cleaned.substring(0, lastUnder) + cleaned.substring(lastUnder + 1);
+    }
+    // إصلاح الـ backticks غير المتوازنة
+    var btCount = (cleaned.match(/`/g) || []).length;
+    if (btCount % 2 !== 0) {
+        var lastBt = cleaned.lastIndexOf('`');
+        cleaned = cleaned.substring(0, lastBt) + cleaned.substring(lastBt + 1);
+    }
+    return cleaned;
+}
+
+/**
  * إرسال رسالة عبر البوت الذكي
+ * ⭐ تحسين: parse_mode يمكن أن يكون null لإرسال بدون تنسيق
  */
 function sendAIMessage(chatId, text, options = {}) {
     try {
         const token = getAIBotToken();
         const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
+        // ⭐ تحديد parse_mode: إذا تم تمرير null صراحة، لا نستخدم Markdown
+        const useMarkdown = options.parse_mode !== null && options.parse_mode !== undefined;
+        const parseMode = useMarkdown ? (options.parse_mode || 'Markdown') : undefined;
+
         const payload = {
             chat_id: chatId,
-            text: text,
-            parse_mode: options.parse_mode || 'Markdown'
+            text: parseMode ? sanitizeMarkdown_(text) : text
         };
+
+        if (parseMode) {
+            payload.parse_mode = parseMode;
+        }
 
         if (options.reply_markup) {
             payload.reply_markup = options.reply_markup;
@@ -2955,12 +3035,12 @@ function sendAIMessage(chatId, text, options = {}) {
 
         const result = JSON.parse(response.getContentText());
 
-        // ⭐ التحقق من نجاح الإرسال - إذا فشل بسبب Markdown، نعيد بدون تنسيق
-        if (!result.ok && result.description && result.description.includes('parse')) {
-            Logger.log('⚠️ Markdown parse error, retrying without formatting: ' + result.description);
+        // ⭐ التحقق من نجاح الإرسال - إذا فشل بسبب أي خطأ في التنسيق أو Bad Request، نعيد بدون تنسيق
+        if (!result.ok && parseMode) {
+            Logger.log('⚠️ Message send failed with parse_mode, retrying plain: ' + (result.description || ''));
             const plainPayload = {
                 chat_id: chatId,
-                text: text
+                text: text.replace(/[*_`\[]/g, '')  // إزالة كل أحرف التنسيق
             };
             if (options.reply_markup) {
                 plainPayload.reply_markup = options.reply_markup;
@@ -2979,19 +3059,19 @@ function sendAIMessage(chatId, text, options = {}) {
     } catch (error) {
         Logger.log('Send Message Error: ' + error.message);
 
-        // محاولة إعادة الإرسال بدون تنسيق (Plain Text) في حال فشل الـ Markdown
+        // محاولة إعادة الإرسال بدون تنسيق (Plain Text)
         try {
             Logger.log('Retrying with plain text after exception...');
             const token = getAIBotToken();
-            const url = `https://api.telegram.org/bot${token}/sendMessage`;
+            const retryUrl = `https://api.telegram.org/bot${token}/sendMessage`;
             const payload = {
                 chat_id: chatId,
-                text: text
+                text: text.replace(/[*_`\[]/g, '')
             };
             if (options.reply_markup) {
                 payload.reply_markup = options.reply_markup;
             }
-            const response = UrlFetchApp.fetch(url, {
+            const response = UrlFetchApp.fetch(retryUrl, {
                 method: 'post',
                 contentType: 'application/json',
                 payload: JSON.stringify(payload),
@@ -3724,28 +3804,34 @@ function showSmartPaymentConfirmation_(chatId, session) {
         return;
     }
 
+    // ⭐ دالة مساعدة لتنظيف النصوص من أحرف Markdown
+    function esc(val) {
+        if (!val) return '';
+        return String(val).replace(/[*_`\[]/g, '');
+    }
+
     const dist = smartData.distribution;
     const accruals = smartData.accruals;
 
     let msg = '🧠 *توزيع ذكي للدفعة*\n';
     msg += '━━━━━━━━━━━━━━━━\n';
-    msg += `👤 *الطرف:* ${tx.party}\n`;
-    msg += `💰 *المبلغ:* ${formatNumber(tx.amount)} ${tx.currency}\n`;
-    msg += `💳 *طريقة الدفع:* ${tx.payment_method || 'تحويل بنكي'}\n`;
-    msg += `📊 *إجمالي المستحقات:* ${formatNumber(accruals.totalOutstanding)} ${tx.currency}\n`;
+    msg += `👤 *الطرف:* ${esc(tx.party)}\n`;
+    msg += `💰 *المبلغ:* ${formatNumber(tx.amount)} ${esc(tx.currency)}\n`;
+    msg += `💳 *طريقة الدفع:* ${esc(tx.payment_method || 'تحويل بنكي')}\n`;
+    msg += `📊 *إجمالي المستحقات:* ${formatNumber(accruals.totalOutstanding)} ${esc(tx.currency)}\n`;
     msg += '━━━━━━━━━━━━━━━━\n\n';
 
     msg += '📋 *خطة التوزيع (الأقدم أولاً):*\n\n';
 
     dist.distributions.forEach(function(d, idx) {
         const status = d.closesBalance ? '✅' : '⏳';
-        msg += `${idx + 1}. ${status} *${d.projectName}*`;
-        if (d.projectCode) msg += ` (${d.projectCode})`;
+        msg += `${idx + 1}. ${status} *${esc(d.projectName)}*`;
+        if (d.projectCode) msg += ` (${esc(d.projectCode)})`;
         msg += '\n';
-        msg += `   💵 الدفعة: *${formatNumber(d.amount)}* ${tx.currency}`;
+        msg += `   💵 الدفعة: *${formatNumber(d.amount)}* ${esc(tx.currency)}`;
         msg += ` من أصل ${formatNumber(d.originalOutstanding)}`;
         if (d.closesBalance) {
-            msg += ' _(مسدد بالكامل)_';
+            msg += ' (مسدد بالكامل)';
         }
         msg += '\n\n';
     });
@@ -3768,11 +3854,11 @@ function showSmartPaymentConfirmation_(chatId, session) {
                 const remaining = balanceInfo.balance - tx.amount;
                 if (remaining < 0) {
                     balanceWarning = `\n\n⚠️ *تحذير: الرصيد غير كافٍ!*\n` +
-                        `💰 رصيد ${balanceInfo.accountName}: *${balanceInfo.balance.toLocaleString()}* ${tx.currency}\n` +
-                        `📤 المبلغ المطلوب: *${tx.amount.toLocaleString()}* ${tx.currency}\n` +
-                        `🔴 العجز: *${Math.abs(remaining).toLocaleString()}* ${tx.currency}`;
+                        `💰 رصيد ${esc(balanceInfo.accountName)}: *${balanceInfo.balance.toLocaleString()}* ${esc(tx.currency)}\n` +
+                        `📤 المبلغ المطلوب: *${tx.amount.toLocaleString()}* ${esc(tx.currency)}\n` +
+                        `🔴 العجز: *${Math.abs(remaining).toLocaleString()}* ${esc(tx.currency)}`;
                 } else {
-                    balanceWarning = `\n\n💰 رصيد ${balanceInfo.accountName}: *${balanceInfo.balance.toLocaleString()}* ${tx.currency}` +
+                    balanceWarning = `\n\n💰 رصيد ${esc(balanceInfo.accountName)}: *${balanceInfo.balance.toLocaleString()}* ${esc(tx.currency)}` +
                         ` (بعد الحركة: *${remaining.toLocaleString()}*)`;
                 }
             }
