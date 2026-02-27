@@ -469,27 +469,47 @@ function processNewTransaction(chatId, text, user) {
         saveAIUserSession(chatId, session);
         Logger.log('📊 Session saved');
 
-        // التحقق من الحقول الناقصة
-        Logger.log('📊 Checking missing fields...');
-        Logger.log('📊 result.needsInput: ' + result.needsInput);
-        Logger.log('📊 result.missingFields?.length: ' + (result.missingFields ? result.missingFields.length : 'undefined'));
-
-        if (result.needsInput && result.missingFields.length > 0) {
-            Logger.log('✅ Has missing fields, calling handleMissingFields');
-            handleMissingFields(chatId, result.missingFields, session);
-            return;
-        }
-
         // ═══════════════════════════════════════════════════════════
-        // 🔄 التحويل الداخلي / تغيير العملة: تخطي الطرف والمشروع
+        // 🔄 التحويل الداخلي / تصريف العملات: تخطي الطرف والمشروع
         // ═══════════════════════════════════════════════════════════
         const isInternalTransfer = result.transaction && (result.transaction.nature || '').includes('تحويل داخلي');
-        const isCurrencyExchange = result.transaction && (result.transaction.nature || '').includes('تصريف عملات');
+        const isCurrencyExchange = result.transaction && (
+            (result.transaction.nature || '').includes('تصريف عملات') ||
+            (result.transaction.nature || '').includes('تغيير عملة')
+        );
         const isBankFees = result.transaction && ((result.transaction.item || '').includes('مصاريف بنكية') || (result.validation && result.validation.enriched && result.validation.enriched.isBankFees));
         const hasBankFeesParty = isBankFees && result.transaction && result.transaction.party;
         // التحويل الداخلي وتصريف العملات يتخطى الطرف والمشروع، المصاريف البنكية تتخطى المشروع فقط
         const skipPartyAndProject = isInternalTransfer || isCurrencyExchange;
         const skipProjectOnly = isBankFees;
+
+        // التحقق من الحقول الناقصة (بعد تحديد نوع الحركة لتصفية الحقول غير المطلوبة)
+        Logger.log('📊 Checking missing fields...');
+        Logger.log('📊 result.needsInput: ' + result.needsInput);
+        Logger.log('📊 result.missingFields?.length: ' + (result.missingFields ? result.missingFields.length : 'undefined'));
+        Logger.log('📊 skipPartyAndProject: ' + skipPartyAndProject);
+
+        if (result.needsInput && result.missingFields.length > 0) {
+            // ⭐ تصفية الحقول الناقصة: إزالة 'party' و 'project' للتحويل الداخلي وتصريف العملات
+            let filteredFields = result.missingFields;
+            if (skipPartyAndProject) {
+                filteredFields = result.missingFields.filter(function(f) {
+                    return f.field !== 'party' && f.field !== 'project';
+                });
+                Logger.log('📊 Filtered missing fields (skip party/project): ' + filteredFields.length);
+            } else if (skipProjectOnly) {
+                filteredFields = result.missingFields.filter(function(f) {
+                    return f.field !== 'project';
+                });
+                Logger.log('📊 Filtered missing fields (skip project): ' + filteredFields.length);
+            }
+
+            if (filteredFields.length > 0) {
+                Logger.log('✅ Has missing fields, calling handleMissingFields');
+                handleMissingFields(chatId, filteredFields, session);
+                return;
+            }
+        }
 
         // التحقق من طرف جديد يحتاج تأكيد (التحويل الداخلي لا يحتاج طرف، المصاريف البنكية الطرف اختياري)
         Logger.log('📊 Checking needsPartyConfirmation: ' + (result.validation ? result.validation.needsPartyConfirmation : 'no validation'));
