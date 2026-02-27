@@ -1365,7 +1365,9 @@ function validateTransaction(transaction, context) {
         validation.enriched.currency = transaction.currency;
 
         // ⭐ إذا كانت العملة غير دولار، يجب تحديد سعر الصرف
-        if (transaction.currency !== 'USD' && !transaction.exchange_rate) {
+        // ⚠️ إذا كان سعر الصرف = 1 للعملات غير الدولار، يُعتبر غير صحيح (مثلاً TRY/USD لا يمكن أن يكون 1)
+        const rateValue = Number(transaction.exchange_rate) || 0;
+        if (transaction.currency !== 'USD' && (rateValue <= 1)) {
             validation.needsExchangeRate = true;
         }
         // ⭐ تغيير العملة: دائماً يحتاج سعر صرف (حتى لو العملة USD في شراء دولار)

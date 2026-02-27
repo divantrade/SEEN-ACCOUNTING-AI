@@ -1023,6 +1023,14 @@ function handleAIExchangeRateInput(chatId, text, session) {
         return;
     }
 
+    // ⭐ تحذير: سعر الصرف 1 للعملات غير الدولار يعني المبلغ = القيمة بالدولار (غالباً خطأ)
+    const currentCurrency = (session.transaction && session.transaction.currency) || '';
+    if (rate === 1 && currentCurrency !== 'USD' && currentCurrency !== 'دولار') {
+        Logger.log('⚠️ Exchange rate is 1 for non-USD currency: ' + currentCurrency);
+        sendAIMessage(chatId, '⚠️ سعر الصرف 1 للعملة ' + currentCurrency + ' غير صحيح.\nمثلاً الليرة التركية حوالي 34-36 مقابل الدولار.\n\nيرجى إدخال سعر الصرف الصحيح:');
+        return;
+    }
+
     Logger.log('✅ Rate is valid: ' + rate);
 
     session.transaction.exchangeRate = rate;
