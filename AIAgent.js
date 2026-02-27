@@ -1324,10 +1324,10 @@ function validateTransaction(transaction, context) {
         Logger.log('💱 تغيير عملة: المبلغ ' + transaction.amount + ' ' + transaction.currency + ' بسعر ' + rateVal);
     }
     // القيم المسموحة: نقدي، تحويل بنكي، شيك، بطاقة، أخرى
-    else if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
-        // إذا لم تحدد أو كانت القيمة الافتراضية، نحتاج تأكيد من المستخدم
+    else if (!transaction.payment_method) {
+        // لم تحدد طريقة الدفع - نسأل المستخدم
         validation.needsPaymentMethod = true;
-        validation.enriched.payment_method = transaction.payment_method || null;
+        validation.enriched.payment_method = null;
     } else {
         // تحويل القيم المختلفة للقيم الصحيحة
         const method = transaction.payment_method.toLowerCase();
@@ -1353,12 +1353,19 @@ function validateTransaction(transaction, context) {
     } else {
         validation.enriched.currency = transaction.currency;
 
-        // ⭐ إذا كانت العملة غير دولار، يجب تحديد سعر الصرف
-        // ⚠️ إذا كان سعر الصرف = 1 للعملات غير الدولار، يُعتبر غير صحيح (مثلاً TRY/USD لا يمكن أن يكون 1)
-        // ⚠️ لكن التحويل الداخلي بنفس العملة لا يحتاج سعر صرف
+        // ⭐ إذا كانت العملة غير دولار ولا يوجد سعر صرف صحيح
         const rateValue = Number(transaction.exchange_rate) || 0;
         if (transaction.currency !== 'USD' && (rateValue <= 1) && !isInternalTransfer) {
-            validation.needsExchangeRate = true;
+            if (isCurrencyExchange) {
+                // تغيير العملة: يجب أن يحدد المستخدم سعر الصرف الفعلي
+                validation.needsExchangeRate = true;
+            } else {
+                // ⭐ الدفعات العادية بالليرة/الجنيه: نستخدم سعر الصرف الافتراضي تلقائياً (لا نسأل المستخدم)
+                const defaultRate = getDefaultExchangeRate(transaction.currency);
+                validation.enriched.exchangeRate = defaultRate;
+                validation.enriched.exchange_rate = defaultRate;
+                Logger.log('💱 استخدام سعر صرف افتراضي: ' + defaultRate + ' لعملة ' + transaction.currency);
+            }
         }
         // ⭐ تغيير العملة: دائماً يحتاج سعر صرف (حتى لو العملة USD في شراء دولار)
         if (isCurrencyExchange && !transaction.exchange_rate) {
