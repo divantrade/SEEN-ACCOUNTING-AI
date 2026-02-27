@@ -1287,7 +1287,9 @@ function validateTransaction(transaction, context) {
         // ⭐ التحويل الداخلي من نفس العملة لا يحتاج سعر صرف
         // (ليرة→ليرة أو دولار→دولار: المرجع هو المبلغ بالعملة الأصلية)
         validation.needsExchangeRate = false;
-        validation.enriched.exchangeRate = transaction.exchange_rate || 0;
+        // ⭐ سعر الصرف = 0 للتحويل الداخلي بنفس العملة (حتى لا يُحسب بالدولار خطأ)
+        validation.enriched.exchangeRate = 0;
+        validation.enriched.exchange_rate = 0;
     }
     // ⭐ تغيير عملة: يحتاج سعر صرف دائماً + لا يحتاج طرف أو مشروع
     else if (isCurrencyExchange) {
