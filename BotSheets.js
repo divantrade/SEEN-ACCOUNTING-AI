@@ -624,12 +624,13 @@ function addBotTransaction(transactionData) {
     rowData[columns.PARTY_NAME.index - 1] = transactionData.partyName || '';
     rowData[columns.AMOUNT.index - 1] = transactionData.amount || 0;
     rowData[columns.CURRENCY.index - 1] = transactionData.currency || 'USD';
-    rowData[columns.EXCHANGE_RATE.index - 1] = transactionData.exchangeRate || 1;
+    rowData[columns.EXCHANGE_RATE.index - 1] = transactionData.exchangeRate || 0;
 
     // حساب القيمة بالدولار
-    const amountUSD = transactionData.currency === 'USD' || transactionData.currency === 'دولار'
+    const exRate = transactionData.exchangeRate || 0;
+    const amountUSD = (transactionData.currency === 'USD' || transactionData.currency === 'دولار')
         ? transactionData.amount
-        : transactionData.amount / (transactionData.exchangeRate || 1);
+        : (exRate > 0 ? transactionData.amount / exRate : 0);
     rowData[columns.AMOUNT_USD.index - 1] = amountUSD;
 
     // تحديد نوع الحركة

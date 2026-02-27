@@ -1374,8 +1374,10 @@ function validateTransaction(transaction, context) {
     }
 
     // تحويل سعر الصرف من snake_case إلى camelCase
-    if (transaction.exchange_rate) {
+    // ⭐ فقط إذا كان سعر الصرف الأصلي صحيحاً (> 1 لغير الدولار) ولم نحدد سعر افتراضي بالفعل
+    if (transaction.exchange_rate && Number(transaction.exchange_rate) > 1) {
         validation.enriched.exchangeRate = transaction.exchange_rate;
+        validation.enriched.exchange_rate = transaction.exchange_rate;
     }
 
     validation.isValid = validation.missingRequired.length === 0;
@@ -1388,6 +1390,9 @@ function validateTransaction(transaction, context) {
     Logger.log('🔍 needsPaymentMethod: ' + validation.needsPaymentMethod);
     Logger.log('🔍 needsCurrency: ' + validation.needsCurrency);
     Logger.log('🔍 needsExchangeRate: ' + validation.needsExchangeRate);
+    Logger.log('🔍 enriched.exchangeRate: ' + validation.enriched.exchangeRate);
+    Logger.log('🔍 enriched.exchange_rate: ' + validation.enriched.exchange_rate);
+    Logger.log('🔍 enriched.payment_method: ' + validation.enriched.payment_method);
     Logger.log('🔍 needsPartyConfirmation: ' + validation.needsPartyConfirmation);
     Logger.log('🔍 needsLoanDueDate: ' + validation.needsLoanDueDate);
     Logger.log('═══════════════════════════════════════');

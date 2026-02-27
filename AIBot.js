@@ -1467,10 +1467,19 @@ function showTransactionConfirmation(chatId, session) {
         Logger.log('⚠️ فشل فحص الرصيد: ' + e.message);
     }
 
-    sendAIMessage(chatId, summary + balanceWarning, {
+    const confirmResult = sendAIMessage(chatId, summary + balanceWarning, {
         parse_mode: 'Markdown',
         reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.CONFIRMATION)
     });
+
+    // ⭐ التحقق من نجاح إرسال رسالة التأكيد
+    if (!confirmResult || !confirmResult.ok) {
+        Logger.log('⚠️ Failed to send confirmation message: ' + JSON.stringify(confirmResult));
+        // إعادة المحاولة بدون تنسيق
+        sendAIMessage(chatId, summary + balanceWarning + '\n\n✅ تأكيد | ✏️ تعديل | ❌ إلغاء\n(اكتب: تأكيد / تعديل / الغاء)', {
+            reply_markup: JSON.stringify(AI_CONFIG.AI_KEYBOARDS.CONFIRMATION)
+        });
+    }
 }
 
 
@@ -1794,6 +1803,10 @@ function handleAICallback(callbackQuery) {
         // ⭐ حذف حركة مرفوضة
         const transactionId = data.startsWith('delete_rejected_') ? data.replace('delete_rejected_', '') : null;
         handleDeleteRejectedTransaction(chatId, transactionId);
+    } else {
+        // ⭐ callback غير معروف - نبلغ المستخدم بدلاً من الصمت
+        Logger.log('⚠️ Unhandled callback data: "' + data + '" | session state: ' + (session ? session.state : 'null'));
+        sendAIMessage(chatId, '⚠️ حدث خطأ غير متوقع. يرجى إعادة إرسال الحركة أو كتابة /cancel للإلغاء.');
     }
 }
 
@@ -2940,32 +2953,53 @@ function sendAIMessage(chatId, text, options = {}) {
             muteHttpExceptions: true
         });
 
-        return JSON.parse(response.getContentText());
+        const result = JSON.parse(response.getContentText());
+
+        // ⭐ التحقق من نجاح الإرسال - إذا فشل بسبب Markdown، نعيد بدون تنسيق
+        if (!result.ok && result.description && result.description.includes('parse')) {
+            Logger.log('⚠️ Markdown parse error, retrying without formatting: ' + result.description);
+            const plainPayload = {
+                chat_id: chatId,
+                text: text
+            };
+            if (options.reply_markup) {
+                plainPayload.reply_markup = options.reply_markup;
+            }
+            const plainResponse = UrlFetchApp.fetch(url, {
+                method: 'post',
+                contentType: 'application/json',
+                payload: JSON.stringify(plainPayload),
+                muteHttpExceptions: true
+            });
+            return JSON.parse(plainResponse.getContentText());
+        }
+
+        return result;
 
     } catch (error) {
         Logger.log('Send Message Error: ' + error.message);
 
         // محاولة إعادة الإرسال بدون تنسيق (Plain Text) في حال فشل الـ Markdown
-        if (options.parse_mode && error.message.includes('Bad Request')) {
-            try {
-                Logger.log('Retrying with plain text...');
-                const payload = {
-                    chat_id: chatId,
-                    text: text
-                };
-                if (options.reply_markup) {
-                    payload.reply_markup = options.reply_markup;
-                }
-                const response = UrlFetchApp.fetch(url, {
-                    method: 'post',
-                    contentType: 'application/json',
-                    payload: JSON.stringify(payload),
-                    muteHttpExceptions: true
-                });
-                return JSON.parse(response.getContentText());
-            } catch (retryError) {
-                Logger.log('Retry Failed: ' + retryError.message);
+        try {
+            Logger.log('Retrying with plain text after exception...');
+            const token = getAIBotToken();
+            const url = `https://api.telegram.org/bot${token}/sendMessage`;
+            const payload = {
+                chat_id: chatId,
+                text: text
+            };
+            if (options.reply_markup) {
+                payload.reply_markup = options.reply_markup;
             }
+            const response = UrlFetchApp.fetch(url, {
+                method: 'post',
+                contentType: 'application/json',
+                payload: JSON.stringify(payload),
+                muteHttpExceptions: true
+            });
+            return JSON.parse(response.getContentText());
+        } catch (retryError) {
+            Logger.log('Retry Failed: ' + retryError.message);
         }
 
         return null;
