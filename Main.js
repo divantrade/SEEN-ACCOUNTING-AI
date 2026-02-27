@@ -8573,29 +8573,16 @@ function rebuildGeneralLedger(silent, filterAccount) {
       }
     }
     // ═══════════════════════════════════════════════════════════
-    // 💱 تغيير العملة (تصريف دولار ← ليرة أو العكس)
+    // 💱 تصريف العملات (بيع/شراء دولار) - القيود المحاسبية
     // ═══════════════════════════════════════════════════════════
-    else if (natureType.includes('تغيير عملة')) {
-      // تحديد هل بنك أو خزنة من طريقة الدفع
-      const pm = String(row[16] || '').toLowerCase(); // Q: طريقة الدفع
-      const isCashPay = pm.indexOf('نقد') !== -1 || pm.indexOf('كاش') !== -1 || pm.indexOf('خزنة') !== -1 || pm.indexOf('عهدة') !== -1;
-
-      if (isTRY) {
-        // تغيير دولار ← ليرة: مدين حساب الليرة، دائن حساب الدولار
-        const destAccount = isCashPay ? '1114' : '1112';
-        const destName = isCashPay ? 'خزنة العهدة - ليرة' : 'البنك - ليرة';
-        const srcAccount = isCashPay ? '1113' : '1111';
-        const srcName = isCashPay ? 'خزنة العهدة - دولار' : 'البنك - دولار';
-        entries.push({ account: destAccount, name: destName, debit: amountUsd, credit: 0 });
-        entries.push({ account: srcAccount, name: srcName, debit: 0, credit: amountUsd });
+    else if (natureType.includes('تصريف عملات')) {
+      const isBuyDollarJE = classification.includes('شراء دولار');
+      if (isBuyDollarJE) {
+        entries.push({ account: bankAccount, name: bankName, debit: amountUsd, credit: 0 });
+        entries.push({ account: (isTRY ? '1112' : '1114'), name: (isTRY ? 'البنك - ليرة' : 'خزنة العهدة - ليرة'), debit: 0, credit: amountUsd });
       } else {
-        // تغيير ليرة ← دولار: مدين حساب الدولار، دائن حساب الليرة
-        const destAccount = isCashPay ? '1113' : '1111';
-        const destName = isCashPay ? 'خزنة العهدة - دولار' : 'البنك - دولار';
-        const srcAccount = isCashPay ? '1114' : '1112';
-        const srcName = isCashPay ? 'خزنة العهدة - ليرة' : 'البنك - ليرة';
-        entries.push({ account: destAccount, name: destName, debit: amountUsd, credit: 0 });
-        entries.push({ account: srcAccount, name: srcName, debit: 0, credit: amountUsd });
+        entries.push({ account: (isTRY ? '1112' : '1114'), name: (isTRY ? 'البنك - ليرة' : 'خزنة العهدة - ليرة'), debit: amountUsd, credit: 0 });
+        entries.push({ account: bankAccount, name: bankName, debit: 0, credit: amountUsd });
       }
     }
     // ═══════════════════════════════════════════════════════════
@@ -9130,28 +9117,16 @@ function rebuildJournalEntries(silent) {
       }
     }
     // ═══════════════════════════════════════════════════════════
-    // 💱 تغيير العملة (تصريف دولار ← ليرة أو العكس)
+    // 💱 تصريف العملات (بيع/شراء دولار)
     // ═══════════════════════════════════════════════════════════
-    else if (natureType.includes('تغيير عملة')) {
-      const pm = String(row[16] || '').toLowerCase(); // Q: طريقة الدفع
-      const isCashPay = pm.indexOf('نقد') !== -1 || pm.indexOf('كاش') !== -1 || pm.indexOf('خزنة') !== -1 || pm.indexOf('عهدة') !== -1;
-
-      if (isTRY) {
-        // تغيير دولار ← ليرة
-        const destAccount = isCashPay ? '1114' : '1112';
-        const destName = isCashPay ? 'خزنة العهدة - ليرة' : 'البنك - ليرة';
-        const srcAccount = isCashPay ? '1113' : '1111';
-        const srcName = isCashPay ? 'خزنة العهدة - دولار' : 'البنك - دولار';
-        entries.push({ account: destAccount, name: destName, debit: amountUsd, credit: 0 });
-        entries.push({ account: srcAccount, name: srcName, debit: 0, credit: amountUsd });
+    else if (natureType.includes('تصريف عملات')) {
+      const isBuyDollarJE2 = classification.includes('شراء دولار');
+      if (isBuyDollarJE2) {
+        entries.push({ account: bankAccount, name: bankName, debit: amountUsd, credit: 0 });
+        entries.push({ account: (isTRY ? '1112' : '1114'), name: (isTRY ? 'البنك - ليرة' : 'خزنة العهدة - ليرة'), debit: 0, credit: amountUsd });
       } else {
-        // تغيير ليرة ← دولار
-        const destAccount = isCashPay ? '1113' : '1111';
-        const destName = isCashPay ? 'خزنة العهدة - دولار' : 'البنك - دولار';
-        const srcAccount = isCashPay ? '1114' : '1112';
-        const srcName = isCashPay ? 'خزنة العهدة - ليرة' : 'البنك - ليرة';
-        entries.push({ account: destAccount, name: destName, debit: amountUsd, credit: 0 });
-        entries.push({ account: srcAccount, name: srcName, debit: 0, credit: amountUsd });
+        entries.push({ account: (isTRY ? '1112' : '1114'), name: (isTRY ? 'البنك - ليرة' : 'خزنة العهدة - ليرة'), debit: amountUsd, credit: 0 });
+        entries.push({ account: bankAccount, name: bankName, debit: 0, credit: amountUsd });
       }
     }
     // ═══════════════════════════════════════════════════════════
@@ -10532,6 +10507,9 @@ function rebuildBankAndCashFromTransactions(silent) {
     const isInternalTransfer = typeVal.indexOf('تحويل داخلي') !== -1;
     const isCurrencyExchange = typeVal.indexOf('تغيير عملة') !== -1;
 
+    // 5b) تحديد هل هي تصريف عملات؟
+    const isCurrencyExchange = typeVal.indexOf('تصريف عملات') !== -1;
+
     // 6) تحديد هل هي مصاريف بنكية؟ (بالطبيعة أو بالبند)
     const itemVal = col.item >= 0 ? String(row[col.item] || '').trim() : '';
     const isBankFees = typeVal.indexOf('مصاريف بنكية') !== -1 || itemVal.indexOf('مصاريف بنكية') !== -1;
@@ -10641,74 +10619,49 @@ function rebuildBankAndCashFromTransactions(silent) {
       continue;
     }
     // ═══════════════════════════════════════════════════════════
-    // 💱 معالجة تغيير العملة (تصريف دولار ← ليرة أو العكس)
-    // العملة المسجلة = العملة الوجهة (اللي بيشتريها)
-    // المبلغ بالعملة الأصلية (J) = المبلغ بالعملة الوجهة
-    // القيمة بالدولار (M) = المبلغ بالدولار المقابل
-    // طريقة الدفع تحدد هل بنك↔بنك أو خزنة↔خزنة
+    // 💱 معالجة تصريف العملات (تبديل بين دولار وليرة)
     // ═══════════════════════════════════════════════════════════
     if (isCurrencyExchange) {
-      const cur = String(currencyVal).toLowerCase();
+      const isBuyDollar = classVal.indexOf('شراء دولار') !== -1;
+      const isSellDollar = classVal.indexOf('بيع دولار') !== -1;
+
+      // سعر الصرف من عمود L
+      const exchangeRate = col.rate >= 0 ? (Number(row[col.rate]) || 0) : 0;
+      // المبلغ بالدولار (عمود J يحتوي المبلغ بالدولار دائماً لتصريف العملات)
+      const usdAmount = amount;
+      // المبلغ بالليرة = الدولار × سعر الصرف
+      const tryAmount = exchangeRate > 0 ? Math.round(usdAmount * exchangeRate * 100) / 100 : 0;
+
+      // تحديد المكان (خزنة أو بنك) من طريقة الدفع
       const pm = String(payMethodVal || '').toLowerCase();
+      const isCash = pm.indexOf('نقد') !== -1 || pm.indexOf('كاش') !== -1 || pm.indexOf('خزنة') !== -1;
+      const usdKey = isCash ? 'cashUsd' : 'bankUsd';
+      const tryKey = isCash ? 'cashTry' : 'bankTry';
 
-      const isTryCurrency = cur.indexOf('try') !== -1 || cur.indexOf('tl') !== -1 || cur.indexOf('ليرة') !== -1;
-      const isUsdCurrency = cur.indexOf('usd') !== -1 || cur.indexOf('دولار') !== -1 || cur.indexOf('$') !== -1;
+      if (isSellDollar && accounts[usdKey] && accounts[tryKey] && tryAmount > 0) {
+        // بيع دولار: خصم من صندوق الدولار + إضافة لصندوق الليرة
+        accounts[usdKey].balance -= usdAmount;
+        accounts[usdKey].rows.push([
+          date, 'تصريف عملات - بيع ' + usdAmount + ' دولار', transNo, refNo, 0, usdAmount, accounts[usdKey].balance, notes
+        ]);
 
-      const isCash = pm.indexOf('نقد') !== -1 || pm.indexOf('كاش') !== -1 || pm.indexOf('خزنة') !== -1 || pm.indexOf('عهدة') !== -1 || pm.indexOf('cash') !== -1;
-      const isBank = pm.indexOf('تحويل') !== -1 || pm.indexOf('بنكي') !== -1 || pm.indexOf('bank') !== -1;
+        accounts[tryKey].balance += tryAmount;
+        accounts[tryKey].rows.push([
+          date, 'تصريف عملات - شراء ' + tryAmount + ' ليرة', transNo, refNo, tryAmount, 0, accounts[tryKey].balance, notes
+        ]);
+      } else if (isBuyDollar && accounts[usdKey] && accounts[tryKey] && tryAmount > 0) {
+        // شراء دولار: إضافة لصندوق الدولار + خصم من صندوق الليرة
+        accounts[usdKey].balance += usdAmount;
+        accounts[usdKey].rows.push([
+          date, 'تصريف عملات - شراء ' + usdAmount + ' دولار', transNo, refNo, usdAmount, 0, accounts[usdKey].balance, notes
+        ]);
 
-      const amountOriginal = Number(row[col.amount]) || 0;
-      const amountUsd = col.amountUsd >= 0 ? (Number(row[col.amountUsd]) || 0) : 0;
-
-      if (isTryCurrency && amountOriginal > 0 && amountUsd > 0) {
-        // تغيير دولار ← ليرة: خصم دولار + إضافة ليرة
-        const srcKey = isCash ? 'cashUsd' : (isBank ? 'bankUsd' : null);
-        const destKey = isCash ? 'cashTry' : (isBank ? 'bankTry' : null);
-
-        if (srcKey && destKey && accounts[srcKey] && accounts[destKey]) {
-          const date = col.date >= 0 ? row[col.date] : '';
-          const transNo = col.transNo >= 0 ? row[col.transNo] : '';
-          const refNo = col.refNo >= 0 ? row[col.refNo] : '';
-          const notes = col.notes >= 0 ? row[col.notes] || '' : '';
-
-          // خصم من حساب الدولار (بالقيمة الدولارية)
-          accounts[srcKey].balance -= amountUsd;
-          accounts[srcKey].rows.push([
-            date, 'تغيير عملة → ليرة', transNo, refNo, 0, amountUsd, accounts[srcKey].balance, notes
-          ]);
-
-          // إضافة لحساب الليرة (بالمبلغ الأصلي بالليرة)
-          accounts[destKey].balance += amountOriginal;
-          accounts[destKey].rows.push([
-            date, 'تغيير عملة ← دولار', transNo, refNo, amountOriginal, 0, accounts[destKey].balance, notes
-          ]);
-        }
-      } else if (isUsdCurrency && amountOriginal > 0) {
-        // تغيير ليرة ← دولار: خصم ليرة + إضافة دولار
-        const exchangeRate = Number(row[col.rate]) || 0;
-        const amountTry = exchangeRate > 0 ? amountOriginal * exchangeRate : 0;
-        const srcKey = isCash ? 'cashTry' : (isBank ? 'bankTry' : null);
-        const destKey = isCash ? 'cashUsd' : (isBank ? 'bankUsd' : null);
-
-        if (srcKey && destKey && accounts[srcKey] && accounts[destKey] && amountTry > 0) {
-          const date = col.date >= 0 ? row[col.date] : '';
-          const transNo = col.transNo >= 0 ? row[col.transNo] : '';
-          const refNo = col.refNo >= 0 ? row[col.refNo] : '';
-          const notes = col.notes >= 0 ? row[col.notes] || '' : '';
-
-          // خصم من حساب الليرة (بالمبلغ المقابل بالليرة)
-          accounts[srcKey].balance -= amountTry;
-          accounts[srcKey].rows.push([
-            date, 'تغيير عملة → دولار', transNo, refNo, 0, amountTry, accounts[srcKey].balance, notes
-          ]);
-
-          // إضافة لحساب الدولار (بالمبلغ الأصلي بالدولار)
-          accounts[destKey].balance += amountOriginal;
-          accounts[destKey].rows.push([
-            date, 'تغيير عملة ← ليرة', transNo, refNo, amountOriginal, 0, accounts[destKey].balance, notes
-          ]);
-        }
+        accounts[tryKey].balance -= tryAmount;
+        accounts[tryKey].rows.push([
+          date, 'تصريف عملات - بيع ' + tryAmount + ' ليرة', transNo, refNo, 0, tryAmount, accounts[tryKey].balance, notes
+        ]);
       }
+      // تصريف العملات تم معالجته
       continue;
     }
     // ═══════════════════════════════════════════════════════════

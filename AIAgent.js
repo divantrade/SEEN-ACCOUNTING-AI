@@ -1019,9 +1019,9 @@ function validateTransaction(transaction, context) {
         });
     }
 
-    // التحويل الداخلي وتغيير العملة لا يحتاجان طرف، المصاريف البنكية الطرف اختياري
+    // التحويل الداخلي وتصريف العملات لا يحتاجان طرف، المصاريف البنكية الطرف اختياري
     const isInternalTransfer = (transaction.nature || '').includes('تحويل داخلي');
-    const isCurrencyExchange = (transaction.nature || '').includes('تغيير عملة');
+    const isCurrencyExchange = (transaction.nature || '').includes('تصريف عملات');
     // ⭐ كشف المصاريف البنكية: بالبند أو بالطبيعة القديمة (للتوافق) أو بالكلمات المفتاحية
     const isBankFees = (transaction.item || '').includes('مصاريف بنكية')
         || (transaction.nature || '').includes('مصاريف بنكية')
@@ -1037,78 +1037,7 @@ function validateTransaction(transaction, context) {
         validation.enriched.isBankFees = true;
         Logger.log('🏦 مصاريف بنكية: تصحيح الطبيعة إلى "دفعة مصروف" والبند إلى "مصاريف بنكية"');
     }
-    // ⭐ تغيير العملة: ضبط البند والـ item + تصحيح العملة والمبلغ
-    if (isCurrencyExchange) {
-        transaction.item = 'تغيير عملة';
-        validation.enriched.item = 'تغيير عملة';
-        validation.enriched.isCurrencyExchange = true;
-
-        const classification = (transaction.classification || '');
-        const rate = parseFloat(transaction.exchange_rate) || 0;
-        const amt = parseFloat(transaction.amount) || 0;
-
-        // ═══════════════════════════════════════════════════════════
-        // 💱 بيع دولار: المستخدم يبيع دولارات ← يحصل على ليرة
-        //    المسجّل: المبلغ بالليرة، العملة = TRY، سعر الصرف = rate
-        //    مثال: "صرفت 200 دولار بسعر 34" → 6800 TRY, rate=34
-        // ═══════════════════════════════════════════════════════════
-        if (classification.includes('بيع دولار')) {
-            if (transaction.currency === 'USD' && rate > 0) {
-                // Gemini أرجع المبلغ بالدولار ← نحوّله لليرة
-                const tryAmount = amt * rate;
-                Logger.log('💱 بيع دولار: تصحيح المبلغ من ' + amt + ' USD إلى ' + tryAmount + ' TRY (rate=' + rate + ')');
-                transaction.amount = tryAmount;
-                transaction.currency = 'TRY';
-                validation.enriched.amount = tryAmount;
-                validation.enriched.currency = 'TRY';
-                validation.enriched.exchange_rate = rate;
-                validation.enriched.exchangeRate = rate;
-            } else if (transaction.currency === 'USD' && rate === 0) {
-                // عملة غلط بدون سعر صرف ← نحتاج نسأل عن سعر الصرف أولاً
-                // نغيّر العملة لـ TRY مؤقتاً عشان يسأل عن سعر الصرف
-                Logger.log('💱 بيع دولار: عملة USD بدون سعر صرف - سنسأل عن السعر');
-                // نحفظ المبلغ بالدولار لاستخدامه لاحقاً
-                validation.enriched._originalDollarAmount = amt;
-                transaction.currency = 'TRY';
-                validation.enriched.currency = 'TRY';
-            } else if (transaction.currency === 'TRY' && rate > 0) {
-                // صح - العملة ليرة وسعر الصرف موجود
-                Logger.log('💱 بيع دولار: البيانات صحيحة TRY=' + amt + ', rate=' + rate);
-                validation.enriched.exchange_rate = rate;
-                validation.enriched.exchangeRate = rate;
-            }
-        }
-        // ═══════════════════════════════════════════════════════════
-        // 💱 شراء دولار: المستخدم يشتري دولارات ← يدفع ليرة
-        //    المسجّل: المبلغ بالدولار، العملة = USD، سعر الصرف = rate
-        //    مثال: "اشتريت 200 دولار بسعر 34" → 200 USD, rate=34
-        // ═══════════════════════════════════════════════════════════
-        if (classification.includes('شراء دولار')) {
-            if (transaction.currency !== 'USD') {
-                // لو المبلغ بالليرة ← نحوّله لدولار
-                if (rate > 0) {
-                    const usdAmount = amt / rate;
-                    Logger.log('💱 شراء دولار: تصحيح المبلغ من ' + amt + ' TRY إلى ' + usdAmount + ' USD (rate=' + rate + ')');
-                    transaction.amount = usdAmount;
-                    transaction.currency = 'USD';
-                    validation.enriched.amount = usdAmount;
-                    validation.enriched.currency = 'USD';
-                    validation.enriched.exchange_rate = rate;
-                    validation.enriched.exchangeRate = rate;
-                }
-            } else {
-                // صح - العملة دولار
-                Logger.log('💱 شراء دولار: البيانات صحيحة USD=' + amt + ', rate=' + rate);
-                if (rate > 0) {
-                    validation.enriched.exchange_rate = rate;
-                    validation.enriched.exchangeRate = rate;
-                }
-            }
-        }
-
-        Logger.log('💱 تغيير عملة: تم ضبط البند والعملة');
-    }
-    if (!transaction.party && !isInternalTransfer && !isBankFees && !isCurrencyExchange) {
+    if (!transaction.party && !isInternalTransfer && !isCurrencyExchange && !isBankFees) {
         validation.missingRequired.push({
             field: 'party',
             label: 'الطرف',
@@ -1214,11 +1143,11 @@ function validateTransaction(transaction, context) {
         validation.enriched.payment_term_date = '';
     }
 
-    // مطابقة الطرف (التحويل الداخلي لا يحتاج طرف، المصاريف البنكية الطرف اختياري)
-    if (isInternalTransfer) {
+    // مطابقة الطرف (التحويل الداخلي وتصريف العملات لا يحتاجان طرف، المصاريف البنكية الطرف اختياري)
+    if (isInternalTransfer || isCurrencyExchange) {
         validation.enriched.party = '';
         validation.enriched.isNewParty = false;
-        Logger.log('🔄 تحويل داخلي - تخطي مطابقة الطرف');
+        Logger.log('🔄 ' + (isCurrencyExchange ? 'تصريف عملات' : 'تحويل داخلي') + ' - تخطي مطابقة الطرف');
     } else if (isBankFees) {
         // المصاريف البنكية: تعيين التصنيف وطريقة الدفع تلقائياً
         validation.enriched.classification = 'مصروفات عمومية';
@@ -1333,6 +1262,44 @@ function validateTransaction(transaction, context) {
         validation.needsPaymentTerm = false;
         validation.needsPaymentMethod = false;
         validation.needsProjectSelection = false;
+        // ⭐ التحويل الداخلي من نفس العملة لا يحتاج سعر صرف
+        // (ليرة→ليرة أو دولار→دولار: المرجع هو المبلغ بالعملة الأصلية)
+        validation.needsExchangeRate = false;
+        validation.enriched.exchangeRate = transaction.exchange_rate || 0;
+    }
+    // ⭐ تصريف عملات: يحتاج سعر صرف دائماً + لا يحتاج طرف أو مشروع
+    else if (isCurrencyExchange) {
+        const classification = (transaction.classification || '').trim();
+        if (classification.includes('خزنة') || classification.includes('نقد') || classification.includes('كاش')) {
+            validation.enriched.payment_method = 'نقدي';
+        } else if (transaction.payment_method && (transaction.payment_method.includes('نقد') || transaction.payment_method.includes('كاش'))) {
+            validation.enriched.payment_method = 'نقدي';
+        } else {
+            validation.enriched.payment_method = transaction.payment_method || 'نقدي';
+        }
+        validation.enriched.payment_term = 'فوري';
+        validation.enriched.payment_term_weeks = '';
+        validation.enriched.payment_term_date = '';
+        validation.needsPaymentTerm = false;
+        validation.needsPaymentMethod = false;
+        validation.needsProjectSelection = false;
+        validation.enriched.party = '';
+        validation.enriched.isNewParty = false;
+        // تصريف العملات يحتاج سعر صرف دائماً
+        const rateVal = Number(transaction.exchange_rate) || 0;
+        if (rateVal <= 1) {
+            validation.needsExchangeRate = true;
+        }
+        // تطبيع العملة: المبلغ يُسجل دائماً بالدولار
+        if (transaction.currency === 'TRY' && rateVal > 1) {
+            // المستخدم ذكر المبلغ بالليرة - نحوله لدولار
+            validation.enriched.amount = Math.round((transaction.amount / rateVal) * 100) / 100;
+            validation.enriched.currency = 'USD';
+            validation.enriched.exchangeRate = rateVal;
+            Logger.log('💱 تصريف عملات: تحويل ' + transaction.amount + ' TRY → ' + validation.enriched.amount + ' USD بسعر ' + rateVal);
+        } else {
+            validation.enriched.currency = 'USD';
+        }
     }
     // القيم المسموحة: نقدي، تحويل بنكي، شيك، بطاقة، أخرى
     else if (!transaction.payment_method || transaction.payment_method === 'تحويل بنكي') {
@@ -1365,7 +1332,9 @@ function validateTransaction(transaction, context) {
         validation.enriched.currency = transaction.currency;
 
         // ⭐ إذا كانت العملة غير دولار، يجب تحديد سعر الصرف
-        if (transaction.currency !== 'USD' && !transaction.exchange_rate) {
+        // ⚠️ إذا كان سعر الصرف = 1 للعملات غير الدولار، يُعتبر غير صحيح (مثلاً TRY/USD لا يمكن أن يكون 1)
+        const rateValue = Number(transaction.exchange_rate) || 0;
+        if (transaction.currency !== 'USD' && (rateValue <= 1)) {
             validation.needsExchangeRate = true;
         }
         // ⭐ تغيير العملة: دائماً يحتاج سعر صرف (حتى لو العملة USD في شراء دولار)

@@ -1225,16 +1225,23 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
         // حساب القيمة بالدولار
         const currency = transactionData.currency || 'USD';
         const amount = transactionData.amount || 0;
-        const exchangeRate = transactionData.exchangeRate || 1;
-        const amountUSD = (currency === 'USD' || currency === 'دولار')
-            ? amount
-            : amount / exchangeRate;
+        const exchangeRate = transactionData.exchangeRate || 0;
+        let amountUSD;
+        if (currency === 'USD' || currency === 'دولار') {
+            amountUSD = amount;
+        } else if (exchangeRate > 0) {
+            amountUSD = Math.round((amount / exchangeRate) * 100) / 100;
+        } else {
+            amountUSD = 0; // ⭐ لا يوجد سعر صرف (مثلاً تحويل داخلي بنفس العملة)
+        }
 
         // تحديد نوع الحركة (التسوية أولاً لأنها تحتوي على كلمة "استحقاق")
         const nature = transactionData.nature || '';
         let movementType = '';
         const itemForMovement = transactionData.item || '';
-        if (nature.includes('تحويل داخلي') || nature.includes('تغيير عملة')) {
+        if (nature.includes('تصريف عملات')) {
+            movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة - حركة نقدية فعلية
+        } else if (nature.includes('تحويل داخلي')) {
             movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة
         } else if (nature.includes('مصاريف بنكية') || itemForMovement.includes('مصاريف بنكية')) {
             movementType = CONFIG.MOVEMENT.CREDIT; // دائن دفعة - خروج نقدية من البنك
