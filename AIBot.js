@@ -639,8 +639,10 @@ function askForMissingField(chatId, session) {
         case 'project':
             message = AI_CONFIG.AI_MESSAGES.ASK_PROJECT;
             session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PROJECT_SELECTION;
-            // بناء لوحة المشاريع
-            keyboard = buildProjectsKeyboard();
+            // ⭐ بناء لوحة المشاريع مع تصفية حسب الطرف
+            var missingFieldParty = (session.validation && session.validation.enriched && session.validation.enriched.party) ||
+                                    (session.transaction && session.transaction.party) || '';
+            keyboard = buildProjectsKeyboard(false, missingFieldParty);
             saveAIUserSession(chatId, session);
             break;
 
@@ -897,7 +899,10 @@ function askProjectSelection(chatId, session) {
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PROJECT_SELECTION;
     saveAIUserSession(chatId, session);
 
-    const keyboard = buildProjectsKeyboard(true); // true = include skip option
+    // ⭐ جلب اسم الطرف من الجلسة لعرض مشاريعه أولاً
+    const partyName = (session.validation && session.validation.enriched && session.validation.enriched.party) ||
+                      (session.transaction && session.transaction.party) || '';
+    const keyboard = buildProjectsKeyboard(true, partyName); // true = include skip option, partyName = filter by party
 
     sendAIMessage(chatId, '🎬 *اختر المشروع:*\n\n_(يمكنك التخطي إذا لم تكن الحركة مرتبطة بمشروع محدد)_', {
         parse_mode: 'Markdown',
@@ -1590,6 +1595,12 @@ function handleAICallback(callbackQuery) {
         Logger.log('⚠️ Session missing for callback: ' + data);
         sendAIMessage(chatId, '⚠️ انتهت الجلسة. يرجى إعادة إرسال الحركة.');
         resetAIUserSession(chatId);
+        return;
+    }
+
+    // ⭐ تجاهل أزرار العناوين (لا تفعل شيئاً)
+    if (data === 'ai_noop') {
+        Logger.log('📥 Noop callback - ignoring');
         return;
     }
 
@@ -2799,30 +2810,128 @@ function moveToNextMissingField(chatId, session) {
 // ==================== بناء لوحات المفاتيح ====================
 
 /**
- * بناء لوحة المشاريع مع خيار التخطي
+ * ⭐ جلب المشاريع المرتبطة بطرف معين من شيت الحركات
+ * يبحث في الحركات السابقة عن المشاريع التي سُجّلت لهذا الطرف
+ * @param {string} partyName - اسم الطرف
+ * @returns {Array} مصفوفة أسماء المشاريع المرتبطة بالطرف (بدون تكرار)
  */
-function buildProjectsKeyboard(includeSkip = false) {
+function getPartyProjects_(partyName) {
+    if (!partyName) return [];
+
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+        if (!sheet) return [];
+
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) return [];
+
+        // قراءة الأعمدة: E(كود مشروع), F(اسم مشروع), I(طرف)
+        const data = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+
+        const normalizedParty = String(partyName).trim().toLowerCase();
+        const projectNames = new Set();
+
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const partyCell = String(row[8] || '').trim(); // I: اسم الطرف
+            const normalizedCellParty = partyCell.toLowerCase();
+
+            // تحقق من تطابق الطرف
+            if (!normalizedCellParty.includes(normalizedParty) && !normalizedParty.includes(normalizedCellParty)) {
+                continue;
+            }
+            if (!partyCell) continue;
+
+            const projectName = String(row[5] || '').trim(); // F: اسم المشروع
+            if (projectName) {
+                projectNames.add(projectName);
+            }
+        }
+
+        Logger.log('📋 مشاريع الطرف "' + partyName + '": ' + projectNames.size + ' مشروع');
+        return Array.from(projectNames);
+
+    } catch (error) {
+        Logger.log('❌ getPartyProjects_ error: ' + error.message);
+        return [];
+    }
+}
+
+/**
+ * بناء لوحة المشاريع مع خيار التخطي
+ * ⭐ إذا تم تمرير اسم الطرف، يتم عرض مشاريعه أولاً ثم باقي المشاريع
+ */
+function buildProjectsKeyboard(includeSkip, partyName) {
+    if (includeSkip === undefined) includeSkip = false;
     const context = loadAIContext();
-    const projects = context.projects.slice(0, 10); // أول 10 مشاريع
+    const allProjects = context.projects;
 
     const keyboard = {
         inline_keyboard: []
     };
 
-    // صفين في كل سطر
-    for (let i = 0; i < projects.length; i += 2) {
-        const row = [];
-        // التعامل مع المشاريع ككائنات {code, name} أو نصوص
-        const p1 = projects[i];
-        const name1 = typeof p1 === 'object' ? p1.name : p1;
-        row.push({ text: name1, callback_data: `ai_project_${name1}` });
+    // ⭐ جلب مشاريع الطرف (إن وجدت)
+    let partyProjectNames = [];
+    if (partyName) {
+        partyProjectNames = getPartyProjects_(partyName);
+    }
 
-        if (projects[i + 1]) {
-            const p2 = projects[i + 1];
-            const name2 = typeof p2 === 'object' ? p2.name : p2;
-            row.push({ text: name2, callback_data: `ai_project_${name2}` });
+    if (partyProjectNames.length > 0) {
+        // ⭐ عرض مشاريع الطرف أولاً مع تمييزها
+        keyboard.inline_keyboard.push([{ text: '📌 مشاريع ' + partyName + ':', callback_data: 'ai_noop' }]);
+
+        const partyProjects = partyProjectNames.slice(0, 8);
+        for (let i = 0; i < partyProjects.length; i += 2) {
+            const row = [];
+            row.push({ text: '⭐ ' + partyProjects[i], callback_data: 'ai_project_' + partyProjects[i] });
+
+            if (partyProjects[i + 1]) {
+                row.push({ text: '⭐ ' + partyProjects[i + 1], callback_data: 'ai_project_' + partyProjects[i + 1] });
+            }
+            keyboard.inline_keyboard.push(row);
         }
-        keyboard.inline_keyboard.push(row);
+
+        // ⭐ عرض باقي المشاريع (التي ليست من مشاريع الطرف)
+        const partyProjectsSet = new Set(partyProjectNames.map(function(n) { return n.toLowerCase(); }));
+        const otherProjects = allProjects.filter(function(p) {
+            const name = typeof p === 'object' ? p.name : p;
+            return !partyProjectsSet.has(name.toLowerCase());
+        });
+
+        if (otherProjects.length > 0) {
+            keyboard.inline_keyboard.push([{ text: '── مشاريع أخرى ──', callback_data: 'ai_noop' }]);
+            const limitedOther = otherProjects.slice(0, 6);
+            for (let i = 0; i < limitedOther.length; i += 2) {
+                const row = [];
+                const p1 = limitedOther[i];
+                const name1 = typeof p1 === 'object' ? p1.name : p1;
+                row.push({ text: name1, callback_data: 'ai_project_' + name1 });
+
+                if (limitedOther[i + 1]) {
+                    const p2 = limitedOther[i + 1];
+                    const name2 = typeof p2 === 'object' ? p2.name : p2;
+                    row.push({ text: name2, callback_data: 'ai_project_' + name2 });
+                }
+                keyboard.inline_keyboard.push(row);
+            }
+        }
+    } else {
+        // لا توجد مشاريع مرتبطة بالطرف - عرض كل المشاريع
+        const projects = allProjects.slice(0, 10);
+        for (let i = 0; i < projects.length; i += 2) {
+            const row = [];
+            const p1 = projects[i];
+            const name1 = typeof p1 === 'object' ? p1.name : p1;
+            row.push({ text: name1, callback_data: 'ai_project_' + name1 });
+
+            if (projects[i + 1]) {
+                const p2 = projects[i + 1];
+                const name2 = typeof p2 === 'object' ? p2.name : p2;
+                row.push({ text: name2, callback_data: 'ai_project_' + name2 });
+            }
+            keyboard.inline_keyboard.push(row);
+        }
     }
 
     // ⭐ زر التخطي (بدون مشروع)
