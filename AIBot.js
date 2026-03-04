@@ -2136,7 +2136,7 @@ function saveAITransaction(transaction, user, chatId) {
             amount: transaction.amount,
             currency: transaction.currency,
             exchangeRate: transaction.exchangeRate || 0,
-            paymentMethod: transaction.payment_method || 'تحويل بنكي',
+            paymentMethod: transaction.payment_method || '',
             paymentTermType: transaction.payment_term || 'فوري',
             weeks: transaction.payment_term_weeks || '',
             customDate: transaction.payment_term_date || transaction.loan_due_date || '',
@@ -3522,7 +3522,7 @@ function showSharedOrderConfirmation(chatId, order) {
 👤 *الطرف:* ${order.party || '-'}
 💰 *المبلغ الإجمالي:* ${grandTotal.toLocaleString()} ${currency}
 📊 *عدد الوحدات:* ${order.unit_count || totalAppearances}
-💳 *طريقة الدفع:* ${order.payment_method || 'تحويل بنكي'}
+💳 *طريقة الدفع:* ${order.payment_method || 'غير محدد'}
 📅 *شرط الدفع:* ${order.payment_term || 'فوري'}`;
 
     // عرض تاريخ الاستحقاق إذا كان تاريخ مخصص
@@ -3639,7 +3639,7 @@ function saveSharedOrderFromAI(chatId, session) {
                     amount: projectAmount,  // ⭐ المبلغ للمشروع (وليس لكل ظهور)
                     currency: order.currency || 'USD',
                     exchangeRate: order.exchange_rate || 0,
-                    paymentMethod: order.payment_method || 'تحويل بنكي',
+                    paymentMethod: order.payment_method || '',
                     paymentTermType: order.payment_term || 'فوري',
                     weeks: order.payment_term_weeks || '',
                     customDate: order.payment_term_date || '',
@@ -3926,7 +3926,7 @@ function showSmartPaymentConfirmation_(chatId, session) {
     msg += '━━━━━━━━━━━━━━━━\n';
     msg += `👤 *الطرف:* ${esc(tx.party)}\n`;
     msg += `💰 *المبلغ:* ${formatNumber(tx.amount)} ${esc(tx.currency)}\n`;
-    msg += `💳 *طريقة الدفع:* ${esc(tx.payment_method || 'تحويل بنكي')}\n`;
+    msg += `💳 *طريقة الدفع:* ${esc(tx.payment_method || 'غير محدد')}\n`;
     msg += `📊 *إجمالي المستحقات:* ${formatNumber(accruals.totalOutstanding)} ${esc(tx.currency)}\n`;
     msg += '━━━━━━━━━━━━━━━━\n\n';
 
@@ -4035,7 +4035,7 @@ function handleSmartPaymentConfirmation_(chatId, session, user) {
                 amount: d.amount,
                 currency: tx.currency,
                 exchangeRate: tx.exchangeRate || 0,
-                paymentMethod: tx.payment_method || 'تحويل بنكي',
+                paymentMethod: tx.payment_method || '',
                 paymentTermType: 'فوري',
                 weeks: '',
                 customDate: '',
@@ -4075,7 +4075,7 @@ function handleSmartPaymentConfirmation_(chatId, session, user) {
                 amount: dist.excess,
                 currency: tx.currency,
                 exchangeRate: tx.exchangeRate || 0,
-                paymentMethod: tx.payment_method || 'تحويل بنكي',
+                paymentMethod: tx.payment_method || '',
                 paymentTermType: 'فوري',
                 weeks: '',
                 customDate: '',
