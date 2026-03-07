@@ -1254,11 +1254,12 @@ function addTransactionDirectly(transactionData, inputSource = '🤖 بوت') {
             movementType = CONFIG.MOVEMENT.CREDIT;
         }
 
-        // ملاحظات مع معلومات المُدخل
+        // ملاحظات - النص الأصلي فقط (اسم المستخدم انتقل لحقل مصدر الإدخال)
         let notes = transactionData.notes || '';
+
+        // ⭐ إضافة اسم المستخدم لمصدر الإدخال
         if (transactionData.telegramUser) {
-            notes = notes ? notes + ' | ' : '';
-            notes += `(من البوت: ${transactionData.telegramUser})`;
+            inputSource = `${transactionData.telegramUser} | ${inputSource}`;
         }
 
         // إعداد بيانات الصف (28 عمود مع عمود مصدر الإدخال الجديد)
