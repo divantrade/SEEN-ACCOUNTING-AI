@@ -932,31 +932,92 @@ function askProjectSelection(chatId, session) {
 }
 
 /**
- * ⭐ السؤال عن البند
+ * ⭐ السؤال عن البند - مع عرض ذكي حسب بنود الطرف
  */
 function askItemSelection(chatId, session) {
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_ITEM_SELECTION;
 
-    // جلب قائمة البنود من قاعدة البيانات
+    // جلب قائمة البنود الكاملة من قاعدة البيانات
     const context = loadAIContext();
-    const items = context.items || [];
+    const allItems = context.items || [];
 
-    // حفظ القائمة في الجلسة للاستخدام عند الضغط على الزر
-    session.itemsList = items;
-    saveAIUserSession(chatId, session);
+    // ⭐ جلب البنود المستخدمة سابقاً مع هذا الطرف
+    const partyName = session.transaction ? session.transaction.party : null;
+    const partyItems = partyName ? getPartyItems(partyName) : [];
 
     const keyboard = { inline_keyboard: [] };
+    let message = '';
 
-    // عرض البنود المتاحة (كل بند في صف) - استخدام الفهرس لتجنب تجاوز حد callback_data
-    for (let i = 0; i < items.length; i++) {
-        keyboard.inline_keyboard.push([{ text: '📋 ' + items[i], callback_data: 'ai_item_' + i }]);
+    if (partyItems.length === 1) {
+        // ⭐ حالة 1: الطرف له بند واحد فقط → خيارين: البند المسجل أو إضافة بند جديد
+        session.itemsList = allItems; // نحفظ القائمة الكاملة للاستخدام مع "عرض كل البنود"
+        session.partyItemsList = partyItems;
+
+        keyboard.inline_keyboard.push([{ text: '✅ ' + partyItems[0], callback_data: 'ai_item_party_0' }]);
+        keyboard.inline_keyboard.push([{ text: '📋 عرض كل البنود', callback_data: 'ai_item_show_all' }]);
+        keyboard.inline_keyboard.push([{ text: '⏭ تخطي - بدون بند', callback_data: 'ai_item_skip' }]);
+        keyboard.inline_keyboard.push([{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]);
+
+        message = '📋 *اختر البند لـ ' + partyName + ':*\n\n' +
+                  '📌 _البند المسجل سابقاً:_\n\n' +
+                  '_(يمكنك أيضاً كتابة بند جديد يدوياً)_';
+
+    } else if (partyItems.length > 1) {
+        // ⭐ حالة 2: الطرف له عدة بنود → عرض بنوده فقط مع خيار عرض الكل
+        session.itemsList = allItems;
+        session.partyItemsList = partyItems;
+
+        for (let i = 0; i < partyItems.length; i++) {
+            keyboard.inline_keyboard.push([{ text: '✅ ' + partyItems[i], callback_data: 'ai_item_party_' + i }]);
+        }
+        keyboard.inline_keyboard.push([{ text: '📋 عرض كل البنود', callback_data: 'ai_item_show_all' }]);
+        keyboard.inline_keyboard.push([{ text: '⏭ تخطي - بدون بند', callback_data: 'ai_item_skip' }]);
+        keyboard.inline_keyboard.push([{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]);
+
+        message = '📋 *اختر البند لـ ' + partyName + ':*\n\n' +
+                  '📌 _بنود مسجلة سابقاً (' + partyItems.length + '):_\n\n' +
+                  '_(يمكنك أيضاً كتابة بند جديد يدوياً)_';
+
+    } else {
+        // ⭐ حالة 3: لا توجد بنود سابقة للطرف → عرض القائمة الكاملة
+        session.itemsList = allItems;
+        session.partyItemsList = [];
+
+        for (let i = 0; i < allItems.length; i++) {
+            keyboard.inline_keyboard.push([{ text: '📋 ' + allItems[i], callback_data: 'ai_item_' + i }]);
+        }
+        keyboard.inline_keyboard.push([{ text: '⏭ تخطي - بدون بند', callback_data: 'ai_item_skip' }]);
+        keyboard.inline_keyboard.push([{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]);
+
+        message = '📋 *اختر البند:*\n\n_(يمكنك التخطي أو كتابة البند يدوياً)_';
     }
 
-    // زر التخطي والإلغاء
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(keyboard)
+    });
+}
+
+/**
+ * ⭐ عرض كل البنود (عند الضغط على "عرض كل البنود")
+ */
+function showAllItemsSelection(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_ITEM_SELECTION;
+
+    const allItems = session.itemsList || [];
+    const keyboard = { inline_keyboard: [] };
+
+    for (let i = 0; i < allItems.length; i++) {
+        keyboard.inline_keyboard.push([{ text: '📋 ' + allItems[i], callback_data: 'ai_item_' + i }]);
+    }
     keyboard.inline_keyboard.push([{ text: '⏭ تخطي - بدون بند', callback_data: 'ai_item_skip' }]);
     keyboard.inline_keyboard.push([{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]);
 
-    sendAIMessage(chatId, '📋 *اختر البند:*\n\n_(يمكنك التخطي أو كتابة البند يدوياً)_', {
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, '📋 *كل البنود المتاحة:*\n\n_(اختر أو اكتب البند يدوياً)_', {
         parse_mode: 'Markdown',
         reply_markup: JSON.stringify(keyboard)
     });
@@ -2037,8 +2098,32 @@ function handleAICallback(callbackQuery) {
         saveAIUserSession(chatId, session);
         sendAIMessage(chatId, '⏭ تم التخطي بدون بند');
         continueValidation(chatId, session);
+    } else if (data === 'ai_item_show_all') {
+        // ⭐ عرض كل البنود
+        Logger.log('📋 User requested all items');
+        showAllItemsSelection(chatId, session);
+    } else if (data.startsWith('ai_item_party_')) {
+        // ⭐ اختيار بند من بنود الطرف
+        const partyItemIndex = parseInt(data.replace('ai_item_party_', ''));
+        const partyItemsList = session.partyItemsList || [];
+        const item = partyItemsList[partyItemIndex];
+        if (!item) {
+            Logger.log('❌ Invalid party item index: ' + partyItemIndex);
+            sendAIMessage(chatId, '⚠️ حدث خطأ. يرجى إعادة المحاولة.');
+            return;
+        }
+        Logger.log('📋 Party item selected: ' + item);
+        session.transaction.item = item;
+        if (session.validation) {
+            session.validation.needsItemSelection = false;
+            if (!session.validation.enriched) session.validation.enriched = {};
+            session.validation.enriched.item = item;
+        }
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, '✅ تم اختيار البند: *' + item + '*', { parse_mode: 'Markdown' });
+        continueValidation(chatId, session);
     } else if (data.startsWith('ai_item_')) {
-        // ⭐ معالجة اختيار البند (بالفهرس)
+        // ⭐ معالجة اختيار البند من القائمة الكاملة (بالفهرس)
         const itemIndex = parseInt(data.replace('ai_item_', ''));
         const itemsList = session.itemsList || [];
         const item = itemsList[itemIndex];
