@@ -902,7 +902,23 @@ function askProjectSelection(chatId, session) {
     // ⭐ جلب اسم الطرف من الجلسة لعرض مشاريعه أولاً
     const partyName = (session.validation && session.validation.enriched && session.validation.enriched.party) ||
                       (session.transaction && session.transaction.party) || '';
+
+    // ⭐ التحقق مما إذا كانت الحركة دفعة والطرف عنده مستحقات على أكثر من مشروع
+    const nature = (session.transaction && session.transaction.nature) || '';
+    const isPayment = nature.includes('دفعة مصروف') || nature.includes('تحصيل إيراد');
+    const showSmartDistribute = isPayment && partyName;
+
     const keyboard = buildProjectsKeyboard(true, partyName); // true = include skip option, partyName = filter by party
+
+    // ⭐ إضافة زر التوزيع الذكي قبل زر التخطي (إذا كانت دفعة)
+    if (showSmartDistribute) {
+        // إزالة زر التخطي والإلغاء مؤقتاً لإعادة ترتيبهم
+        const cancelBtn = keyboard.inline_keyboard.pop(); // إلغاء
+        const skipBtn = keyboard.inline_keyboard.pop(); // تخطي
+        keyboard.inline_keyboard.push([{ text: '🔄 توزيع ذكي (الأقدم أولاً)', callback_data: 'ai_smart_distribute' }]);
+        keyboard.inline_keyboard.push(skipBtn);
+        keyboard.inline_keyboard.push(cancelBtn);
+    }
 
     sendAIMessage(chatId, '🎬 *اختر المشروع:*\n\n_(يمكنك التخطي إذا لم تكن الحركة مرتبطة بمشروع محدد)_', {
         parse_mode: 'Markdown',
@@ -1432,25 +1448,37 @@ function showTransactionConfirmation(chatId, session) {
     }
 
     // ⭐ التحقق من التوزيع الذكي للدفعات (دفعة مصروف / تحصيل إيراد)
+    // التوزيع الذكي يعمل فقط عندما:
+    // 1. المستخدم اختار "توزيع ذكي" صراحةً (userRequestedSmartDistribute)
+    // 2. أو لم يحدد مشروع (project = null) - سلوك قديم للتوافق
+    // إذا المستخدم اختار مشروع محدد ← الدفعة تروح للمشروع مباشرة بدون توزيع
     if (!session.smartPaymentChecked) {
-        try {
-            const smartResult = checkSmartPaymentEligibility_(session.transaction);
-            if (smartResult) {
-                Logger.log('🧠 Smart payment eligible: ' + smartResult.accruals.projects.length + ' projects');
-                session.smartPayment = smartResult;
-                session.smartPaymentChecked = true;
-                saveAIUserSession(chatId, session);
+        const hasSelectedProject = session.transaction && session.transaction.project && session.transaction.project_code;
+        const userRequestedSmart = session.userRequestedSmartDistribute === true;
 
-                // إذا فيه مبلغ زائد، نسأل عن المشروع أولاً
-                if (smartResult.distribution.excess > 0) {
-                    askAdvancePaymentProject_(chatId, session);
-                } else {
-                    showSmartPaymentConfirmation_(chatId, session);
+        if (!hasSelectedProject || userRequestedSmart) {
+            try {
+                const smartResult = checkSmartPaymentEligibility_(session.transaction);
+                if (smartResult) {
+                    Logger.log('🧠 Smart payment eligible: ' + smartResult.accruals.projects.length + ' projects' +
+                              (userRequestedSmart ? ' (user requested)' : ''));
+                    session.smartPayment = smartResult;
+                    session.smartPaymentChecked = true;
+                    saveAIUserSession(chatId, session);
+
+                    // إذا فيه مبلغ زائد، نسأل عن المشروع أولاً
+                    if (smartResult.distribution.excess > 0) {
+                        askAdvancePaymentProject_(chatId, session);
+                    } else {
+                        showSmartPaymentConfirmation_(chatId, session);
+                    }
+                    return;
                 }
-                return;
+            } catch (e) {
+                Logger.log('⚠️ Smart payment check failed: ' + e.message);
             }
-        } catch (e) {
-            Logger.log('⚠️ Smart payment check failed: ' + e.message);
+        } else {
+            Logger.log('🎯 User selected specific project "' + session.transaction.project + '" - skipping smart distribution');
         }
         session.smartPaymentChecked = true;
         saveAIUserSession(chatId, session);
@@ -1744,6 +1772,18 @@ function handleAICallback(callbackQuery) {
         });
     } else if (data.startsWith('ai_edit')) {
         handleEditRequest(chatId, data, session, messageId);
+    } else if (data === 'ai_smart_distribute') {
+        // ⭐ التوزيع الذكي FIFO - المستخدم اختار التوزيع بنفسه
+        Logger.log('📥 Smart distribute callback - triggering FIFO distribution');
+        session.userRequestedSmartDistribute = true;
+        session.transaction.project = null;
+        session.transaction.project_code = null;
+        if (session.validation) {
+            session.validation.needsProjectSelection = false;
+        }
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, '✅ تم اختيار: *🔄 توزيع ذكي (الأقدم أولاً)*', { parse_mode: 'Markdown' });
+        continueValidation(chatId, session);
     } else if (data === 'ai_skip_project') {
         // ⭐ تخطي اختيار المشروع (بدون مشروع)
         Logger.log('📥 Skip project callback - continuing without project');
@@ -3891,6 +3931,21 @@ function checkSmartPaymentEligibility_(transaction) {
     // جلب المستحقات
     const accruals = getOutstandingAccruals_(transaction.party, nature);
     if (!accruals.found || accruals.projects.length < 2) return null;
+
+    // ⭐ إذا المستخدم حدد مشروع معين، نعطيه الأولوية في التوزيع (قبل FIFO)
+    const selectedProject = transaction.project_code || transaction.project || '';
+    if (selectedProject) {
+        const selectedIdx = accruals.projects.findIndex(function(p) {
+            return (p.projectCode && p.projectCode === transaction.project_code) ||
+                   (p.projectName && p.projectName === transaction.project);
+        });
+        if (selectedIdx > 0) {
+            // نقل المشروع المحدد للأول
+            const selected = accruals.projects.splice(selectedIdx, 1)[0];
+            accruals.projects.unshift(selected);
+            Logger.log('🎯 Smart distribution: prioritizing selected project "' + selected.projectName + '"');
+        }
+    }
 
     // توزيع المبلغ
     const distribution = distributePaymentFIFO_(transaction.amount, accruals.projects);
