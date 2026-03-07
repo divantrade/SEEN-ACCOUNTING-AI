@@ -3892,6 +3892,21 @@ function checkSmartPaymentEligibility_(transaction) {
     const accruals = getOutstandingAccruals_(transaction.party, nature);
     if (!accruals.found || accruals.projects.length < 2) return null;
 
+    // ⭐ إذا المستخدم حدد مشروع معين، نعطيه الأولوية في التوزيع (قبل FIFO)
+    const selectedProject = transaction.project_code || transaction.project || '';
+    if (selectedProject) {
+        const selectedIdx = accruals.projects.findIndex(function(p) {
+            return (p.projectCode && p.projectCode === transaction.project_code) ||
+                   (p.projectName && p.projectName === transaction.project);
+        });
+        if (selectedIdx > 0) {
+            // نقل المشروع المحدد للأول
+            const selected = accruals.projects.splice(selectedIdx, 1)[0];
+            accruals.projects.unshift(selected);
+            Logger.log('🎯 Smart distribution: prioritizing selected project "' + selected.projectName + '"');
+        }
+    }
+
     // توزيع المبلغ
     const distribution = distributePaymentFIFO_(transaction.amount, accruals.projects);
 
