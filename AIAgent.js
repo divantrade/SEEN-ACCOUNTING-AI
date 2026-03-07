@@ -534,6 +534,53 @@ function loadProjectsCached() {
 }
 
 /**
+ * ⭐ جلب البنود المستخدمة سابقاً مع طرف معين من دفتر الحركات
+ * @param {string} partyName - اسم الطرف
+ * @returns {string[]} - قائمة البنود الفريدة المستخدمة مع هذا الطرف
+ */
+function getPartyItems(partyName) {
+    if (!partyName) return [];
+
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+        if (!sheet) return [];
+
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) return [];
+
+        // G = البند (عمود 7)، I = اسم الطرف (عمود 9)
+        const partyCol = sheet.getRange(2, 9, lastRow - 1, 1).getValues(); // I
+        const itemCol = sheet.getRange(2, 7, lastRow - 1, 1).getValues();  // G
+
+        const normalizedParty = normalizeArabicText(partyName);
+        const itemsSet = new Set();
+
+        for (let i = 0; i < partyCol.length; i++) {
+            const cellParty = partyCol[i][0];
+            if (!cellParty) continue;
+
+            const normalizedCell = normalizeArabicText(cellParty.toString().trim());
+            if (normalizedCell === normalizedParty ||
+                normalizedCell.includes(normalizedParty) ||
+                normalizedParty.includes(normalizedCell)) {
+                const item = itemCol[i][0];
+                if (item && item.toString().trim()) {
+                    itemsSet.add(item.toString().trim());
+                }
+            }
+        }
+
+        Logger.log('📋 بنود ' + partyName + ': ' + itemsSet.size + ' بند');
+        return Array.from(itemsSet);
+
+    } catch (error) {
+        Logger.log('⚠️ getPartyItems Error: ' + error.message);
+        return [];
+    }
+}
+
+/**
  * تحميل البنود + الطبيعة + التصنيفات مع Cache
  */
 function loadItemsCached() {
