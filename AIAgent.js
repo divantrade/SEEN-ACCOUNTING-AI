@@ -1252,7 +1252,15 @@ function validateTransaction(transaction, context) {
         if (itemMatch.found) {
             validation.enriched.item = itemMatch.match;
             validation.enriched.itemScore = itemMatch.score;
+            // ⭐ تحديث البند في الحركة أيضاً ليظهر في التأكيد والحفظ
+            transaction.item = itemMatch.match;
         }
+    }
+
+    // ⭐ التحقق من البند - إذا لم يُذكر البند نسأل عنه (تخطي الحالات الخاصة)
+    if (!transaction.item && !isBankFees && !isInternalTransfer && !isCurrencyExchange) {
+        Logger.log('📋 Item is missing - will ask user to select');
+        validation.needsItemSelection = true;
     }
 
     // تحويل التاريخ

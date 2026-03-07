@@ -271,6 +271,11 @@ function handleAIMessage(message) {
             handleAIProjectSelection(chatId, text, session);
             break;
 
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_ITEM_SELECTION:
+            // ⭐ المستخدم كتب البند يدوياً
+            handleItemSelectionInput(chatId, text, session);
+            break;
+
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_PARTY_SELECTION:
             // ⭐ كشف الرسائل الجديدة أثناء انتظار الطرف - إذا النص يحتوي كلمات مفتاحية لحركة مالية، يُعامل كحركة جديدة
             if (looksLikeNewTransaction_(text)) {
@@ -927,6 +932,69 @@ function askProjectSelection(chatId, session) {
 }
 
 /**
+ * ⭐ السؤال عن البند
+ */
+function askItemSelection(chatId, session) {
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_ITEM_SELECTION;
+
+    // جلب قائمة البنود من قاعدة البيانات
+    const context = loadAIContext();
+    const items = context.items || [];
+
+    // حفظ القائمة في الجلسة للاستخدام عند الضغط على الزر
+    session.itemsList = items;
+    saveAIUserSession(chatId, session);
+
+    const keyboard = { inline_keyboard: [] };
+
+    // عرض البنود المتاحة (كل بند في صف) - استخدام الفهرس لتجنب تجاوز حد callback_data
+    for (let i = 0; i < items.length; i++) {
+        keyboard.inline_keyboard.push([{ text: '📋 ' + items[i], callback_data: 'ai_item_' + i }]);
+    }
+
+    // زر التخطي والإلغاء
+    keyboard.inline_keyboard.push([{ text: '⏭ تخطي - بدون بند', callback_data: 'ai_item_skip' }]);
+    keyboard.inline_keyboard.push([{ text: '❌ إلغاء', callback_data: 'ai_cancel' }]);
+
+    sendAIMessage(chatId, '📋 *اختر البند:*\n\n_(يمكنك التخطي أو كتابة البند يدوياً)_', {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(keyboard)
+    });
+}
+
+/**
+ * ⭐ معالجة إدخال البند يدوياً
+ */
+function handleItemSelectionInput(chatId, text, session) {
+    if (!session || !session.transaction || !session.validation) {
+        sendAIMessage(chatId, '⚠️ حدث خطأ. يرجى إعادة إرسال الحركة.');
+        resetAIUserSession(chatId);
+        return;
+    }
+
+    // محاولة مطابقة البند مع قاعدة البيانات
+    const context = loadAIContext();
+    const itemMatch = matchItem(text, context.items || []);
+
+    if (itemMatch.found) {
+        session.transaction.item = itemMatch.match;
+        if (!session.validation.enriched) session.validation.enriched = {};
+        session.validation.enriched.item = itemMatch.match;
+    } else {
+        // حفظ النص كما هو إذا لم يُطابق
+        session.transaction.item = text.trim();
+    }
+
+    session.validation.needsItemSelection = false;
+    saveAIUserSession(chatId, session);
+
+    const savedItem = session.transaction.item;
+    sendAIMessage(chatId, '✅ تم تحديد البند: *' + savedItem + '*', { parse_mode: 'Markdown' });
+
+    continueValidation(chatId, session);
+}
+
+/**
  * ⭐ السؤال عن طريقة الدفع
  */
 function askPaymentMethod(chatId, session) {
@@ -1321,6 +1389,12 @@ function continueValidation(chatId, session) {
     // ⭐ التحقق من المشروع (اختياري - يُتخطى للمصاريف البنكية والتحويل الداخلي)
     if (session.validation.needsProjectSelection && !skipProjectAndPayment) {
         askProjectSelection(chatId, session);
+        return;
+    }
+
+    // ⭐ التحقق من البند (يُتخطى للمصاريف البنكية والتحويل الداخلي وتغيير العملة)
+    if (session.validation.needsItemSelection && !skipProjectAndPayment) {
+        askItemSelection(chatId, session);
         return;
     }
 
@@ -1954,6 +2028,35 @@ function handleAICallback(callbackQuery) {
     } else if (data.startsWith('ai_project_')) {
         const project = data.replace('ai_project_', '');
         handleProjectCallback(chatId, project, session);
+    } else if (data === 'ai_item_skip') {
+        // ⭐ تخطي البند
+        Logger.log('📋 Item skipped by user');
+        if (session.validation) {
+            session.validation.needsItemSelection = false;
+        }
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, '⏭ تم التخطي بدون بند');
+        continueValidation(chatId, session);
+    } else if (data.startsWith('ai_item_')) {
+        // ⭐ معالجة اختيار البند (بالفهرس)
+        const itemIndex = parseInt(data.replace('ai_item_', ''));
+        const itemsList = session.itemsList || [];
+        const item = itemsList[itemIndex];
+        if (!item) {
+            Logger.log('❌ Invalid item index: ' + itemIndex);
+            sendAIMessage(chatId, '⚠️ حدث خطأ. يرجى إعادة المحاولة.');
+            return;
+        }
+        Logger.log('📋 Item selected: ' + item);
+        session.transaction.item = item;
+        if (session.validation) {
+            session.validation.needsItemSelection = false;
+            if (!session.validation.enriched) session.validation.enriched = {};
+            session.validation.enriched.item = item;
+        }
+        saveAIUserSession(chatId, session);
+        sendAIMessage(chatId, '✅ تم اختيار البند: *' + item + '*', { parse_mode: 'Markdown' });
+        continueValidation(chatId, session);
     } else if (data.startsWith('ai_select_party_')) {
         // ⭐ معالجة اختيار طرف من القائمة
         const index = parseInt(data.replace('ai_select_party_', ''));
