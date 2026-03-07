@@ -2157,8 +2157,17 @@ function saveAITransaction(transaction, user, chatId) {
             ? transaction.due_date
             : new Date();
 
-        // ⭐ تجهيز التفاصيل مع تاريخ استحقاق السلفة إذا وجد
+        // ⭐ تجهيز التفاصيل
         let details = transaction.details || '';
+
+        // ⭐ للدفعات: صيغة "سداد فاتورة [اسم المشروع]" أو "تحصيل فاتورة [اسم المشروع]"
+        const nature = transaction.nature || '';
+        if (nature.includes('دفعة مصروف') && transaction.project) {
+            details = 'سداد فاتورة ' + transaction.project;
+        } else if (nature.includes('تحصيل إيراد') && transaction.project) {
+            details = 'تحصيل فاتورة ' + transaction.project;
+        }
+
         if (transaction.loan_due_date) {
             const loanDueDateNote = `[تاريخ السداد: ${transaction.loan_due_date}]`;
             details = details ? `${details} ${loanDueDateNote}` : loanDueDateNote;
@@ -2187,7 +2196,7 @@ function saveAITransaction(transaction, user, chatId) {
             unitCount: transaction.unit_count || transaction.unitCount || '',
             statementMark: '',                              // Y: كشف
             orderNumber: '',                                // Z: رقم الأوردر
-            notes: transaction.originalText ? `النص الأصلي: ${transaction.originalText}` : ''
+            notes: transaction.originalText || ''
         };
 
         // ✅ حفظ الحركة مباشرة في شيت الحركات الرئيسي
@@ -4085,7 +4094,7 @@ function handleSmartPaymentConfirmation_(chatId, session, user) {
                 projectCode: d.projectCode || '',
                 projectName: d.projectName || '',
                 item: tx.item || '',
-                details: (tx.details || '') + ` [توزيع ذكي ${i + 1}/${distributions.length + (dist.excess > 0 ? 1 : 0)}]`,
+                details: tx.nature.includes('تحصيل إيراد') ? 'تحصيل فاتورة ' + d.projectName : 'سداد فاتورة ' + d.projectName,
                 partyName: tx.party,
                 amount: d.amount,
                 currency: tx.currency,
@@ -4101,7 +4110,7 @@ function handleSmartPaymentConfirmation_(chatId, session, user) {
                 unitCount: '',
                 statementMark: '',
                 orderNumber: '',
-                notes: `النص الأصلي: ${tx.originalText || session.originalText || ''} | توزيع ذكي`
+                notes: tx.originalText || session.originalText || ''
             };
 
             const result = addTransactionDirectly(transactionData, '🤖 بوت ذكي (توزيع)');
@@ -4125,7 +4134,7 @@ function handleSmartPaymentConfirmation_(chatId, session, user) {
                 projectCode: advanceProject.code || '',
                 projectName: advanceProject.name || '',
                 item: tx.item || '',
-                details: (tx.details || '') + ' [دفعة مقدمة - توزيع ذكي]',
+                details: tx.nature.includes('تحصيل إيراد') ? 'تحصيل فاتورة ' + (advanceProject.name || 'دفعة مقدمة') : 'سداد فاتورة ' + (advanceProject.name || 'دفعة مقدمة'),
                 partyName: tx.party,
                 amount: dist.excess,
                 currency: tx.currency,
@@ -4141,7 +4150,7 @@ function handleSmartPaymentConfirmation_(chatId, session, user) {
                 unitCount: '',
                 statementMark: '',
                 orderNumber: '',
-                notes: `النص الأصلي: ${tx.originalText || session.originalText || ''} | دفعة مقدمة`
+                notes: tx.originalText || session.originalText || ''
             };
 
             const advResult = addTransactionDirectly(advanceData, '🤖 بوت ذكي (مقدمة)');
