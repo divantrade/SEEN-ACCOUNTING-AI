@@ -1083,7 +1083,10 @@ function validateTransaction(transaction, context) {
 
     // التحقق من المشروع للمصروفات المباشرة والإيرادات
     // ⭐ المشروع اختياري - نسأل عنه لكن يمكن التخطي
-    const needsProject = ['مصروفات مباشرة', 'ايراد'].includes(transaction.classification);
+    // ⭐ الدفعات (دفعة مصروف / تحصيل إيراد) تحتاج مشروع دائماً لضمان التوزيع الصحيح
+    const txNature = transaction.nature || '';
+    const isPaymentNature = txNature.includes('دفعة مصروف') || txNature.includes('تحصيل إيراد');
+    const needsProject = ['مصروفات مباشرة', 'ايراد'].includes(transaction.classification) || isPaymentNature;
     Logger.log('🔍 needsProject check:');
     Logger.log('   - classification: "' + transaction.classification + '"');
     Logger.log('   - needsProject: ' + needsProject);
