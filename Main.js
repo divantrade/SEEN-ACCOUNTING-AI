@@ -6722,7 +6722,8 @@ function generateUnifiedStatement_(ss, partyName, partyType) {
     sheet.getRange(dataStartRow, 1).setValue('لا توجد حركات').setFontStyle('italic');
   }
 
-  sheet.setFrozenRows(tableHeaderRow);
+  // لا نجمد الصفوف حتى لا تتكرر الترويسة في كل صفحة عند الطباعة/PDF
+  // sheet.setFrozenRows(tableHeaderRow);
 
   // ═══════════════════════════════════════════════════════════
   // التذييل
