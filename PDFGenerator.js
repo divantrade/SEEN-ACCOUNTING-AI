@@ -117,7 +117,7 @@ function getOrCreateMonthFolder() {
     try {
         const mainFolder = getOrCreateReportsFolder();
         const now = new Date();
-        const monthFolderName = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM');
+        const monthFolderName = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM');
 
         // البحث عن مجلد الشهر
         const folders = mainFolder.getFoldersByName(monthFolderName);
@@ -149,7 +149,7 @@ function savePDFToArchive(pdfBlob, reportType, partyName) {
     try {
         const folder = getOrCreateMonthFolder();
         const now = new Date();
-        const dateStr = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd');
+        const dateStr = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
 
         // بناء اسم الملف
         let fileName = reportType;
@@ -369,23 +369,25 @@ function generateAndSendReport(chatId, reportType, sheet, partyName, saveToArchi
 /**
  * بناء اسم ملف التقرير
  */
-function buildReportFileName(reportType, partyName) {
-    const reportNames = {
-        'statement': 'كشف حساب',
-        'alerts': 'تنبيهات الاستحقاق',
-        'balances': 'تقرير الأرصدة',
-        'profitability': 'ربحية المشاريع',
-        'expenses': 'تقرير المصروفات',
-        'revenues': 'تقرير الإيرادات'
-    };
+// ⭐ خريطة أسماء التقارير الموحدة (بدلاً من التكرار في كل دالة)
+var REPORT_DISPLAY_NAMES_ = {
+    'statement': { name: 'كشف حساب', emoji: '📄' },
+    'alerts': { name: 'تنبيهات الاستحقاق', emoji: '⏰' },
+    'balances': { name: 'تقرير الأرصدة', emoji: '💰' },
+    'profitability': { name: 'ربحية المشاريع', emoji: '📈' },
+    'expenses': { name: 'تقرير المصروفات', emoji: '📊' },
+    'revenues': { name: 'تقرير الإيرادات', emoji: '💵' }
+};
 
-    let name = reportNames[reportType] || reportType;
+function buildReportFileName(reportType, partyName) {
+    var info = REPORT_DISPLAY_NAMES_[reportType];
+    let name = info ? info.name : reportType;
     if (partyName) {
         name += ' - ' + partyName;
     }
 
     const now = new Date();
-    const dateStr = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd');
+    const dateStr = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
     name += ' - ' + dateStr;
 
     return name;
@@ -395,23 +397,17 @@ function buildReportFileName(reportType, partyName) {
  * بناء تعليق التقرير
  */
 function buildReportCaption(reportType, partyName, savedToArchive) {
-    const reportNames = {
-        'statement': '📄 كشف حساب',
-        'alerts': '⏰ تنبيهات الاستحقاق',
-        'balances': '💰 تقرير الأرصدة',
-        'profitability': '📈 ربحية المشاريع',
-        'expenses': '📊 تقرير المصروفات',
-        'revenues': '💵 تقرير الإيرادات'
-    };
+    var info = REPORT_DISPLAY_NAMES_[reportType];
+    var displayName = info ? (info.emoji + ' ' + info.name) : reportType;
 
-    let caption = '*' + (reportNames[reportType] || reportType) + '*';
+    let caption = '*' + displayName + '*';
 
     if (partyName) {
         caption += '\n👤 ' + partyName;
     }
 
     const now = new Date();
-    const dateStr = Utilities.formatDate(now, 'Asia/Istanbul', 'dd/MM/yyyy HH:mm');
+    const dateStr = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy HH:mm');
     caption += '\n📅 ' + dateStr;
 
     if (savedToArchive) {
@@ -660,7 +656,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // صف 1: اسم الشركة (بولد، خط كبير)
     sheet.getRange('A1:F1').merge();
     sheet.getRange('A1')
-        .setValue('START SCENE MEDIA PRODUKSIYON LIMITED')
+        .setValue(CONFIG.COMPANY.NAME)
         .setFontWeight('bold')
         .setFontSize(14)
         .setFontColor('#1a237e')
@@ -670,7 +666,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // صف 2: العنوان
     sheet.getRange('A2:F2').merge();
     sheet.getRange('A2')
-        .setValue('212 My Office - Office No177 - Istanbul - Bagcilar')
+        .setValue(CONFIG.COMPANY.ADDRESS)
         .setFontSize(10)
         .setFontColor('#555555')
         .setHorizontalAlignment('center')
@@ -679,7 +675,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // صف 3: البريد والموقع
     sheet.getRange('A3:F3').merge();
     sheet.getRange('A3')
-        .setValue('Finance@seenfilm.net  |  www.seenfilm.net')
+        .setValue(CONFIG.COMPANY.CONTACT)
         .setFontSize(10)
         .setFontColor('#555555')
         .setHorizontalAlignment('center')
@@ -721,8 +717,8 @@ function generateStatementForBot_(ss, partyName, partyType) {
             try {
                 ensureLogoMerge_();
                 const image = sheet.insertImage(logoBlob, 7, 1);
-                image.setWidth(140);
-                image.setHeight(100);
+                image.setWidth(CONFIG.COMPANY.LOGO.WIDTH);
+                image.setHeight(CONFIG.COMPANY.LOGO.HEIGHT);
                 logoInserted = true;
             } catch (e) {
                 Logger.log('⚠️ Method 0 FAILED: ' + e.message);
@@ -736,8 +732,8 @@ function generateStatementForBot_(ss, partyName, partyType) {
                 const file = DriveApp.getFileById(logoFileId);
                 const blob = file.getBlob();
                 const image = sheet.insertImage(blob, 7, 1);
-                image.setWidth(140);
-                image.setHeight(100);
+                image.setWidth(CONFIG.COMPANY.LOGO.WIDTH);
+                image.setHeight(CONFIG.COMPANY.LOGO.HEIGHT);
                 logoInserted = true;
             } catch (e) {
                 Logger.log('⚠️ Method 1 FAILED: ' + e.message);
@@ -860,46 +856,47 @@ function generateStatementForBot_(ss, partyName, partyType) {
     const data = transSheet.getDataRange().getValues();
     const rows = [];
 
+    // ⭐ أرقام الأعمدة كثوابت (بدلاً من magic numbers)
+    var COL = { DATE: 1, PROJECT: 5, DETAILS: 7, PARTY: 8, AMOUNT_USD: 12, MOVEMENT: 13, DUE_DATE: 20 };
+
     let totalDebit = 0, totalCredit = 0, balance = 0;
 
     for (let i = 1; i < data.length; i++) {
         const row = data[i];
 
         // الفلتر الوحيد: اسم الطرف
-        if (row[8] !== partyName) continue;
+        if (row[COL.PARTY] !== partyName) continue;
 
-        const movementKind = String(row[13] || '');  // N: نوع الحركة
-        const amountUsd = Number(row[12]) || 0;      // M: القيمة بالدولار
+        const movementKind = String(row[COL.MOVEMENT] || '');
+        const amountUsd = Number(row[COL.AMOUNT_USD]) || 0;
 
         // تجاهل الحركات بدون مبلغ
         if (!amountUsd) continue;
 
-        const date = row[1];       // B: تاريخ التسجيل
-        const dueDate = row[20];   // U: تاريخ الاستحقاق
-        const project = row[5];    // F: اسم المشروع
-        const details = row[7];    // H: التفاصيل
+        const date = row[COL.DATE];
+        const dueDate = row[COL.DUE_DATE];
+        const project = row[COL.PROJECT];
+        const details = row[COL.DETAILS];
 
         let debit = 0, credit = 0;
 
         // استخدام includes للتعامل مع الإيموجي
         if (movementKind.includes(CONFIG.MOVEMENT.DEBIT) || movementKind.includes('مدين')) {
             debit = amountUsd;
-            balance += debit;
             totalDebit += debit;
         } else if (movementKind.includes(CONFIG.MOVEMENT.CREDIT) || movementKind.includes('دائن')) {
             credit = amountUsd;
-            balance -= credit;
             totalCredit += credit;
         }
 
         rows.push([
             date,
-            (debit > 0 && dueDate) ? dueDate : '',  // تاريخ الاستحقاق فقط للمدين
+            (debit > 0 && dueDate) ? dueDate : '',
             project || '',
             details || '',
             debit || '',
             credit || '',
-            Math.round(balance * 100) / 100
+            0  // الرصيد يُحسب بعد الترتيب
         ]);
     }
 
@@ -910,7 +907,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
         return dateA - dateB;
     });
 
-    // إعادة حساب الرصيد بعد الترتيب
+    // ⭐ حساب الرصيد مرة واحدة فقط (بعد الترتيب)
     balance = 0;
     for (let i = 0; i < rows.length; i++) {
         const debit = rows[i][4] || 0;
@@ -1003,7 +1000,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
     // تذييل التقرير
     // ═══════════════════════════════════════════════════════════
     const footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
-    const reportDateStr = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm');
+    const reportDateStr = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy HH:mm');
     sheet.getRange('A' + footerRow + ':H' + footerRow).merge()
         .setValue('تاريخ التقرير: ' + reportDateStr)
         .setHorizontalAlignment('center')
@@ -1012,7 +1009,7 @@ function generateStatementForBot_(ss, partyName, partyType) {
 
     const creditRow = footerRow + 1;
     sheet.getRange('A' + creditRow + ':H' + creditRow).merge()
-        .setValue('Accounting by aldewan.net  •  Developed by KodLab.ai')
+        .setValue(CONFIG.COMPANY.CREDITS)
         .setHorizontalAlignment('center')
         .setFontSize(9)
         .setFontColor('#9e9e9e');
@@ -1024,153 +1021,58 @@ function generateStatementForBot_(ss, partyName, partyType) {
     return sheet;
 }
 
+// ═══════════════════════════════════════════════════════════
+// ⭐ دالة موحدة لتوليد التقارير (بدلاً من 5 دوال متكررة)
+// ═══════════════════════════════════════════════════════════
+
 /**
- * توليد تقرير التنبيهات وإرساله
+ * خريطة إعدادات التقارير
+ * كل تقرير: updateFn (دالة التحديث) + sheetName + saveToArchive
+ */
+var PDF_REPORT_REGISTRY_ = {
+    alerts:        { updateFn: function() { updateAlerts(true); },                              sheetName: CONFIG.SHEETS.ALERTS,          save: false, errorMsg: 'لم يتم العثور على شيت التنبيهات' },
+    balances:      { updateFn: function() { rebuildVendorSummaryReport(true); },                sheetName: CONFIG.SHEETS.VENDORS_REPORT,  save: false, errorMsg: 'لم يتم العثور على شيت تقرير الأرصدة' },
+    profitability: { updateFn: function() { generateAllProjectsProfitabilityReport(true); },    sheetName: 'تقارير ربحية المشاريع',       save: true,  errorMsg: 'لم يتم إنشاء تقرير الربحية' },
+    expenses:      { updateFn: function() { rebuildExpenseSummaryReport(true); },               sheetName: CONFIG.SHEETS.EXPENSES_REPORT, save: true,  errorMsg: 'لم يتم العثور على تقرير المصروفات' },
+    revenues:      { updateFn: function() { rebuildRevenueSummaryReport(true); },               sheetName: CONFIG.SHEETS.REVENUE_REPORT,  save: true,  errorMsg: 'لم يتم العثور على تقرير الإيرادات' }
+};
+
+/**
+ * ⭐ دالة موحدة لتوليد أي تقرير PDF وإرساله
  * @param {string} chatId - معرف المحادثة
- * @param {number} daysAhead - عدد الأيام للتنبيهات
+ * @param {string} reportType - نوع التقرير (alerts, balances, profitability, expenses, revenues)
  * @returns {Object} - نتيجة العملية
  */
-function generateAlertsPDF(chatId, daysAhead) {
+function generateReportPDF_(chatId, reportType) {
     try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // تحديث شيت التنبيهات (وضع صامت للبوت)
-        updateAlerts(true);
-
-        // البحث عن شيت التنبيهات
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.ALERTS);
-
-        if (!sheet) {
-            throw new Error('لم يتم العثور على شيت التنبيهات');
+        var config = PDF_REPORT_REGISTRY_[reportType];
+        if (!config) {
+            return { success: false, error: 'نوع تقرير غير معروف: ' + reportType };
         }
 
-        // تصدير وإرسال (بدون حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'alerts', sheet, null, false);
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-        return result;
-
-    } catch (error) {
-        Logger.log('❌ Error generating alerts PDF: ' + error.message);
-        return { success: false, error: error.message };
-    }
-}
-
-/**
- * توليد تقرير الأرصدة وإرساله
- * @param {string} chatId - معرف المحادثة
- * @returns {Object} - نتيجة العملية
- */
-function generateBalancesPDF(chatId) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // تحديث تقرير الموردين
-        rebuildVendorSummaryReport(true);
-
-        // البحث عن شيت تقرير الموردين
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.VENDORS_REPORT);
-
-        if (!sheet) {
-            throw new Error('لم يتم العثور على شيت تقرير الأرصدة');
-        }
-
-        // تصدير وإرسال (بدون حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'balances', sheet, null, false);
-
-        return result;
-
-    } catch (error) {
-        Logger.log('❌ Error generating balances PDF: ' + error.message);
-        return { success: false, error: error.message };
-    }
-}
-
-/**
- * توليد تقرير ربحية المشاريع وإرساله
- * @param {string} chatId - معرف المحادثة
- * @returns {Object} - نتيجة العملية
- */
-function generateProfitabilityPDF(chatId) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // توليد تقرير الربحية (وضع صامت للبوت)
-        generateAllProjectsProfitabilityReport(true);
+        // تحديث البيانات
+        config.updateFn();
 
         // البحث عن الشيت
-        const sheet = ss.getSheetByName('تقارير ربحية المشاريع');
-
+        var sheet = ss.getSheetByName(config.sheetName);
         if (!sheet) {
-            throw new Error('لم يتم إنشاء تقرير الربحية');
+            throw new Error(config.errorMsg);
         }
 
-        // تصدير وإرسال (مع حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'profitability', sheet, null, true);
-
-        return result;
+        // تصدير وإرسال
+        return generateAndSendReport(chatId, reportType, sheet, null, config.save);
 
     } catch (error) {
-        Logger.log('❌ Error generating profitability PDF: ' + error.message);
+        Logger.log('❌ Error generating ' + reportType + ' PDF: ' + error.message);
         return { success: false, error: error.message };
     }
 }
 
-/**
- * توليد تقرير المصروفات وإرساله
- * @param {string} chatId - معرف المحادثة
- * @returns {Object} - نتيجة العملية
- */
-function generateExpensesPDF(chatId) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // تحديث تقرير المصروفات
-        rebuildExpenseSummaryReport(true);
-
-        // البحث عن الشيت
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.EXPENSES_REPORT);
-
-        if (!sheet) {
-            throw new Error('لم يتم العثور على تقرير المصروفات');
-        }
-
-        // تصدير وإرسال (مع حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'expenses', sheet, null, true);
-
-        return result;
-
-    } catch (error) {
-        Logger.log('❌ Error generating expenses PDF: ' + error.message);
-        return { success: false, error: error.message };
-    }
-}
-
-/**
- * توليد تقرير الإيرادات وإرساله
- * @param {string} chatId - معرف المحادثة
- * @returns {Object} - نتيجة العملية
- */
-function generateRevenuesPDF(chatId) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // تحديث تقرير الإيرادات
-        rebuildRevenueSummaryReport(true);
-
-        // البحث عن الشيت
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.REVENUE_REPORT);
-
-        if (!sheet) {
-            throw new Error('لم يتم العثور على تقرير الإيرادات');
-        }
-
-        // تصدير وإرسال (مع حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'revenues', sheet, null, true);
-
-        return result;
-
-    } catch (error) {
-        Logger.log('❌ Error generating revenues PDF: ' + error.message);
-        return { success: false, error: error.message };
-    }
-}
+// ⭐ الدوال العامة تستدعي الدالة الموحدة (للتوافق مع الكود الحالي)
+function generateAlertsPDF(chatId)        { return generateReportPDF_(chatId, 'alerts'); }
+function generateBalancesPDF(chatId)      { return generateReportPDF_(chatId, 'balances'); }
+function generateProfitabilityPDF(chatId) { return generateReportPDF_(chatId, 'profitability'); }
+function generateExpensesPDF(chatId)      { return generateReportPDF_(chatId, 'expenses'); }
+function generateRevenuesPDF(chatId)      { return generateReportPDF_(chatId, 'revenues'); }
