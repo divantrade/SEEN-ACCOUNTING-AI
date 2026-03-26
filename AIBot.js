@@ -2,7 +2,20 @@
 /**
  * البوت الذكي الرئيسي - يفهم اللغة الطبيعية ويحولها لحركات مالية
  * يعمل بالتوازي مع البوت التقليدي دون التأثير عليه
+ *
+ * ⭐ التحديث المعماري: يدعم الآن وضعين:
+ * - الوضع الذكي (Smart Agent): Gemini يقرر ويبحث ويسأل عبر Function Calling
+ * - الوضع التقليدي (Legacy): النظام القديم كـ fallback
+ * للتبديل: غيّر USE_SMART_AGENT أدناه
  */
+
+// ==================== إعداد الوضع ====================
+/**
+ * ⭐ مفتاح التبديل بين النظام الذكي والقديم
+ * true = Smart Agent (الجديد مع Function Calling)
+ * false = Legacy (النظام القديم)
+ */
+var USE_SMART_AGENT = true;
 
 // ==================== تخزين جلسات المستخدمين ====================
 const aiUserSessions = {};
@@ -360,6 +373,22 @@ function handleAIMessage(message) {
             }
             break;
 
+        // ⭐ حالات Smart Agent الجديدة
+        case 'smart_waiting_user':
+        case 'smart_waiting_confirm':
+            if (looksLikeNewTransaction_(text)) {
+                Logger.log('🧠 New transaction detected in smart mode, resetting');
+                resetAIUserSession(chatId);
+                if (USE_SMART_AGENT) {
+                    processSmartTransaction_(chatId, text, user);
+                } else {
+                    processNewTransaction(chatId, text, user);
+                }
+            } else {
+                handleSmartUserReply_(chatId, text, user);
+            }
+            break;
+
         default:
             // ⭐ التحقق من وضع التقارير أولاً
             if (isInReportMode(session)) {
@@ -371,7 +400,11 @@ function handleAIMessage(message) {
             // تحليل النص كحركة مالية جديدة
             Logger.log('⚠️ DEFAULT CASE - Processing as new transaction');
             Logger.log('⚠️ Session state was: "' + session.state + '"');
-            processNewTransaction(chatId, text, user);
+            if (USE_SMART_AGENT) {
+                processSmartTransaction_(chatId, text, user);
+            } else {
+                processNewTransaction(chatId, text, user);
+            }
     }
 }
 
@@ -429,6 +462,224 @@ function handleAICommand(chatId, command, user) {
 /**
  * تحليل ومعالجة حركة جديدة
  */
+// ==================== Smart Agent: معالجة الحركات ====================
+
+/**
+ * ⭐ معالجة حركة جديدة باستخدام Smart Agent
+ * يحل محل processNewTransaction عندما USE_SMART_AGENT = true
+ */
+function processSmartTransaction_(chatId, text, user) {
+    Logger.log('🧠═══════════════════════════════════════');
+    Logger.log('🧠 Smart Agent: processSmartTransaction STARTED');
+    Logger.log('🧠 text: ' + text);
+
+    sendAIMessage(chatId, '🔄 *جاري التحليل الذكي...*', { parse_mode: 'Markdown' });
+
+    try {
+        var session = getAIUserSession(chatId);
+        var conversationHistory = session.agentHistory || null;
+
+        var agentResult = smartAnalyze(text, conversationHistory);
+
+        Logger.log('🧠 Agent result action: ' + agentResult.action);
+
+        handleSmartAgentResult_(chatId, agentResult, text, user);
+
+    } catch (error) {
+        Logger.log('❌ Smart Agent Error: ' + error.message);
+        Logger.log('⚠️ Falling back to legacy...');
+        processNewTransaction(chatId, text, user);
+    }
+}
+
+/**
+ * ⭐ معالجة نتيجة الـ Smart Agent
+ */
+function handleSmartAgentResult_(chatId, agentResult, originalText, user) {
+    var session = getAIUserSession(chatId);
+
+    switch (agentResult.action) {
+        case 'ASK_USER':
+            // AI يريد سؤال المستخدم
+            Logger.log('🧠 Agent asks user: ' + agentResult.question);
+
+            session.state = 'smart_waiting_user';
+            session.agentHistory = agentResult.agentHistory;
+            session.originalText = originalText;
+            session.user = user;
+            saveAIUserSession(chatId, session);
+
+            // إرسال السؤال مع أزرار إن وُجدت
+            var askOptions = { parse_mode: 'Markdown' };
+            if (agentResult.options && agentResult.options.length > 0) {
+                var buttons = agentResult.options.map(function(opt) {
+                    return [{ text: opt.text, callback_data: 'smart_' + opt.value }];
+                });
+                buttons.push([{ text: '❌ إلغاء', callback_data: 'smart_cancel' }]);
+                askOptions.reply_markup = JSON.stringify({ inline_keyboard: buttons });
+            }
+            sendAIMessage(chatId, agentResult.question, askOptions);
+            break;
+
+        case 'SHOW_CONFIRMATION':
+            // AI يريد عرض ملخص للتأكيد
+            Logger.log('🧠 Agent shows confirmation');
+
+            var tx = agentResult.transaction;
+            session.state = 'smart_waiting_confirm';
+            session.transaction = tx;
+            session.agentHistory = agentResult.agentHistory;
+            session.user = user;
+            saveAIUserSession(chatId, session);
+
+            // بناء الملخص
+            var summary = buildSmartConfirmationMessage_(tx);
+
+            var confirmButtons = [
+                [{ text: '✅ تأكيد وحفظ', callback_data: 'smart_confirm' }],
+                [{ text: '✏️ تعديل', callback_data: 'ai_edit' }],
+                [{ text: '❌ إلغاء', callback_data: 'smart_cancel' }]
+            ];
+
+            sendAIMessage(chatId, summary, {
+                parse_mode: 'Markdown',
+                reply_markup: JSON.stringify({ inline_keyboard: confirmButtons })
+            });
+            break;
+
+        case 'SEND_MESSAGE':
+            // AI يريد إرسال رسالة نصية (معلومات أو سؤال حر)
+            Logger.log('🧠 Agent sends message');
+
+            session.state = 'smart_waiting_user';
+            session.agentHistory = agentResult.agentHistory;
+            session.user = user;
+            saveAIUserSession(chatId, session);
+
+            sendAIMessage(chatId, sanitizeMarkdown_(agentResult.message), { parse_mode: 'Markdown' });
+            break;
+
+        case 'LEGACY_RESULT':
+            // Fallback - النظام القديم أرجع نتيجة
+            Logger.log('🧠 Using legacy result');
+            session.transaction = agentResult.result.transaction;
+            session.validation = agentResult.result.validation;
+            session.originalText = originalText;
+            saveAIUserSession(chatId, session);
+            showTransactionConfirmation(chatId, session);
+            break;
+
+        case 'ERROR':
+            sendAIMessage(chatId, '❌ ' + (agentResult.error || 'حدث خطأ غير متوقع'));
+            break;
+
+        default:
+            Logger.log('⚠️ Unknown agent action: ' + agentResult.action);
+            sendAIMessage(chatId, '❌ حدث خطأ في معالجة الحركة');
+    }
+}
+
+/**
+ * ⭐ معالجة رد المستخدم في وضع Smart Agent
+ */
+function handleSmartUserReply_(chatId, text, user) {
+    Logger.log('🧠 Smart Agent: handling user reply: ' + text);
+
+    var session = getAIUserSession(chatId);
+
+    try {
+        var agentResult = smartContinue(text, session);
+        handleSmartAgentResult_(chatId, agentResult, session.originalText || text, user);
+    } catch (error) {
+        Logger.log('❌ Smart continue error: ' + error.message);
+        sendAIMessage(chatId, '❌ حدث خطأ. جاري إعادة المحاولة...');
+        // Reset and try legacy
+        resetAIUserSession(chatId);
+        processNewTransaction(chatId, session.originalText || text, user);
+    }
+}
+
+/**
+ * ⭐ معالجة callbacks الـ Smart Agent
+ */
+function handleSmartCallback_(chatId, callbackData, user) {
+    Logger.log('🧠 Smart callback: ' + callbackData);
+
+    if (callbackData === 'smart_cancel') {
+        sendAIMessage(chatId, '❌ تم إلغاء العملية');
+        resetAIUserSession(chatId);
+        return true;
+    }
+
+    if (callbackData === 'smart_confirm') {
+        var session = getAIUserSession(chatId);
+        if (session.transaction) {
+            try {
+                var result = saveAITransaction(session.transaction);
+                if (result.success) {
+                    sendAIMessage(chatId, '✅ *تم تسجيل الحركة بنجاح!*\n📌 رقم الحركة: #' + result.transactionId, { parse_mode: 'Markdown' });
+                } else {
+                    sendAIMessage(chatId, '❌ خطأ في الحفظ: ' + (result.error || 'خطأ غير معروف'));
+                }
+            } catch (e) {
+                sendAIMessage(chatId, '❌ خطأ: ' + e.message);
+            }
+            resetAIUserSession(chatId);
+        }
+        return true;
+    }
+
+    // أزرار الاختيار من Smart Agent (smart_VALUE)
+    if (callbackData.indexOf('smart_') === 0) {
+        var value = callbackData.substring(6); // إزالة 'smart_'
+        handleSmartUserReply_(chatId, value, user);
+        return true;
+    }
+
+    return false; // ليس callback خاص بالـ Smart Agent
+}
+
+/**
+ * ⭐ بناء رسالة التأكيد للـ Smart Agent
+ */
+function buildSmartConfirmationMessage_(tx) {
+    var emoji = getTransactionEmoji(tx.nature);
+    var msg = emoji + ' *تأكيد الحركة*\n';
+    msg += '━━━━━━━━━━━━━━━━\n';
+
+    if (tx.nature) msg += '📤 *الطبيعة:* ' + tx.nature + '\n';
+    if (tx.classification) msg += '📊 *التصنيف:* ' + tx.classification + '\n';
+    if (tx.project) {
+        var projDisplay = tx.project;
+        if (tx.project_code) projDisplay += ' (' + tx.project_code + ')';
+        msg += '🎬 *المشروع:* ' + projDisplay + '\n';
+    }
+    if (tx.item) msg += '📋 *البند:* ' + tx.item + '\n';
+    if (tx.party) {
+        msg += '👤 *الطرف:* ' + tx.party;
+        if (tx.is_new_party || tx.isNewParty) msg += ' (جديد)';
+        msg += '\n';
+    }
+
+    msg += '💰 *المبلغ:* ' + formatNumber(tx.amount) + ' ' + (tx.currency || 'USD') + '\n';
+
+    if (tx.currency && tx.currency !== 'USD') {
+        var usdAmt = calculateUSDAmount(tx.amount, tx.currency, tx.exchange_rate || tx.exchangeRate);
+        msg += '💵 *بالدولار:* ' + formatNumber(usdAmt) + ' USD\n';
+    }
+
+    if (tx.due_date) msg += '📅 *التاريخ:* ' + tx.due_date + '\n';
+    if (tx.payment_method) msg += '💳 *طريقة الدفع:* ' + tx.payment_method + '\n';
+    if (tx.payment_term) msg += '⏰ *شرط الدفع:* ' + tx.payment_term + '\n';
+    if (tx.details) msg += '📝 *التفاصيل:* ' + tx.details + '\n';
+    if (tx.unit_count) msg += '📊 *عدد الوحدات:* ' + tx.unit_count + '\n';
+
+    msg += '━━━━━━━━━━━━━━━━';
+    return msg;
+}
+
+// ==================== النظام القديم (Legacy) ====================
+
 function processNewTransaction(chatId, text, user) {
     Logger.log('═══════════════════════════════════════');
     Logger.log('📊 processNewTransaction STARTED');
@@ -1935,6 +2186,13 @@ function handleAICallback(callbackQuery) {
         Logger.log('📥 Cancel callback - processing immediately');
         sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.CANCELLED);
         resetAIUserSession(chatId);
+        return;
+    }
+
+    // ⭐ معالجة callbacks الـ Smart Agent
+    if (data.indexOf('smart_') === 0) {
+        Logger.log('🧠 Smart Agent callback: ' + data);
+        handleSmartCallback_(chatId, data, user);
         return;
     }
 
