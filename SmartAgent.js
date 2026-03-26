@@ -35,8 +35,8 @@ var SMART_AGENT_CONFIG = {
  * أقصر وأدق من البرومبت القديم لأن الأدوات تتولى التفاصيل
  */
 function buildAgentSystemPrompt_() {
-    var today = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd');
-    var dayName = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'EEEE');
+    var today = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
+    var dayName = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'EEEE');
 
     return `أنت محاسب ذكي في نظام SEEN لإنتاج الأفلام الوثائقية.
 مهمتك: تحليل رسائل المستخدم العربية واستخراج الحركات المالية.
@@ -440,25 +440,25 @@ function fallbackToLegacy_(userMessage) {
 function getNextDay_() {
     var d = new Date();
     d.setDate(d.getDate() + 1);
-    return Utilities.formatDate(d, 'Asia/Istanbul', 'yyyy-MM-dd');
+    return Utilities.formatDate(d, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
 }
 
 function getYesterday_() {
     var d = new Date();
     d.setDate(d.getDate() - 1);
-    return Utilities.formatDate(d, 'Asia/Istanbul', 'yyyy-MM-dd');
+    return Utilities.formatDate(d, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
 }
 
 function getDateAfterMonths_(months) {
     var d = new Date();
     d.setMonth(d.getMonth() + months);
-    return Utilities.formatDate(d, 'Asia/Istanbul', 'yyyy-MM-dd');
+    return Utilities.formatDate(d, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
 }
 
 function getDateAfterWeeks_(weeks) {
     var d = new Date();
     d.setDate(d.getDate() + (weeks * 7));
-    return Utilities.formatDate(d, 'Asia/Istanbul', 'yyyy-MM-dd');
+    return Utilities.formatDate(d, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
 }
 
 // ==================== دالة اختبار ====================

@@ -204,7 +204,7 @@ function buildFullPrompt(userMessage, context) {
  */
 function generateDateSection_() {
     const now = new Date();
-    const tz = 'Asia/Istanbul';
+    const tz = CONFIG.COMPANY.TIMEZONE;
 
     // تنسيق التاريخ بـ YYYY-MM-DD
     function fmt(d) {
@@ -1312,7 +1312,7 @@ function validateTransaction(transaction, context) {
 
     // تحويل التاريخ
     if (transaction.due_date === 'TODAY' || !transaction.due_date) {
-        validation.enriched.due_date = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd');
+        validation.enriched.due_date = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
     }
 
     // ⭐ التحقق من تاريخ استحقاق السلفة/التمويل

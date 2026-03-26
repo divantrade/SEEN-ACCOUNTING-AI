@@ -608,7 +608,7 @@ function addBotTransaction(transactionData) {
     const newRow = lastRow + 1;
 
     // تحديد رقم الحركة
-    const transactionId = 'BOT-' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyyMMdd-HHmmss');
+    const transactionId = 'BOT-' + Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyyMMdd-HHmmss');
 
     // إعداد البيانات
     const rowData = new Array(Object.keys(columns).length).fill('');

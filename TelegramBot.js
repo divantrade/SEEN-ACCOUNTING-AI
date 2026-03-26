@@ -2108,7 +2108,7 @@ function handleCustomDateInput(chatId, text, session) {
     session.state = BOT_CONFIG.CONVERSATION_STATES.WAITING_ATTACHMENT;
     saveUserSession(chatId, session);
 
-    const formattedDate = Utilities.formatDate(date, 'Asia/Istanbul', 'dd/MM/yyyy');
+    const formattedDate = Utilities.formatDate(date, CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy');
     sendMessage(chatId, `✅ تاريخ الاستحقاق: *${formattedDate}*`, null, 'Markdown');
     sendMessage(chatId, BOT_CONFIG.INTERACTIVE_MESSAGES.ASK_ATTACHMENT,
         BOT_CONFIG.KEYBOARDS.ATTACHMENT, 'Markdown');

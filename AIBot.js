@@ -1604,7 +1604,7 @@ function handleLoanDueDateInput(chatId, text, session) {
     }
 
     // حفظ تاريخ الاستحقاق
-    const formattedDate = Utilities.formatDate(dueDate, 'Asia/Istanbul', 'yyyy-MM-dd');
+    const formattedDate = Utilities.formatDate(dueDate, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
     session.transaction.loan_due_date = formattedDate;
 
     if (!session.validation.enriched) {
@@ -1615,7 +1615,7 @@ function handleLoanDueDateInput(chatId, text, session) {
 
     saveAIUserSession(chatId, session);
 
-    const displayDate = Utilities.formatDate(dueDate, 'Asia/Istanbul', 'dd-MM-yyyy');
+    const displayDate = Utilities.formatDate(dueDate, CONFIG.COMPANY.TIMEZONE, 'dd-MM-yyyy');
     sendAIMessage(chatId, `✅ تم تحديد تاريخ السداد: *${displayDate}*`, { parse_mode: 'Markdown' });
 
     continueValidation(chatId, session);
@@ -2839,7 +2839,7 @@ function addNewPartyFromAI(transaction, user, chatId) {
 
         if (!sheet) return;
 
-        const timestamp = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd HH:mm:ss');
+        const timestamp = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
 
         // تحديد نوع الطرف
         const partyType = transaction.partyType || inferPartyType(transaction.nature, transaction.classification);
@@ -2875,7 +2875,7 @@ function addNewPartyFromAI(transaction, user, chatId) {
  */
 function generateTransactionId() {
     const now = new Date();
-    const timestamp = Utilities.formatDate(now, 'Asia/Istanbul', 'yyMMddHHmmss');
+    const timestamp = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'yyMMddHHmmss');
     const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
     return `AI${timestamp}${random}`;
 }
@@ -3977,7 +3977,7 @@ function parseArabicDate(dateStr) {
 
         return convertedStr;
     } catch (error) {
-        return Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd');
+        return Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
     }
 }
 
@@ -4036,46 +4036,7 @@ function stopAIBot() {
     Logger.log('تم إيقاف البوت الذكي');
 }
 
-/**
- * حذف Webhook إذا كان موجوداً - مطلوب لعمل Long Polling
- * شغّل هذه الدالة مرة واحدة إذا كان البوت لا يستجيب
- */
-function deleteAIBotWebhook() {
-    const token = PropertiesService.getScriptProperties().getProperty('AI_BOT_TOKEN');
-    if (!token) {
-        Logger.log('❌ لم يتم تعيين AI_BOT_TOKEN');
-        return;
-    }
-
-    // أولاً: فحص الـ Webhook الحالي
-    const infoUrl = `https://api.telegram.org/bot${token}/getWebhookInfo`;
-    const infoResponse = UrlFetchApp.fetch(infoUrl);
-    const infoData = JSON.parse(infoResponse.getContentText());
-
-    Logger.log('📋 معلومات Webhook الحالية:');
-    Logger.log(JSON.stringify(infoData, null, 2));
-
-    if (infoData.result && infoData.result.url && infoData.result.url !== '') {
-        Logger.log('⚠️ يوجد Webhook مُفعّل: ' + infoData.result.url);
-        Logger.log('🗑️ جاري حذف الـ Webhook...');
-
-        // حذف الـ Webhook
-        const deleteUrl = `https://api.telegram.org/bot${token}/deleteWebhook`;
-        const deleteResponse = UrlFetchApp.fetch(deleteUrl);
-        const deleteData = JSON.parse(deleteResponse.getContentText());
-
-        if (deleteData.ok) {
-            Logger.log('✅ تم حذف الـ Webhook بنجاح!');
-            Logger.log('🔄 الآن البوت سيعمل بـ Long Polling');
-        } else {
-            Logger.log('❌ فشل حذف الـ Webhook: ' + JSON.stringify(deleteData));
-        }
-    } else {
-        Logger.log('✅ لا يوجد Webhook مُفعّل - البوت يعمل بـ Long Polling');
-    }
-
-    return infoData;
-}
+// deleteAIBotWebhook() موجودة في AIConfig.js (النسخة الأكثر اكتمالاً)
 
 // ==================== دوال الأوردر المشترك (Shared Order) ====================
 
@@ -4245,7 +4206,7 @@ function saveSharedOrderFromAI(chatId, session) {
             : new Date();
 
         // إنشاء رقم الأوردر المشترك
-        const sharedOrderId = 'SO-' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyyMMdd-HHmmss');
+        const sharedOrderId = 'SO-' + Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyyMMdd-HHmmss');
 
         const savedTransactions = [];
         let transactionCounter = 0;

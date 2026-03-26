@@ -333,39 +333,5 @@ function testConfigSuite_() {
 }
 
 // ==================== تشغيل مجموعات فردية ====================
-
-/**
- * تشغيل اختبارات FuzzySearch فقط
- */
-function runFuzzySearchTests() {
-    resetTestResults_();
-    testFuzzySearchSuite_();
-    return printTestReport_();
-}
-
-/**
- * تشغيل اختبارات AI Parser فقط
- */
-function runAIParserTests() {
-    resetTestResults_();
-    testAIParserSuite_();
-    return printTestReport_();
-}
-
-/**
- * تشغيل اختبارات العملات فقط
- */
-function runCurrencyTests() {
-    resetTestResults_();
-    testCurrencySuite_();
-    return printTestReport_();
-}
-
-/**
- * تشغيل اختبارات نوع الحركة فقط
- */
-function runMovementTypeTests() {
-    resetTestResults_();
-    testMovementTypeSuite_();
-    return printTestReport_();
-}
+// دوال التشغيل الفردية (runFuzzySearchTests, runAIParserTests, etc.)
+// موجودة في TestRunner.js

@@ -5592,17 +5592,17 @@ function createInvoiceTemplateSheet(ss) {
 
   // ===== Company header =====
   sheet.getRange('A1:D1').merge()
-    .setValue('START SCENE MEDIA PRODUKSIYON LIMITED')
+    .setValue(CONFIG.COMPANY.NAME)
     .setFontSize(13)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
   sheet.getRange('A2:D2').merge()
-    .setValue('212 My Office - Office No177 - Istanbul - Bagcilar')
+    .setValue(CONFIG.COMPANY.ADDRESS)
     .setHorizontalAlignment('center');
 
   sheet.getRange('A3:D3').merge()
-    .setValue('Finance@seenfilm.net  |   www.seenfilm.net')
+    .setValue(CONFIG.COMPANY.CONTACT)
     .setHorizontalAlignment('center');
 
   // ===== INVOICE title =====

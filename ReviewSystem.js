@@ -528,7 +528,7 @@ function approveTransaction(rowNumber) {
         if (chatId) {
             notifyUserApproval(chatId, {
                 transactionId: rowData[columns.TRANSACTION_ID.index - 1],
-                date: Utilities.formatDate(new Date(rowData[columns.DATE.index - 1]), 'Asia/Istanbul', 'dd/MM/yyyy'),
+                date: Utilities.formatDate(new Date(rowData[columns.DATE.index - 1]), CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy'),
                 amount: rowData[columns.AMOUNT.index - 1],
                 currency: rowData[columns.CURRENCY.index - 1],
                 partyName: rowData[columns.PARTY_NAME.index - 1]
@@ -588,7 +588,7 @@ function rejectBotTransaction(rowNumber, reason) {
         if (chatId) {
             notifyUserRejection(chatId, {
                 transactionId: rowData[columns.TRANSACTION_ID.index - 1],
-                date: Utilities.formatDate(new Date(rowData[columns.DATE.index - 1]), 'Asia/Istanbul', 'dd/MM/yyyy'),
+                date: Utilities.formatDate(new Date(rowData[columns.DATE.index - 1]), CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy'),
                 amount: rowData[columns.AMOUNT.index - 1],
                 currency: rowData[columns.CURRENCY.index - 1],
                 partyName: rowData[columns.PARTY_NAME.index - 1]

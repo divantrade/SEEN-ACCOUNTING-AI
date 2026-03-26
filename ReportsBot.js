@@ -209,7 +209,7 @@ function handleReportPartySearch(chatId, text, session) {
         Logger.log('🔍 Searching for party: ' + text);
 
         const partyType = session.reportData.partyType;
-        const parties = searchPartiesByName(text, partyType);
+        const parties = searchParties(text, { partyType: partyType, useSmartMatch: true });
 
         if (parties.length === 0) {
             sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.NO_PARTIES_FOUND);
@@ -249,174 +249,8 @@ function handleReportPartySearch(chatId, text, session) {
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-/**
- * تطبيع النص العربي للبحث الذكي
- * يوحد أشكال الحروف المختلفة ويزيل التشكيل
- * @param {string} text - النص الأصلي
- * @returns {string} - النص المطبّع
- */
-function normalizeArabicText(text) {
-    if (!text) return '';
-
-    let normalized = String(text).trim();
-
-    // إزالة التشكيل (الحركات)
-    normalized = normalized.replace(/[\u064B-\u065F\u0670]/g, '');
-
-    // توحيد أشكال الألف
-    normalized = normalized.replace(/[أإآٱ]/g, 'ا');
-
-    // توحيد الياء والألف المقصورة
-    normalized = normalized.replace(/[ىئ]/g, 'ي');
-
-    // توحيد التاء المربوطة والهاء
-    normalized = normalized.replace(/ة/g, 'ه');
-
-    // توحيد الواو
-    normalized = normalized.replace(/ؤ/g, 'و');
-
-    // إزالة المسافات الزائدة
-    normalized = normalized.replace(/\s+/g, ' ').trim();
-
-    return normalized.toLowerCase();
-}
-
-/**
- * فحص تطابق البحث الذكي
- * @param {string} name - اسم الطرف
- * @param {string} searchText - نص البحث
- * @returns {Object} - نتيجة المطابقة مع درجة التطابق
- */
-function smartArabicMatch(name, searchText) {
-    const normalizedName = normalizeArabicText(name);
-    const normalizedSearch = normalizeArabicText(searchText);
-
-    // 1️⃣ تطابق تام (أعلى أولوية)
-    if (normalizedName === normalizedSearch) {
-        return { match: true, score: 100 };
-    }
-
-    // 2️⃣ الاسم يحتوي على نص البحث كاملاً
-    if (normalizedName.includes(normalizedSearch)) {
-        return { match: true, score: 80 };
-    }
-
-    // 3️⃣ البحث بالاسم الأول فقط
-    const nameParts = normalizedName.split(' ');
-    const searchParts = normalizedSearch.split(' ');
-
-    // تطابق الاسم الأول
-    if (nameParts[0] === searchParts[0]) {
-        return { match: true, score: 70 };
-    }
-
-    // 4️⃣ أي جزء من الاسم يحتوي على البحث
-    for (const part of nameParts) {
-        if (part.includes(normalizedSearch) || normalizedSearch.includes(part)) {
-            return { match: true, score: 60 };
-        }
-    }
-
-    // 5️⃣ تطابق جزئي (حرفين على الأقل متتاليين)
-    if (normalizedSearch.length >= 2) {
-        for (let i = 0; i <= normalizedName.length - 2; i++) {
-            const chunk = normalizedName.substring(i, i + Math.min(normalizedSearch.length, normalizedName.length - i));
-            if (chunk.includes(normalizedSearch.substring(0, 2))) {
-                return { match: true, score: 40 };
-            }
-        }
-    }
-
-    return { match: false, score: 0 };
-}
-
-/**
- * البحث عن الأطراف بالاسم
- * @param {string} searchText - نص البحث
- * @param {string} partyType - نوع الطرف
- * @returns {Array} - قائمة الأطراف المطابقة
- */
-function searchPartiesByName(searchText, partyType) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const results = [];
-        const addedNames = new Set();
-
-        // ⭐ 1. البحث في شيت الأطراف الرئيسي
-        const mainSheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
-        if (mainSheet) {
-            const data = mainSheet.getDataRange().getValues();
-            for (let i = 1; i < data.length; i++) {
-                const row = data[i];
-                const name = String(row[0] || '').trim(); // العمود A - الاسم
-                const type = String(row[1] || '').trim(); // العمود B - النوع
-
-                // ✅ التحقق من النوع والاسم باستخدام البحث الذكي
-                if (type === partyType && name) {
-                    const matchResult = smartArabicMatch(name, searchText);
-                    if (matchResult.match) {
-                        const normalizedName = normalizeArabicText(name);
-                        if (!addedNames.has(normalizedName)) {
-                            results.push({
-                                name: name,
-                                type: type,
-                                code: '', // لا يوجد كود في الشيت الرئيسي
-                                score: matchResult.score // درجة التطابق للترتيب
-                            });
-                            addedNames.add(normalizedName);
-                        }
-                    }
-                }
-            }
-        }
-
-        // ⭐ 2. البحث في شيت أطراف البوت
-        const botSheet = ss.getSheetByName(CONFIG.SHEETS.BOT_PARTIES);
-        if (botSheet) {
-            const data = botSheet.getDataRange().getValues();
-            for (let i = 1; i < data.length; i++) {
-                const row = data[i];
-                const name = String(row[0] || '').trim(); // العمود A - الاسم
-                const type = String(row[1] || '').trim(); // العمود B - النوع
-
-                // ✅ البحث الذكي
-                if (type === partyType && name) {
-                    const matchResult = smartArabicMatch(name, searchText);
-                    if (matchResult.match) {
-                        const normalizedName = normalizeArabicText(name);
-                        if (!addedNames.has(normalizedName)) {
-                            results.push({
-                                name: name,
-                                type: type,
-                                code: '',
-                                score: matchResult.score
-                            });
-                            addedNames.add(normalizedName);
-                        }
-                    }
-                }
-            }
-        }
-
-        Logger.log('🔍 Found ' + results.length + ' parties matching "' + searchText + '" of type ' + partyType);
-
-        // ✅ ترتيب النتائج حسب درجة التطابق (الأعلى أولاً)
-        results.sort((a, b) => {
-            // ترتيب حسب درجة التطابق أولاً
-            if (b.score !== a.score) {
-                return b.score - a.score;
-            }
-            // ثم أبجدياً بالعربي
-            return a.name.localeCompare(b.name, 'ar');
-        });
-
-        return results.slice(0, 10); // أقصى 10 نتائج
-
-    } catch (error) {
-        Logger.log('❌ Error searching parties: ' + error.message);
-        return [];
-    }
-}
+// ⭐ normalizeArabicText و smartArabicMatch و searchParties
+// موجودون في FuzzySearch.js (مصدر واحد للحقيقة)
 
 /**
  * بناء لوحة مفاتيح اختيار الطرف
@@ -554,7 +388,7 @@ function sendAlertsTextSummary(chatId, daysAhead) {
             try {
                 const d = new Date(date);
                 if (isNaN(d.getTime())) return '-';
-                return Utilities.formatDate(d, 'Asia/Istanbul', 'dd/MM/yyyy');
+                return Utilities.formatDate(d, CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy');
             } catch (e) {
                 return '-';
             }
