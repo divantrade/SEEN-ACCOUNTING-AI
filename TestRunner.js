@@ -1,243 +1,367 @@
-// ==================== إطار عمل الاختبارات التلقائية ====================
-/**
- * إطار اختبار خفيف لبيئة Google Apps Script
- * يدعم التأكيدات (assertions)، تجميع الاختبارات، وتقارير النتائج
- *
- * الاستخدام:
- *   شغّل دالة runAllTests() من محرر Apps Script
- *   أو شغّل مجموعة محددة مثل runFuzzySearchTests()
- */
-
-// ==================== محرك الاختبارات ====================
+// ==================== إطار عمل الاختبارات - SEEN Test Runner ====================
+// يوفر دوال التحقق (assertions) وتتبع النتائج وطباعة التقارير
+// يُستخدم مع Tests.js الذي يحتوي على مجموعات الاختبارات الفعلية
 
 /**
- * كائن تسجيل نتائج الاختبارات
+ * كائن تتبع نتائج الاختبارات
  */
 var TestResults_ = {
-    total: 0,
-    passed: 0,
-    failed: 0,
-    errors: [],
-    currentSuite: ''
+  total: 0,
+  passed: 0,
+  failed: 0,
+  errors: [],
+  currentSuite: '',
+  currentTest: ''
 };
 
 /**
- * إعادة تعيين النتائج
+ * إعادة تهيئة نتائج الاختبارات
  */
 function resetTestResults_() {
-    TestResults_.total = 0;
-    TestResults_.passed = 0;
-    TestResults_.failed = 0;
-    TestResults_.errors = [];
-    TestResults_.currentSuite = '';
+  TestResults_.total = 0;
+  TestResults_.passed = 0;
+  TestResults_.failed = 0;
+  TestResults_.errors = [];
+  TestResults_.currentSuite = '';
+  TestResults_.currentTest = '';
 }
 
 /**
- * تعيين اسم مجموعة الاختبارات الحالية
+ * تعريف مجموعة اختبارات
+ * @param {string} suiteName - اسم المجموعة
+ * @param {Function} fn - دالة تحتوي على الاختبارات
  */
-function describe_(suiteName) {
-    TestResults_.currentSuite = suiteName;
-    Logger.log('\n📦 ' + suiteName);
-    Logger.log('─'.repeat(40));
+function describe_(suiteName, fn) {
+  TestResults_.currentSuite = suiteName;
+  Logger.log('\n📋 ' + suiteName);
+  Logger.log('─'.repeat(50));
+  try {
+    fn();
+  } catch (e) {
+    TestResults_.total++;
+    TestResults_.failed++;
+    TestResults_.errors.push({
+      suite: suiteName,
+      test: 'Suite Error',
+      message: e.message || String(e)
+    });
+    Logger.log('  ❌ Suite error: ' + (e.message || String(e)));
+  }
 }
-
-// ==================== دوال التأكيد (Assertions) ====================
 
 /**
  * التحقق من تساوي قيمتين
+ * @param {*} actual - القيمة الفعلية
+ * @param {*} expected - القيمة المتوقعة
+ * @param {string} testName - اسم الاختبار
  */
-function assertEqual_(actual, expected, message) {
-    TestResults_.total++;
-    if (actual === expected) {
-        TestResults_.passed++;
-        Logger.log('  ✅ ' + message);
-    } else {
-        TestResults_.failed++;
-        var error = '  ❌ ' + message + ' | متوقع: ' + JSON.stringify(expected) + ' | فعلي: ' + JSON.stringify(actual);
-        Logger.log(error);
-        TestResults_.errors.push(TestResults_.currentSuite + ' → ' + message);
-    }
+function assertEqual_(actual, expected, testName) {
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  if (actual === expected) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  } else {
+    TestResults_.failed++;
+    var msg = 'Expected "' + expected + '" but got "' + actual + '"';
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  }
 }
 
 /**
  * التحقق من أن القيمة true
+ * @param {*} value - القيمة
+ * @param {string} testName - اسم الاختبار
  */
-function assertTrue_(value, message) {
-    assertEqual_(!!value, true, message);
+function assertTrue_(value, testName) {
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  if (value === true) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  } else {
+    TestResults_.failed++;
+    var msg = 'Expected true but got "' + value + '"';
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  }
 }
 
 /**
  * التحقق من أن القيمة false
+ * @param {*} value - القيمة
+ * @param {string} testName - اسم الاختبار
  */
-function assertFalse_(value, message) {
-    assertEqual_(!!value, false, message);
+function assertFalse_(value, testName) {
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  if (value === false) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  } else {
+    TestResults_.failed++;
+    var msg = 'Expected false but got "' + value + '"';
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  }
 }
 
 /**
- * التحقق من تساوي تقريبي للأرقام العشرية
+ * التحقق من تساوي تقريبي (للأرقام العشرية)
+ * @param {number} actual - القيمة الفعلية
+ * @param {number} expected - القيمة المتوقعة
+ * @param {string} testName - اسم الاختبار
+ * @param {number} [tolerance=0.01] - هامش الخطأ المسموح
  */
-function assertAlmostEqual_(actual, expected, tolerance, message) {
-    TestResults_.total++;
-    if (Math.abs(actual - expected) <= (tolerance || 0.01)) {
-        TestResults_.passed++;
-        Logger.log('  ✅ ' + message);
-    } else {
-        TestResults_.failed++;
-        var error = '  ❌ ' + message + ' | متوقع: ~' + expected + ' | فعلي: ' + actual;
-        Logger.log(error);
-        TestResults_.errors.push(TestResults_.currentSuite + ' → ' + message);
-    }
+function assertAlmostEqual_(actual, expected, testName, tolerance) {
+  tolerance = tolerance || 0.01;
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  if (Math.abs(actual - expected) <= tolerance) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  } else {
+    TestResults_.failed++;
+    var msg = 'Expected ~' + expected + ' (±' + tolerance + ') but got ' + actual;
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  }
 }
 
 /**
- * التحقق من أن القيمة null أو undefined
+ * التحقق من أن القيمة null
+ * @param {*} value - القيمة
+ * @param {string} testName - اسم الاختبار
  */
-function assertNull_(value, message) {
-    TestResults_.total++;
-    if (value === null || value === undefined) {
-        TestResults_.passed++;
-        Logger.log('  ✅ ' + message);
-    } else {
-        TestResults_.failed++;
-        var error = '  ❌ ' + message + ' | متوقع: null | فعلي: ' + JSON.stringify(value);
-        Logger.log(error);
-        TestResults_.errors.push(TestResults_.currentSuite + ' → ' + message);
-    }
+function assertNull_(value, testName) {
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  if (value === null || value === undefined) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  } else {
+    TestResults_.failed++;
+    var msg = 'Expected null/undefined but got "' + value + '"';
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  }
 }
 
 /**
- * التحقق من أن القيمة ليست null أو undefined
+ * التحقق من أن القيمة ليست null
+ * @param {*} value - القيمة
+ * @param {string} testName - اسم الاختبار
  */
-function assertNotNull_(value, message) {
-    TestResults_.total++;
-    if (value !== null && value !== undefined) {
-        TestResults_.passed++;
-        Logger.log('  ✅ ' + message);
-    } else {
-        TestResults_.failed++;
-        var error = '  ❌ ' + message + ' | القيمة null/undefined بشكل غير متوقع';
-        Logger.log(error);
-        TestResults_.errors.push(TestResults_.currentSuite + ' → ' + message);
-    }
+function assertNotNull_(value, testName) {
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  if (value !== null && value !== undefined) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  } else {
+    TestResults_.failed++;
+    var msg = 'Expected non-null value but got ' + value;
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  }
 }
 
 /**
- * التحقق من أن القيمة تحتوي على نص معين
+ * التحقق من أن النص يحتوي على جزء معين
+ * @param {string} haystack - النص الكامل
+ * @param {string} needle - الجزء المطلوب
+ * @param {string} testName - اسم الاختبار
  */
-function assertContains_(haystack, needle, message) {
-    TestResults_.total++;
-    if (String(haystack).indexOf(needle) !== -1) {
-        TestResults_.passed++;
-        Logger.log('  ✅ ' + message);
-    } else {
-        TestResults_.failed++;
-        var error = '  ❌ ' + message + ' | "' + needle + '" غير موجود في النص';
-        Logger.log(error);
-        TestResults_.errors.push(TestResults_.currentSuite + ' → ' + message);
-    }
+function assertContains_(haystack, needle, testName) {
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  if (typeof haystack === 'string' && haystack.indexOf(needle) !== -1) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  } else {
+    TestResults_.failed++;
+    var msg = 'Expected string to contain "' + needle + '"';
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  }
 }
 
 /**
- * التحقق من التساوي العميق للكائنات والمصفوفات
+ * التحقق من تساوي كائنين (مقارنة عميقة)
+ * @param {*} actual - القيمة الفعلية
+ * @param {*} expected - القيمة المتوقعة
+ * @param {string} testName - اسم الاختبار
  */
-function assertDeepEqual_(actual, expected, message) {
-    TestResults_.total++;
-    if (JSON.stringify(actual) === JSON.stringify(expected)) {
-        TestResults_.passed++;
-        Logger.log('  ✅ ' + message);
-    } else {
-        TestResults_.failed++;
-        var error = '  ❌ ' + message + ' | متوقع: ' + JSON.stringify(expected) + ' | فعلي: ' + JSON.stringify(actual);
-        Logger.log(error);
-        TestResults_.errors.push(TestResults_.currentSuite + ' → ' + message);
-    }
+function assertDeepEqual_(actual, expected, testName) {
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  var actualStr = JSON.stringify(actual);
+  var expectedStr = JSON.stringify(expected);
+  if (actualStr === expectedStr) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  } else {
+    TestResults_.failed++;
+    var msg = 'Deep equal failed.\n    Expected: ' + expectedStr + '\n    Actual:   ' + actualStr;
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  }
 }
 
 /**
- * التحقق من أن دالة ترمي خطأ
+ * التحقق من أن الدالة ترمي خطأ
+ * @param {Function} fn - الدالة المراد اختبارها
+ * @param {string} testName - اسم الاختبار
  */
-function assertThrows_(fn, message) {
-    TestResults_.total++;
-    try {
-        fn();
-        TestResults_.failed++;
-        Logger.log('  ❌ ' + message + ' | لم يتم رمي خطأ');
-        TestResults_.errors.push(TestResults_.currentSuite + ' → ' + message);
-    } catch (e) {
-        TestResults_.passed++;
-        Logger.log('  ✅ ' + message);
-    }
+function assertThrows_(fn, testName) {
+  TestResults_.total++;
+  TestResults_.currentTest = testName;
+  try {
+    fn();
+    TestResults_.failed++;
+    var msg = 'Expected function to throw an error but it did not';
+    TestResults_.errors.push({
+      suite: TestResults_.currentSuite,
+      test: testName,
+      message: msg
+    });
+    Logger.log('  ❌ ' + testName + ' → ' + msg);
+  } catch (e) {
+    TestResults_.passed++;
+    Logger.log('  ✅ ' + testName);
+  }
 }
 
-// ==================== طباعة التقرير ====================
-
 /**
- * طباعة ملخص نتائج الاختبارات
+ * طباعة تقرير نتائج الاختبارات
  */
 function printTestReport_() {
-    Logger.log('\n' + '═'.repeat(50));
-    Logger.log('📊 ملخص نتائج الاختبارات');
-    Logger.log('═'.repeat(50));
-    Logger.log('  المجموع: ' + TestResults_.total);
-    Logger.log('  ✅ نجح:  ' + TestResults_.passed);
-    Logger.log('  ❌ فشل:  ' + TestResults_.failed);
+  Logger.log('\n' + '═'.repeat(60));
+  Logger.log('📊 تقرير نتائج الاختبارات');
+  Logger.log('═'.repeat(60));
+  Logger.log('  إجمالي الاختبارات: ' + TestResults_.total);
+  Logger.log('  ✅ ناجح: ' + TestResults_.passed);
+  Logger.log('  ❌ فاشل: ' + TestResults_.failed);
 
-    if (TestResults_.failed > 0) {
-        Logger.log('\n⚠️ الاختبارات الفاشلة:');
-        TestResults_.errors.forEach(function(err) {
-            Logger.log('  • ' + err);
-        });
+  if (TestResults_.total > 0) {
+    var pct = Math.round((TestResults_.passed / TestResults_.total) * 100);
+    Logger.log('  📈 نسبة النجاح: ' + pct + '%');
+  }
+
+  if (TestResults_.errors.length > 0) {
+    Logger.log('\n⚠️ تفاصيل الأخطاء:');
+    Logger.log('─'.repeat(50));
+    for (var i = 0; i < TestResults_.errors.length; i++) {
+      var err = TestResults_.errors[i];
+      Logger.log('  [' + err.suite + '] ' + err.test);
+      Logger.log('    → ' + err.message);
     }
+  }
 
-    var status = TestResults_.failed === 0 ? '✅ جميع الاختبارات نجحت!' : '❌ بعض الاختبارات فشلت';
-    Logger.log('\n' + status);
-    Logger.log('═'.repeat(50));
-
-    return {
-        total: TestResults_.total,
-        passed: TestResults_.passed,
-        failed: TestResults_.failed,
-        success: TestResults_.failed === 0
-    };
+  Logger.log('═'.repeat(60));
+  if (TestResults_.failed === 0) {
+    Logger.log('🎉 جميع الاختبارات ناجحة!');
+  } else {
+    Logger.log('⚠️ يوجد ' + TestResults_.failed + ' اختبار فاشل يحتاج مراجعة');
+  }
 }
-
-// ==================== تشغيل جميع الاختبارات ====================
 
 /**
  * تشغيل جميع مجموعات الاختبارات
- * شغّل هذه الدالة من محرر Apps Script لتشغيل كل الاختبارات
+ * هذه الدالة الرئيسية التي يمكن تشغيلها من محرر Apps Script
  */
 function runAllTests() {
-    resetTestResults_();
+  resetTestResults_();
 
-    Logger.log('🚀 بدء تشغيل جميع الاختبارات...');
-    Logger.log('📅 ' + new Date().toLocaleString('ar-EG'));
-    Logger.log('═'.repeat(50));
+  Logger.log('🚀 بدء تشغيل جميع الاختبارات...');
+  Logger.log('التوقيت: ' + new Date().toISOString());
+  Logger.log('');
 
-    // 1. اختبارات البحث الذكي
-    testFuzzySearchSuite_();
+  // تشغيل كل مجموعات الاختبارات
+  testFuzzySearchSuite_();
+  testAIParserSuite_();
+  testCurrencySuite_();
+  testValidationSuite_();
+  testFormattingSuite_();
+  testDateParsingSuite_();
+  testMovementTypeSuite_();
+  testConfigSuite_();
 
-    // 2. اختبارات تحليل JSON من AI
-    testAIParserSuite_();
+  // طباعة التقرير النهائي
+  printTestReport_();
 
-    // 3. اختبارات حسابات العملات
-    testCurrencySuite_();
+  return TestResults_;
+}
 
-    // 4. اختبارات التحقق من المدخلات
-    testValidationSuite_();
+/**
+ * تشغيل اختبارات البحث الذكي فقط
+ */
+function runFuzzySearchTests() {
+  resetTestResults_();
+  testFuzzySearchSuite_();
+  printTestReport_();
+  return TestResults_;
+}
 
-    // 5. اختبارات تنسيق الأرقام والنصوص
-    testFormattingSuite_();
+/**
+ * تشغيل اختبارات محلل الذكاء الاصطناعي فقط
+ */
+function runAIParserTests() {
+  resetTestResults_();
+  testAIParserSuite_();
+  printTestReport_();
+  return TestResults_;
+}
 
-    // 6. اختبارات تاريخ ومدخلات التاريخ
-    testDateParsingSuite_();
+/**
+ * تشغيل اختبارات العملات فقط
+ */
+function runCurrencyTests() {
+  resetTestResults_();
+  testCurrencySuite_();
+  printTestReport_();
+  return TestResults_;
+}
 
-    // 7. اختبارات نوع الحركة المالية
-    testMovementTypeSuite_();
-
-    // 8. اختبارات الإعدادات
-    testConfigSuite_();
-
-    // طباعة التقرير النهائي
-    return printTestReport_();
+/**
+ * تشغيل اختبارات أنواع الحركات فقط
+ */
+function runMovementTypeTests() {
+  resetTestResults_();
+  testMovementTypeSuite_();
+  printTestReport_();
+  return TestResults_;
 }
