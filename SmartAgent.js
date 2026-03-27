@@ -12,6 +12,9 @@
 
 // ==================== الثوابت ====================
 
+// ⚡ معرف المستخدم الحالي (يُعيّن قبل كل تحليل لجلب تفضيلاته)
+var CURRENT_AGENT_CHAT_ID_ = null;
+
 var SMART_AGENT_CONFIG = {
     // الحد الأقصى لدورات التفكير (لمنع الحلقات اللانهائية)
     MAX_TURNS: 8,
@@ -94,7 +97,8 @@ function buildAgentSystemPrompt_() {
 - "بعد شهر" = تاريخ مخصص: ${getDateAfterMonths_(1)}
 - "بعد أسبوع" = تاريخ مخصص: ${getDateAfterWeeks_(1)}
 - العملة الافتراضية USD إذا لم تُذكر
-- سعر الصرف الافتراضي: TRY=38.0, EGP=50.0`;
+- سعر الصرف الافتراضي: ${getDefaultExchangeRates_()}
+${getUserPreferencesPrompt_()}`;
 }
 
 // ==================== المحرك الرئيسي ====================
@@ -278,95 +282,114 @@ function processAgentResponse_(geminiResult, currentContents) {
     var updatedHistory = currentContents.slice();
     updatedHistory.push({ role: 'model', parts: parts });
 
-    // فحص الأجزاء - هل فيها function call أو نص؟
+    // ⚡ تجميع كل function calls في رد واحد وتنفيذها دفعة واحدة
+    var functionCalls = [];
+    var textMessage = null;
+
     for (var i = 0; i < parts.length; i++) {
         var part = parts[i];
-
-        // 1. Function Call - الـ AI يريد استخدام أداة
         if (part.functionCall) {
-            return handleFunctionCall_(part.functionCall, updatedHistory);
+            functionCalls.push(part.functionCall);
+        } else if (part.text) {
+            textMessage = part.text;
         }
+    }
 
-        // 2. نص عادي - الـ AI يريد التواصل مع المستخدم مباشرة
-        if (part.text) {
+    // إذا لا يوجد function calls - أرسل النص
+    if (functionCalls.length === 0) {
+        if (textMessage) {
             return {
                 action: 'SEND_MESSAGE',
-                message: part.text,
+                message: textMessage,
                 agentHistory: updatedHistory
             };
         }
+        return { action: 'ERROR', error: 'رد فارغ من AI' };
     }
 
-    return { action: 'ERROR', error: 'رد فارغ من AI' };
+    // ⚡ تنفيذ جميع الأدوات دفعة واحدة
+    return handleBatchFunctionCalls_(functionCalls, updatedHistory);
 }
 
 /**
- * معالجة استدعاء أداة من الـ AI
- * @param {Object} functionCall - بيانات الاستدعاء
+ * ⚡ معالجة عدة استدعاءات أدوات دفعة واحدة
+ * بدلاً من: tool1 → Gemini → tool2 → Gemini → tool3 → Gemini
+ * الآن: tool1 + tool2 + tool3 → Gemini (طلب واحد)
+ *
+ * @param {Array} functionCalls - قائمة استدعاءات الأدوات
  * @param {Array} history - سجل المحادثة
  * @returns {Object} - الإجراء المطلوب
  */
-function handleFunctionCall_(functionCall, history) {
-    var toolName = functionCall.name;
-    var args = functionCall.args || {};
+function handleBatchFunctionCalls_(functionCalls, history) {
+    var toolResults = [];
+    var userAction = null;
 
-    Logger.log('🔧 Smart Agent يستدعي: ' + toolName);
+    // تنفيذ جميع الأدوات
+    for (var i = 0; i < functionCalls.length; i++) {
+        var fc = functionCalls[i];
+        var toolName = fc.name;
+        var args = fc.args || {};
 
-    // تنفيذ الأداة
-    var toolResult = executeAgentTool_(toolName, args);
+        Logger.log('🔧 Smart Agent يستدعي: ' + toolName + (functionCalls.length > 1 ? ' (' + (i + 1) + '/' + functionCalls.length + ')' : ''));
 
-    // أدوات خاصة تحتاج تفاعل المستخدم
-    if (toolResult.action === 'WAIT_FOR_USER') {
-        return {
-            action: 'ASK_USER',
-            question: toolResult.question,
-            options: toolResult.options,
-            field_name: toolResult.field_name,
-            agentHistory: history,
-            // إضافة نتيجة الأداة للسجل
-            pendingToolResponse: {
-                name: toolName,
-                response: toolResult
-            }
-        };
+        var toolResult = executeAgentTool_(toolName, args);
+
+        // أدوات خاصة تحتاج تفاعل المستخدم - أوقف التنفيذ
+        if (toolResult.action === 'WAIT_FOR_USER') {
+            userAction = {
+                action: 'ASK_USER',
+                question: toolResult.question,
+                options: toolResult.options,
+                field_name: toolResult.field_name,
+                agentHistory: history,
+                pendingToolResponse: { name: toolName, response: toolResult }
+            };
+            break;
+        }
+
+        if (toolResult.action === 'SHOW_CONFIRMATION') {
+            userAction = {
+                action: 'SHOW_CONFIRMATION',
+                transaction: toolResult.transaction,
+                agentHistory: history
+            };
+            break;
+        }
+
+        // أداة عادية - اجمع النتيجة
+        toolResults.push({ name: toolName, result: toolResult });
     }
 
-    if (toolResult.action === 'SHOW_CONFIRMATION') {
-        return {
-            action: 'SHOW_CONFIRMATION',
-            transaction: toolResult.transaction,
-            agentHistory: history
-        };
-    }
+    // إذا أداة تحتاج تفاعل المستخدم
+    if (userAction) return userAction;
 
-    // أدوات عادية (بحث، رصيد) - نعيد النتيجة لـ Gemini ونتابع
-    return continueAfterToolExecution_(toolName, toolResult, history);
+    // ⚡ إرسال كل النتائج لـ Gemini في طلب واحد
+    return continueAfterBatchExecution_(toolResults, history);
 }
 
 /**
- * متابعة المحادثة بعد تنفيذ أداة (إعادة النتيجة لـ Gemini)
- * @param {string} toolName - اسم الأداة
- * @param {Object} toolResult - نتيجة التنفيذ
- * @param {Array} history - سجل المحادثة
- * @returns {Object} - الإجراء التالي
+ * ⚡ متابعة بعد تنفيذ عدة أدوات (إرسال كل النتائج لـ Gemini مرة واحدة)
  */
-function continueAfterToolExecution_(toolName, toolResult, history) {
-    // إضافة نتيجة الأداة لسجل المحادثة
+function continueAfterBatchExecution_(toolResults, history) {
     var updatedHistory = history.slice();
-    updatedHistory.push({
-        role: 'function',
-        parts: [{
-            functionResponse: {
-                name: toolName,
-                response: toolResult
-            }
-        }]
-    });
+
+    // إضافة كل نتائج الأدوات للسجل
+    for (var i = 0; i < toolResults.length; i++) {
+        updatedHistory.push({
+            role: 'function',
+            parts: [{
+                functionResponse: {
+                    name: toolResults[i].name,
+                    response: toolResults[i].result
+                }
+            }]
+        });
+    }
 
     // حماية من الحلقات اللانهائية
     var turnCount = 0;
-    for (var i = 0; i < updatedHistory.length; i++) {
-        if (updatedHistory[i].role === 'model') turnCount++;
+    for (var j = 0; j < updatedHistory.length; j++) {
+        if (updatedHistory[j].role === 'model') turnCount++;
     }
     if (turnCount >= SMART_AGENT_CONFIG.MAX_TURNS) {
         Logger.log('⚠️ Smart Agent: وصل الحد الأقصى للدورات');
@@ -377,7 +400,7 @@ function continueAfterToolExecution_(toolName, toolResult, history) {
         };
     }
 
-    // استدعاء Gemini مرة أخرى مع النتيجة
+    // استدعاء Gemini مرة واحدة مع كل النتائج
     var nextResult = callGeminiWithTools_(updatedHistory);
 
     if (!nextResult.success) {
@@ -385,6 +408,13 @@ function continueAfterToolExecution_(toolName, toolResult, history) {
     }
 
     return processAgentResponse_(nextResult, updatedHistory);
+}
+
+/**
+ * متابعة المحادثة بعد تنفيذ أداة واحدة (تستخدم الدالة الموحدة)
+ */
+function continueAfterToolExecution_(toolName, toolResult, history) {
+    return continueAfterBatchExecution_([{ name: toolName, result: toolResult }], history);
 }
 
 // ==================== بناء المحادثة ====================
@@ -433,6 +463,125 @@ function fallbackToLegacy_(userMessage) {
         action: 'ERROR',
         error: 'عذراً، لم أتمكن من فهم الحركة. حاول كتابتها بصيغة أوضح.'
     };
+}
+
+// ==================== تعلم تفضيلات المستخدم ====================
+
+/**
+ * جلب تفضيلات المستخدم من آخر 5 حركات محفوظة له
+ * يساعد الذكاء الاصطناعي على تقليل الأسئلة المتكررة
+ */
+function getUserPreferencesPrompt_() {
+    if (!CURRENT_AGENT_CHAT_ID_) return '';
+
+    var cache = CacheService.getScriptCache();
+    var cacheKey = 'USER_PREFS_' + CURRENT_AGENT_CHAT_ID_;
+    var cached = cache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        var sheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+        if (!sheet) return '';
+
+        var data = sheet.getDataRange().getValues();
+        var userTransactions = [];
+
+        // البحث عن حركات هذا المستخدم (من الأحدث للأقدم)
+        for (var i = data.length - 1; i >= 1 && userTransactions.length < 5; i--) {
+            // عمود المُدخل أو chat_id - نبحث في التفاصيل أو نستخدم آخر 5 حركات عموماً
+            var nature = data[i][2];    // طبيعة الحركة
+            var project = data[i][5];   // اسم المشروع
+            var item = data[i][6];      // البند
+            var party = data[i][8];     // الطرف
+            var currency = data[i][11]; // العملة
+            var payMethod = data[i][15]; // طريقة الدفع
+
+            if (nature && party) {
+                userTransactions.push({
+                    nature: nature, project: project, item: item,
+                    party: party, currency: currency, payMethod: payMethod
+                });
+            }
+        }
+
+        if (userTransactions.length === 0) return '';
+
+        // تحليل الأنماط
+        var partyCount = {};
+        var currencyCount = {};
+        var payMethodCount = {};
+        var projectCount = {};
+
+        for (var j = 0; j < userTransactions.length; j++) {
+            var t = userTransactions[j];
+            if (t.party) partyCount[t.party] = (partyCount[t.party] || 0) + 1;
+            if (t.currency) currencyCount[t.currency] = (currencyCount[t.currency] || 0) + 1;
+            if (t.payMethod) payMethodCount[t.payMethod] = (payMethodCount[t.payMethod] || 0) + 1;
+            if (t.project) projectCount[t.project] = (projectCount[t.project] || 0) + 1;
+        }
+
+        var topParties = Object.keys(partyCount).sort(function(a, b) { return partyCount[b] - partyCount[a]; }).slice(0, 3);
+        var topCurrency = Object.keys(currencyCount).sort(function(a, b) { return currencyCount[b] - currencyCount[a]; })[0];
+        var topPayMethod = Object.keys(payMethodCount).sort(function(a, b) { return payMethodCount[b] - payMethodCount[a]; })[0];
+        var topProjects = Object.keys(projectCount).sort(function(a, b) { return projectCount[b] - projectCount[a]; }).slice(0, 3);
+
+        var prompt = '\n## تفضيلات المستخدم (من آخر الحركات):';
+        if (topParties.length > 0) prompt += '\n- الأطراف المتكررة: ' + topParties.join('، ');
+        if (topProjects.length > 0) prompt += '\n- المشاريع المتكررة: ' + topProjects.join('، ');
+        if (topCurrency) prompt += '\n- العملة الأكثر استخداماً: ' + topCurrency;
+        if (topPayMethod) prompt += '\n- طريقة الدفع المعتادة: ' + topPayMethod;
+        prompt += '\n- استخدم هذه كقيم مقترحة إذا لم يحدد المستخدم، لكن لا تفترض بدون سؤال في الحقول الإلزامية';
+
+        cache.put(cacheKey, prompt, 1800); // cache لمدة 30 دقيقة
+        return prompt;
+
+    } catch (e) {
+        Logger.log('⚠️ فشل جلب تفضيلات المستخدم: ' + e.message);
+        return '';
+    }
+}
+
+// ==================== أسعار الصرف الديناميكية ====================
+
+/**
+ * جلب أسعار الصرف من آخر حركة تغيير عملة في دفتر الحركات
+ * مع cache لمدة ساعة لتجنب القراءة المتكررة
+ */
+function getDefaultExchangeRates_() {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get('EXCHANGE_RATES_PROMPT');
+    if (cached) return cached;
+
+    var rates = { TRY: 38.0, EGP: 50.0 }; // قيم افتراضية احتياطية
+
+    try {
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        var sheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+        if (!sheet) return 'TRY=' + rates.TRY + ', EGP=' + rates.EGP;
+
+        var data = sheet.getDataRange().getValues();
+        // البحث من الأسفل لأعلى عن آخر حركة بسعر صرف
+        for (var i = data.length - 1; i >= 1; i--) {
+            var currency = data[i][11]; // عمود العملة (L)
+            var exRate = data[i][12];   // عمود سعر الصرف (M)
+            if (exRate && Number(exRate) > 0) {
+                if (currency === 'TRY' || currency === 'ليرة') {
+                    rates.TRY = Number(exRate);
+                } else if (currency === 'EGP' || currency === 'جنيه مصري') {
+                    rates.EGP = Number(exRate);
+                }
+                // وجدنا كلا السعرين
+                if (rates.TRY !== 38.0 && rates.EGP !== 50.0) break;
+            }
+        }
+    } catch (e) {
+        Logger.log('⚠️ فشل جلب أسعار الصرف: ' + e.message);
+    }
+
+    var result = 'TRY=' + rates.TRY + ', EGP=' + rates.EGP;
+    cache.put('EXCHANGE_RATES_PROMPT', result, 3600); // cache لمدة ساعة
+    return result;
 }
 
 // ==================== دوال مساعدة للتواريخ ====================

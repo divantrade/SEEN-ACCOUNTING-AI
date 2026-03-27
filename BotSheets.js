@@ -603,6 +603,18 @@ function addBotTransaction(transactionData) {
     const sheet = getBotTransactionsSheet();
     const columns = BOT_CONFIG.BOT_TRANSACTIONS_COLUMNS;
 
+    // ⚡ كشف التكرار: تحقق من وجود حركة مطابقة خلال آخر 10 دقائق
+    var duplicateCheck = checkDuplicateTransaction_(sheet, columns, transactionData);
+    if (duplicateCheck.isDuplicate) {
+        Logger.log('⚠️ تم اكتشاف حركة مكررة: ' + duplicateCheck.existingId);
+        return {
+            success: false,
+            isDuplicate: true,
+            existingId: duplicateCheck.existingId,
+            error: 'حركة مكررة - نفس البيانات موجودة في الحركة ' + duplicateCheck.existingId
+        };
+    }
+
     // إيجاد آخر صف
     const lastRow = sheet.getLastRow();
     const newRow = lastRow + 1;
@@ -663,6 +675,44 @@ function addBotTransaction(transactionData) {
         transactionId: transactionId,
         rowNumber: newRow
     };
+}
+
+/**
+ * ⚡ كشف الحركات المكررة (بصمة: طبيعة + مبلغ + طرف + عملة خلال 10 دقائق)
+ */
+function checkDuplicateTransaction_(sheet, columns, transactionData) {
+    try {
+        var lastRow = sheet.getLastRow();
+        if (lastRow < 2) return { isDuplicate: false };
+
+        // فحص آخر 10 صفوف فقط (كافٍ لكشف الضغط المزدوج)
+        var startRow = Math.max(2, lastRow - 9);
+        var numRows = lastRow - startRow + 1;
+        var data = sheet.getRange(startRow, 1, numRows, sheet.getLastColumn()).getValues();
+
+        var now = new Date();
+        var tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
+
+        for (var i = data.length - 1; i >= 0; i--) {
+            var timestamp = data[i][columns.INPUT_TIMESTAMP.index - 1];
+            if (!timestamp || new Date(timestamp) < tenMinutesAgo) continue;
+
+            var sameNature = data[i][columns.NATURE.index - 1] === transactionData.nature;
+            var sameAmount = Number(data[i][columns.AMOUNT.index - 1]) === Number(transactionData.amount);
+            var sameParty = data[i][columns.PARTY_NAME.index - 1] === (transactionData.partyName || '');
+            var sameCurrency = data[i][columns.CURRENCY.index - 1] === (transactionData.currency || 'USD');
+
+            if (sameNature && sameAmount && sameParty && sameCurrency) {
+                return {
+                    isDuplicate: true,
+                    existingId: data[i][columns.TRANSACTION_ID.index - 1]
+                };
+            }
+        }
+    } catch (e) {
+        Logger.log('⚠️ خطأ في كشف التكرار: ' + e.message);
+    }
+    return { isDuplicate: false };
 }
 
 /**

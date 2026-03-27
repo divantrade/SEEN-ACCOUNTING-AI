@@ -62,8 +62,8 @@ function processAIBotUpdates() {
         while (Date.now() - startTime < MAX_TIME) {
 
             try {
-                // ⚡ تحسين: timeout=3 بدل 5 - استجابة أسرع (0-3 ثوان بدل 0-5)
-                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${currentUpdateId + 1}&timeout=3`;
+                // ⚡ Long Polling: timeout=25 يقلل الطلبات 90% مع نفس سرعة الاستجابة
+                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${currentUpdateId + 1}&timeout=25`;
 
                 const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
                 const data = JSON.parse(response.getContentText());
@@ -479,6 +479,7 @@ function processSmartTransaction_(chatId, text, user) {
         var session = getAIUserSession(chatId);
         var conversationHistory = session.agentHistory || null;
 
+        CURRENT_AGENT_CHAT_ID_ = chatId;
         var agentResult = smartAnalyze(text, conversationHistory);
 
         Logger.log('🧠 Agent result action: ' + agentResult.action);
@@ -3630,16 +3631,24 @@ function buildProjectSuggestionsKeyboard(mainMatch, alternatives) {
  * الحصول على جلسة المستخدم
  */
 function getAIUserSession(chatId) {
+    // ⚡ أولاً: البحث في الذاكرة (فوري)
+    if (aiUserSessions[chatId]) {
+        return aiUserSessions[chatId];
+    }
+
+    // ثانياً: البحث في CacheService (أبطأ)
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
     const cachedData = cache.get(key);
 
     if (cachedData) {
-        return JSON.parse(cachedData);
+        var session = JSON.parse(cachedData);
+        aiUserSessions[chatId] = session; // حفظ في الذاكرة للمرات القادمة
+        return session;
     }
 
     // جلسة جديدة افتراضية
-    return {
+    var newSession = {
         state: AI_CONFIG.AI_CONVERSATION_STATES.IDLE,
         transaction: null,
         validation: null,
@@ -3647,12 +3656,18 @@ function getAIUserSession(chatId) {
         currentMissingIndex: 0,
         originalText: ''
     };
+    aiUserSessions[chatId] = newSession;
+    return newSession;
 }
 
 /**
  * حفظ جلسة المستخدم
  */
 function saveAIUserSession(chatId, session) {
+    // ⚡ حفظ في الذاكرة فوراً
+    aiUserSessions[chatId] = session;
+
+    // حفظ في CacheService كنسخة احتياطية
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
     try {
@@ -3700,6 +3715,8 @@ function saveAIUserSession(chatId, session) {
  * إعادة تعيين الجلسة
  */
 function resetAIUserSession(chatId) {
+    // ⚡ حذف من الذاكرة والـ Cache
+    delete aiUserSessions[chatId];
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
     cache.remove(key);
