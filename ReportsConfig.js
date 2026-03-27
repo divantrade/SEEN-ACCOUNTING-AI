@@ -18,7 +18,12 @@ const REPORTS_CONFIG = {
         PROFITABILITY: 'profitability',   // ربحية المشاريع
         EXPENSES: 'expenses',             // تقرير المصروفات
         REVENUES: 'revenues',              // تقرير الإيرادات
-        DYNAMIC_EXPENSES: 'dynamic_expenses' // تحليل المصروفات
+        DYNAMIC_EXPENSES: 'dynamic_expenses', // تحليل المصروفات
+        CASHFLOW: 'cashflow',                // التدفقات النقدية
+        INCOME_STATEMENT: 'income_statement',// قائمة الدخل
+        BALANCE_SHEET: 'balance_sheet',      // المركز المالي
+        FUNDERS: 'funders',                  // تقرير الممولين
+        PROJECTS: 'projects'                 // تقرير المشروعات
     },
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -53,7 +58,7 @@ const REPORTS_CONFIG = {
         REPORTS_FOLDER_NAME: 'تقارير البوت',
 
         // التقارير التي يتم حفظها بشكل دائم
-        SAVE_PERMANENTLY: ['statement', 'profitability', 'expenses', 'revenues', 'dynamic_expenses'],
+        SAVE_PERMANENTLY: ['statement', 'profitability', 'expenses', 'revenues', 'dynamic_expenses', 'cashflow', 'income_statement', 'balance_sheet', 'funders', 'projects'],
 
         // التقارير التي تُرسل مباشرة بدون حفظ
         SEND_DIRECTLY: ['alerts', 'balances'],
@@ -99,7 +104,12 @@ const REPORTS_CONFIG = {
             'profitability': 'تقرير ربحية المشاريع',
             'expenses': 'تقرير المصروفات',
             'revenues': 'تقرير الإيرادات',
-            'dynamic_expenses': 'تحليل المصروفات'
+            'dynamic_expenses': 'تحليل المصروفات',
+            'cashflow': 'التدفقات النقدية',
+            'income_statement': 'قائمة الدخل',
+            'balance_sheet': 'المركز المالي',
+            'funders': 'تقرير الممولين',
+            'projects': 'تقرير المشروعات'
         },
 
         REPORT_READY: '✅ *تم إعداد التقرير بنجاح!*',
@@ -141,7 +151,16 @@ const REPORTS_CONFIG = {
                     { text: '💵 الإيرادات', callback_data: 'report_revenues' }
                 ],
                 [
-                    { text: '📊 تحليل المصروفات', callback_data: 'report_dynamic_expenses' }
+                    { text: '📊 تحليل المصروفات', callback_data: 'report_dynamic_expenses' },
+                    { text: '💸 التدفقات النقدية', callback_data: 'report_cashflow' }
+                ],
+                [
+                    { text: '📋 قائمة الدخل', callback_data: 'report_income_statement' },
+                    { text: '🏦 المركز المالي', callback_data: 'report_balance_sheet' }
+                ],
+                [
+                    { text: '💼 الممولين', callback_data: 'report_funders' },
+                    { text: '🎬 المشروعات', callback_data: 'report_projects' }
                 ],
                 [
                     { text: '❌ إلغاء', callback_data: 'report_cancel' }

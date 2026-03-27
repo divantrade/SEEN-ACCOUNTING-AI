@@ -4849,3 +4849,64 @@ function setupAIBot() {
     Logger.log('=== تم إعداد البوت الذكي بنجاح! ===');
     return true;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//         دوال مشتركة (كانت في TelegramBot.js - تستخدمها ملفات أخرى)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * إرسال إشعار للمستخدم بالاعتماد (تستخدمها ReviewSystem.js)
+ */
+function notifyUserApproval(chatId, transactionData) {
+    var message = BOT_CONFIG.INTERACTIVE_MESSAGES.APPROVED_NOTIFICATION
+        .replace('{id}', transactionData.transactionId)
+        .replace('{date}', transactionData.date)
+        .replace('{amount}', transactionData.amount + ' ' + transactionData.currency)
+        .replace('{party}', transactionData.partyName);
+
+    sendAIMessage(chatId, message, { parse_mode: 'Markdown' });
+}
+
+/**
+ * إرسال إشعار للمستخدم بالرفض (تستخدمها ReviewSystem.js)
+ */
+function notifyUserRejection(chatId, transactionData, reason) {
+    var message = BOT_CONFIG.INTERACTIVE_MESSAGES.REJECTED_NOTIFICATION
+        .replace('{id}', transactionData.transactionId)
+        .replace('{date}', transactionData.date)
+        .replace('{amount}', transactionData.amount + ' ' + transactionData.currency)
+        .replace('{party}', transactionData.partyName)
+        .replace('{reason}', reason);
+
+    var dynamicKeyboard = {
+        inline_keyboard: [
+            [{ text: '✏️ تعديل وإعادة إرسال', callback_data: 'edit_resend_' + transactionData.transactionId }],
+            [{ text: '🗑️ حذف نهائي', callback_data: 'delete_rejected_' + transactionData.transactionId }]
+        ]
+    };
+
+    sendAIMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(dynamicKeyboard)
+    });
+}
+
+/**
+ * الحصول على معلومات ملف من تليجرام (تستخدمها DriveAttachments.js)
+ */
+function getFileInfo(fileId) {
+    var token = getAIBotToken();
+    var url = 'https://api.telegram.org/bot' + token + '/getFile?file_id=' + fileId;
+    var response = UrlFetchApp.fetch(url);
+    return JSON.parse(response.getContentText());
+}
+
+/**
+ * تنزيل ملف من تليجرام (تستخدمها DriveAttachments.js)
+ */
+function downloadTelegramFile(filePath) {
+    var token = getAIBotToken();
+    var url = 'https://api.telegram.org/file/bot' + token + '/' + filePath;
+    var response = UrlFetchApp.fetch(url);
+    return response.getBlob();
+}

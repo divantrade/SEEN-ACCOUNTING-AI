@@ -377,7 +377,12 @@ var REPORT_DISPLAY_NAMES_ = {
     'profitability': { name: 'ربحية المشاريع', emoji: '📈' },
     'expenses': { name: 'تقرير المصروفات', emoji: '📊' },
     'revenues': { name: 'تقرير الإيرادات', emoji: '💵' },
-    'dynamic_expenses': { name: 'تحليل المصروفات', emoji: '📊' }
+    'dynamic_expenses': { name: 'تحليل المصروفات', emoji: '📊' },
+    'cashflow': { name: 'التدفقات النقدية', emoji: '💸' },
+    'income_statement': { name: 'قائمة الدخل', emoji: '📋' },
+    'balance_sheet': { name: 'المركز المالي', emoji: '🏦' },
+    'funders': { name: 'تقرير الممولين', emoji: '💼' },
+    'projects': { name: 'تقرير المشروعات', emoji: '🎬' }
 };
 
 function buildReportFileName(reportType, partyName) {
@@ -517,7 +522,12 @@ var PDF_REPORT_REGISTRY_ = {
     profitability: { updateFn: function() { generateAllProjectsProfitabilityReport(true); },    sheetName: 'تقارير ربحية المشاريع',       save: true,  errorMsg: 'لم يتم إنشاء تقرير الربحية' },
     expenses:      { updateFn: function() { rebuildExpenseSummaryReport(true); },               sheetName: CONFIG.SHEETS.EXPENSES_REPORT, save: true,  errorMsg: 'لم يتم العثور على تقرير المصروفات' },
     revenues:      { updateFn: function() { rebuildRevenueSummaryReport(true); },               sheetName: CONFIG.SHEETS.REVENUE_REPORT,  save: true,  errorMsg: 'لم يتم العثور على تقرير الإيرادات' },
-    dynamic_expenses: { updateFn: function() { generateDynamicExpenseReport(true); },           sheetName: CONFIG.SHEETS.DYNAMIC_EXPENSES, save: true, errorMsg: 'لم يتم العثور على تقرير تحليل المصروفات' }
+    dynamic_expenses: { updateFn: function() { generateDynamicExpenseReport(true); },           sheetName: CONFIG.SHEETS.DYNAMIC_EXPENSES, save: true, errorMsg: 'لم يتم العثور على تقرير تحليل المصروفات' },
+    cashflow:         { updateFn: function() { rebuildCashFlowReport(true); },                 sheetName: CONFIG.SHEETS.CASHFLOW,         save: true, errorMsg: 'لم يتم العثور على تقرير التدفقات النقدية' },
+    income_statement: { updateFn: function() { rebuildIncomeStatement(true); },                sheetName: CONFIG.SHEETS.INCOME_STATEMENT, save: true, errorMsg: 'لم يتم العثور على قائمة الدخل' },
+    balance_sheet:    { updateFn: function() { rebuildBalanceSheet(true); },                   sheetName: CONFIG.SHEETS.BALANCE_SHEET,    save: true, errorMsg: 'لم يتم العثور على المركز المالي' },
+    funders:          { updateFn: function() { rebuildFunderSummaryReport(true); },            sheetName: CONFIG.SHEETS.FUNDERS_REPORT,   save: true, errorMsg: 'لم يتم العثور على تقرير الممولين' },
+    projects:         { updateFn: function() { rebuildProjectDetailReport(true); },            sheetName: CONFIG.SHEETS.PROJECT_REPORT,   save: true, errorMsg: 'لم يتم العثور على تقرير المشروعات' }
 };
 
 /**
@@ -560,3 +570,8 @@ function generateProfitabilityPDF(chatId) { return generateReportPDF_(chatId, 'p
 function generateExpensesPDF(chatId)      { return generateReportPDF_(chatId, 'expenses'); }
 function generateRevenuesPDF(chatId)      { return generateReportPDF_(chatId, 'revenues'); }
 function generateDynamicExpensesPDF(chatId) { return generateReportPDF_(chatId, 'dynamic_expenses'); }
+function generateCashflowPDF(chatId)        { return generateReportPDF_(chatId, 'cashflow'); }
+function generateIncomeStatementPDF(chatId)  { return generateReportPDF_(chatId, 'income_statement'); }
+function generateBalanceSheetPDF(chatId)     { return generateReportPDF_(chatId, 'balance_sheet'); }
+function generateFundersPDF(chatId)          { return generateReportPDF_(chatId, 'funders'); }
+function generateProjectsPDF(chatId)         { return generateReportPDF_(chatId, 'projects'); }

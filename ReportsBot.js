@@ -104,6 +104,21 @@ function handleReportCallback(chatId, data, session) {
             // تحليل المصروفات - مباشر
             handleGenerateDynamicExpensesReport(chatId, session);
 
+        } else if (data === 'report_cashflow') {
+            handleGenerateDirectReport_(chatId, session, 'cashflow', generateCashflowPDF);
+
+        } else if (data === 'report_income_statement') {
+            handleGenerateDirectReport_(chatId, session, 'income_statement', generateIncomeStatementPDF);
+
+        } else if (data === 'report_balance_sheet') {
+            handleGenerateDirectReport_(chatId, session, 'balance_sheet', generateBalanceSheetPDF);
+
+        } else if (data === 'report_funders') {
+            handleGenerateDirectReport_(chatId, session, 'funders', generateFundersPDF);
+
+        } else if (data === 'report_projects') {
+            handleGenerateDirectReport_(chatId, session, 'projects', generateProjectsPDF);
+
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -520,6 +535,33 @@ function handleGenerateRevenuesReport(chatId, session) {
 
     } catch (error) {
         Logger.log('❌ Error generating revenues: ' + error.message);
+        sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.ERROR);
+    }
+}
+
+/**
+ * دالة موحدة لتوليد أي تقرير مباشر
+ * @param {string} chatId - معرف المحادثة
+ * @param {Object} session - جلسة المستخدم
+ * @param {string} reportType - نوع التقرير
+ * @param {Function} generateFn - دالة التوليد
+ */
+function handleGenerateDirectReport_(chatId, session, reportType, generateFn) {
+    try {
+        sendGeneratingMessage(chatId, reportType);
+
+        const result = generateFn(chatId);
+
+        session.reportState = null;
+        session.reportData = {};
+        saveAIUserSession(chatId, session);
+
+        if (!result.success) {
+            sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.ERROR);
+        }
+
+    } catch (error) {
+        Logger.log('❌ Error generating ' + reportType + ': ' + error.message);
         sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.ERROR);
     }
 }
