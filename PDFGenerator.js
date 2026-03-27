@@ -376,7 +376,8 @@ var REPORT_DISPLAY_NAMES_ = {
     'balances': { name: 'تقرير الأرصدة', emoji: '💰' },
     'profitability': { name: 'ربحية المشاريع', emoji: '📈' },
     'expenses': { name: 'تقرير المصروفات', emoji: '📊' },
-    'revenues': { name: 'تقرير الإيرادات', emoji: '💵' }
+    'revenues': { name: 'تقرير الإيرادات', emoji: '💵' },
+    'dynamic_expenses': { name: 'تحليل المصروفات', emoji: '📊' }
 };
 
 function buildReportFileName(reportType, partyName) {
@@ -515,7 +516,8 @@ var PDF_REPORT_REGISTRY_ = {
     balances:      { updateFn: function() { rebuildVendorSummaryReport(true); },                sheetName: CONFIG.SHEETS.VENDORS_REPORT,  save: false, errorMsg: 'لم يتم العثور على شيت تقرير الأرصدة' },
     profitability: { updateFn: function() { generateAllProjectsProfitabilityReport(true); },    sheetName: 'تقارير ربحية المشاريع',       save: true,  errorMsg: 'لم يتم إنشاء تقرير الربحية' },
     expenses:      { updateFn: function() { rebuildExpenseSummaryReport(true); },               sheetName: CONFIG.SHEETS.EXPENSES_REPORT, save: true,  errorMsg: 'لم يتم العثور على تقرير المصروفات' },
-    revenues:      { updateFn: function() { rebuildRevenueSummaryReport(true); },               sheetName: CONFIG.SHEETS.REVENUE_REPORT,  save: true,  errorMsg: 'لم يتم العثور على تقرير الإيرادات' }
+    revenues:      { updateFn: function() { rebuildRevenueSummaryReport(true); },               sheetName: CONFIG.SHEETS.REVENUE_REPORT,  save: true,  errorMsg: 'لم يتم العثور على تقرير الإيرادات' },
+    dynamic_expenses: { updateFn: function() { generateDynamicExpenseReport(true); },           sheetName: CONFIG.SHEETS.DYNAMIC_EXPENSES, save: true, errorMsg: 'لم يتم العثور على تقرير تحليل المصروفات' }
 };
 
 /**
@@ -557,3 +559,4 @@ function generateBalancesPDF(chatId)      { return generateReportPDF_(chatId, 'b
 function generateProfitabilityPDF(chatId) { return generateReportPDF_(chatId, 'profitability'); }
 function generateExpensesPDF(chatId)      { return generateReportPDF_(chatId, 'expenses'); }
 function generateRevenuesPDF(chatId)      { return generateReportPDF_(chatId, 'revenues'); }
+function generateDynamicExpensesPDF(chatId) { return generateReportPDF_(chatId, 'dynamic_expenses'); }
