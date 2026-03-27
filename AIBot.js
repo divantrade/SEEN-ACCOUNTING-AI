@@ -572,7 +572,9 @@ function handleSmartAgentResult_(chatId, agentResult, originalText, user) {
             break;
 
         case 'ERROR':
-            sendAIMessage(chatId, '❌ ' + (agentResult.error || 'حدث خطأ غير متوقع'));
+            Logger.log('⚠️ Smart Agent error, falling back to legacy: ' + agentResult.error);
+            // fallback للنظام القديم عند فشل Smart Agent
+            processNewTransaction(chatId, originalText, user);
             break;
 
         default:
