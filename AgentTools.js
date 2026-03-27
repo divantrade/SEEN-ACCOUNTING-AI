@@ -494,7 +494,10 @@ function executeSaveTransaction_(args) {
         };
 
         // استخدام دالة الحفظ الموجودة
-        var result = saveAITransaction(transaction);
+        // CURRENT_AGENT_CHAT_ID_ يُعيّن في processSmartTransaction_ قبل كل تحليل
+        var chatId = CURRENT_AGENT_CHAT_ID_;
+        var user = { first_name: 'Smart', last_name: 'Agent' };
+        var result = saveAITransaction(transaction, user, chatId);
         return result;
     } catch (e) {
         Logger.log('❌ خطأ في حفظ الحركة: ' + e.message);

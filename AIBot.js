@@ -619,7 +619,7 @@ function handleSmartCallback_(chatId, callbackData, user) {
         var session = getAIUserSession(chatId);
         if (session.transaction) {
             try {
-                var result = saveAITransaction(session.transaction);
+                var result = saveAITransaction(session.transaction, user, chatId);
                 if (result.success) {
                     sendAIMessage(chatId, '✅ *تم تسجيل الحركة بنجاح!*\n📌 رقم الحركة: #' + result.transactionId, { parse_mode: 'Markdown' });
                 } else {
