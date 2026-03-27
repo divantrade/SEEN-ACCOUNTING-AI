@@ -572,7 +572,9 @@ function handleSmartAgentResult_(chatId, agentResult, originalText, user) {
             break;
 
         case 'ERROR':
-            sendAIMessage(chatId, '❌ ' + (agentResult.error || 'حدث خطأ غير متوقع'));
+            Logger.log('⚠️ Smart Agent error, falling back to legacy: ' + agentResult.error);
+            // fallback للنظام القديم عند فشل Smart Agent
+            processNewTransaction(chatId, originalText, user);
             break;
 
         default:
@@ -617,7 +619,30 @@ function handleSmartCallback_(chatId, callbackData, user) {
         var session = getAIUserSession(chatId);
         if (session.transaction) {
             try {
-                var result = saveAITransaction(session.transaction);
+                // ترجمة أسماء الحقول من صيغة Gemini (snake_case) إلى صيغة saveAITransaction
+                var tx = session.transaction;
+                var normalizedTx = {
+                    nature: tx.nature || '',
+                    classification: tx.classification || '',
+                    project: tx.project || '',
+                    project_code: tx.project_code || tx.projectCode || '',
+                    item: tx.item || '',
+                    party: tx.party || '',
+                    partyType: tx.party_type || tx.partyType || 'مورد',
+                    isNewParty: tx.is_new_party || tx.isNewParty || false,
+                    amount: tx.amount || 0,
+                    currency: tx.currency || 'USD',
+                    exchangeRate: tx.exchange_rate || tx.exchangeRate || (tx.currency === 'USD' ? 1 : null),
+                    payment_method: tx.payment_method || tx.paymentMethod || '',
+                    payment_term: tx.payment_term || tx.paymentTerm || 'فوري',
+                    payment_term_weeks: tx.payment_term_weeks || '',
+                    payment_term_date: tx.payment_term_date || '',
+                    due_date: tx.due_date || tx.dueDate || formatDateISO_(new Date()),
+                    details: tx.details || '',
+                    unit_count: tx.unit_count || tx.unitCount || '',
+                    loan_due_date: tx.loan_due_date || ''
+                };
+                var result = saveAITransaction(normalizedTx, user, chatId);
                 if (result.success) {
                     sendAIMessage(chatId, '✅ *تم تسجيل الحركة بنجاح!*\n📌 رقم الحركة: #' + result.transactionId, { parse_mode: 'Markdown' });
                 } else {
@@ -2251,7 +2276,14 @@ function handleAICallback(callbackQuery) {
     // ⭐ العمليات التي لا تحتاج session (تعمل مباشرة من الشيت)
     const isEditResend = data === 'edit_resend' || data.startsWith('edit_resend_');
     const isDeleteRejected = data === 'delete_rejected' || data.startsWith('delete_rejected_');
+    const isEditFromSmart = data.startsWith('ai_edit') && session.transaction && !session.validation;
     const noSessionRequired = isEditResend || isDeleteRejected;
+
+    // ⭐ إذا جاء Edit من Smart Agent، أنشئ validation فارغ للتوافق
+    if (isEditFromSmart) {
+        session.validation = { enriched: session.transaction, missingRequired: [], warnings: [] };
+        saveAIUserSession(chatId, session);
+    }
 
     // ⭐ فحص وجود الـ validation للعمليات الأخرى
     if (!session.validation && !noSessionRequired) {

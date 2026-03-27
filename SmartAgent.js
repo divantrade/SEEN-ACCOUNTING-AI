@@ -17,7 +17,7 @@ var CURRENT_AGENT_CHAT_ID_ = null;
 
 var SMART_AGENT_CONFIG = {
     // الحد الأقصى لدورات التفكير (لمنع الحلقات اللانهائية)
-    MAX_TURNS: 8,
+    MAX_TURNS: 12,
 
     // الحد الأقصى لسؤال المستخدم
     MAX_USER_ASKS: 3,
@@ -41,10 +41,15 @@ function buildAgentSystemPrompt_() {
     var today = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
     var dayName = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'EEEE');
 
+    // تحميل قوائم مختصرة لمساعدة Gemini
+    var contextSummary = buildContextSummary_();
+
     return `أنت محاسب ذكي في نظام SEEN لإنتاج الأفلام الوثائقية.
 مهمتك: تحليل رسائل المستخدم العربية واستخراج الحركات المالية.
 
 📅 اليوم: ${today} (${dayName})
+
+${contextSummary}
 
 ## قواعد ذهبية:
 1. "اتفقت/حجزت/طلبت/يحاسب بعد X يوم" = استحقاق (دين ورقي، ليس دفع فعلي)
@@ -392,18 +397,20 @@ function handleBatchFunctionCalls_(functionCalls, history) {
 function continueAfterBatchExecution_(toolResults, history) {
     var updatedHistory = history.slice();
 
-    // إضافة كل نتائج الأدوات للسجل
+    // إضافة كل نتائج الأدوات في رسالة واحدة (الصيغة الصحيحة لـ Gemini API)
+    var functionParts = [];
     for (var i = 0; i < toolResults.length; i++) {
-        updatedHistory.push({
-            role: 'function',
-            parts: [{
-                functionResponse: {
-                    name: toolResults[i].name,
-                    response: toolResults[i].result
-                }
-            }]
+        functionParts.push({
+            functionResponse: {
+                name: toolResults[i].name,
+                response: toolResults[i].result
+            }
         });
     }
+    updatedHistory.push({
+        role: 'function',
+        parts: functionParts
+    });
 
     // حماية من الحلقات اللانهائية
     var turnCount = 0;
@@ -457,6 +464,63 @@ function buildConversationContents_(userMessage, conversationHistory) {
         role: 'user',
         parts: [{ text: userMessage }]
     }];
+}
+
+// ==================== بناء ملخص السياق ====================
+
+/**
+ * بناء ملخص مختصر بالمشاريع والأطراف لمساعدة Gemini في اتخاذ قرارات أفضل
+ * بدلاً من الاعتماد فقط على أدوات البحث (التي تسبب دورات كثيرة)
+ */
+function buildContextSummary_() {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get('AGENT_CONTEXT_SUMMARY');
+    if (cached) return cached;
+
+    var summary = '';
+    try {
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+        // تحميل الأطراف (اسم + نوع + تخصص)
+        var partiesSheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
+        if (partiesSheet && partiesSheet.getLastRow() > 1) {
+            var partiesData = partiesSheet.getRange(2, 1, Math.min(partiesSheet.getLastRow() - 1, 50), 3).getValues();
+            var partiesList = [];
+            for (var i = 0; i < partiesData.length; i++) {
+                var name = String(partiesData[i][0] || '').trim();
+                var type = String(partiesData[i][1] || '').trim();
+                var spec = String(partiesData[i][2] || '').trim();
+                if (name) {
+                    partiesList.push(name + ' (' + type + (spec ? '/' + spec : '') + ')');
+                }
+            }
+            if (partiesList.length > 0) {
+                summary += '## الأطراف المسجلين:\n' + partiesList.join(' | ') + '\n\n';
+            }
+        }
+
+        // تحميل المشاريع (كود + اسم)
+        var projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+        if (projectsSheet && projectsSheet.getLastRow() > 1) {
+            var projData = projectsSheet.getRange(2, 1, Math.min(projectsSheet.getLastRow() - 1, 30), 2).getValues();
+            var projList = [];
+            for (var j = 0; j < projData.length; j++) {
+                var code = String(projData[j][0] || '').trim();
+                var pname = String(projData[j][1] || '').trim();
+                if (code && pname) projList.push(code + '-' + pname);
+            }
+            if (projList.length > 0) {
+                summary += '## المشاريع المتاحة:\n' + projList.join(' | ') + '\n\n';
+            }
+        }
+
+    } catch (e) {
+        Logger.log('⚠️ buildContextSummary_ error: ' + e.message);
+    }
+
+    // Cache لمدة 10 دقائق
+    if (summary) cache.put('AGENT_CONTEXT_SUMMARY', summary, 600);
+    return summary;
 }
 
 // ==================== Fallback للنظام القديم ====================
