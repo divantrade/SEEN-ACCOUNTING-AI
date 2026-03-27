@@ -216,6 +216,9 @@ function smartAnalyze(userMessage, conversationHistory) {
 
         if (!result.success) {
             Logger.log('❌ Smart Agent: فشل الاتصال - ' + result.error);
+            // ⭐ محاولة المحللات المتخصصة قبل الـ fallback
+            var specialParsed = trySpecializedParsers_(userMessage);
+            if (specialParsed) return specialParsed;
             // fallback للنظام القديم
             return fallbackToLegacy_(userMessage);
         }
@@ -225,6 +228,9 @@ function smartAnalyze(userMessage, conversationHistory) {
 
     } catch (e) {
         Logger.log('❌ Smart Agent خطأ: ' + e.message);
+        // ⭐ محاولة المحللات المتخصصة قبل الـ fallback
+        var specialParsed = trySpecializedParsers_(userMessage);
+        if (specialParsed) return specialParsed;
         return fallbackToLegacy_(userMessage);
     }
 }
@@ -621,6 +627,46 @@ function buildContextSummary_() {
 /**
  * في حالة فشل الـ Agent، نستخدم النظام القديم
  */
+/**
+ * ⭐ محاولة المحللات المتخصصة (مصاريف بنكية / تغيير عملة)
+ * تعمل كخطة بديلة عند فشل Gemini في فهم هذه الأنماط المحددة
+ */
+function trySpecializedParsers_(userMessage) {
+    // محلل المصاريف البنكية
+    if (typeof tryParseBankFees_ === 'function') {
+        var bankResult = tryParseBankFees_(userMessage);
+        if (bankResult) {
+            Logger.log('✅ Smart Agent: Bank fees fallback parser succeeded');
+            return {
+                action: 'SHOW_CONFIRMATION',
+                transaction: bankResult,
+                agentHistory: [{
+                    role: 'user',
+                    parts: [{ text: userMessage }]
+                }]
+            };
+        }
+    }
+
+    // محلل تغيير العملة
+    if (typeof tryParseCurrencyExchange_ === 'function') {
+        var exchangeResult = tryParseCurrencyExchange_(userMessage);
+        if (exchangeResult) {
+            Logger.log('✅ Smart Agent: Currency exchange fallback parser succeeded');
+            return {
+                action: 'SHOW_CONFIRMATION',
+                transaction: exchangeResult,
+                agentHistory: [{
+                    role: 'user',
+                    parts: [{ text: userMessage }]
+                }]
+            };
+        }
+    }
+
+    return null; // لم تنجح أي محلل متخصص
+}
+
 function fallbackToLegacy_(userMessage) {
     Logger.log('⚠️ Smart Agent: fallback للنظام القديم');
     try {
