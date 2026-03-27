@@ -609,6 +609,30 @@ function executeGetPartyAccruals_(args) {
 function executeShowConfirmation_(args) {
     var tx = args.transaction || {};
 
+    // ⭐ تصحيح البند إذا كان "اخري/أخرى" والطرف له تخصص أو بنود سابقة
+    if (tx.party && (tx.item === 'اخري' || tx.item === 'أخرى' || tx.item === 'اخرى' || !tx.item)) {
+        try {
+            // محاولة استنتاج البند من تخصص الطرف
+            var partyResults = searchParties(tx.party);
+            if (partyResults && partyResults.length > 0) {
+                var spec = partyResults[0].specialization;
+                if (spec && spec.trim()) {
+                    tx.item = spec.trim();
+                    Logger.log('🔧 Auto-corrected item from specialization: ' + tx.item);
+                } else {
+                    // محاولة من البنود السابقة
+                    var prevItems = findItemsByParty_(tx.party);
+                    if (prevItems && prevItems.length > 0) {
+                        tx.item = prevItems[0];
+                        Logger.log('🔧 Auto-corrected item from party history: ' + tx.item);
+                    }
+                }
+            }
+        } catch (e) {
+            Logger.log('⚠️ Item auto-correction failed: ' + e.message);
+        }
+    }
+
     // التحقق من الحقول الإلزامية قبل العرض
     var missing = [];
     if (!tx.nature) missing.push('طبيعة الحركة');
