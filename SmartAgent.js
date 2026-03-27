@@ -397,18 +397,20 @@ function handleBatchFunctionCalls_(functionCalls, history) {
 function continueAfterBatchExecution_(toolResults, history) {
     var updatedHistory = history.slice();
 
-    // إضافة كل نتائج الأدوات للسجل
+    // إضافة كل نتائج الأدوات في رسالة واحدة (الصيغة الصحيحة لـ Gemini API)
+    var functionParts = [];
     for (var i = 0; i < toolResults.length; i++) {
-        updatedHistory.push({
-            role: 'function',
-            parts: [{
-                functionResponse: {
-                    name: toolResults[i].name,
-                    response: toolResults[i].result
-                }
-            }]
+        functionParts.push({
+            functionResponse: {
+                name: toolResults[i].name,
+                response: toolResults[i].result
+            }
         });
     }
+    updatedHistory.push({
+        role: 'function',
+        parts: functionParts
+    });
 
     // حماية من الحلقات اللانهائية
     var turnCount = 0;
