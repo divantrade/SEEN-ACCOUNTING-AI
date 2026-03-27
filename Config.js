@@ -33,6 +33,7 @@ const CONFIG = {
         VENDORS_REPORT: 'تقرير الموردين',
         FUNDERS_REPORT: 'تقرير الممولين',
         EXPENSES_REPORT: 'تقرير المصروفات',
+        DYNAMIC_EXPENSES: 'تحليل المصروفات',
         REVENUE_REPORT: 'تقرير الإيرادات',
         CASHFLOW: 'التدفقات النقدية',
         DASHBOARD: 'لوحة التحكم',
@@ -319,5 +320,18 @@ const CONFIG = {
      */
     getItemsWithUnits: function() {
         return Object.keys(this.UNIT_TYPES);
+    },
+
+    // ==================== بيانات الشركة (تُستخدم في PDF والتقارير) ====================
+    COMPANY: {
+        NAME: 'START SCENE MEDIA PRODUKSIYON LIMITED',
+        ADDRESS: '212 My Office - Office No177 - Istanbul - Bagcilar',
+        CONTACT: 'Finance@seenfilm.net  |  www.seenfilm.net',
+        CREDITS: 'Accounting by aldewan.net  •  Developed by KodLab.ai',
+        TIMEZONE: 'Asia/Istanbul',
+        LOGO: {
+            WIDTH: 140,
+            HEIGHT: 100
+        }
     }
 };

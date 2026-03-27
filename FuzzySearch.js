@@ -15,11 +15,8 @@ function normalizeArabicText(text) {
 
     let normalized = String(text).trim();
 
-    // إزالة التشكيل
-    const diacritics = ['ً', 'ٌ', 'ٍ', 'َ', 'ُ', 'ِ', 'ّ', 'ْ', 'ـ'];
-    diacritics.forEach(d => {
-        normalized = normalized.split(d).join('');
-    });
+    // إزالة التشكيل (الحركات) - regex أشمل من المصفوفة اليدوية
+    normalized = normalized.replace(/[\u064B-\u065F\u0670\u0640]/g, '');
 
     // توحيد الهمزات
     normalized = normalized.replace(/[أإآٱ]/g, 'ا');
@@ -95,6 +92,54 @@ function containsMatch(text, searchText) {
     const normalizedSearch = normalizeArabicText(searchText);
 
     return normalizedText.includes(normalizedSearch);
+}
+
+/**
+ * فحص تطابق البحث الذكي للنصوص العربية
+ * يستخدم 5 مستويات من التطابق (100/80/70/60/40)
+ * @param {string} name - النص المراد مقارنته
+ * @param {string} searchText - نص البحث
+ * @returns {Object} - { match: boolean, score: number }
+ */
+function smartArabicMatch(name, searchText) {
+    var normalizedName = normalizeArabicText(name);
+    var normalizedSearch = normalizeArabicText(searchText);
+
+    // 1️⃣ تطابق تام
+    if (normalizedName === normalizedSearch) {
+        return { match: true, score: 100 };
+    }
+
+    // 2️⃣ الاسم يحتوي على نص البحث كاملاً
+    if (normalizedName.includes(normalizedSearch)) {
+        return { match: true, score: 80 };
+    }
+
+    // 3️⃣ تطابق الاسم الأول
+    var nameParts = normalizedName.split(' ');
+    var searchParts = normalizedSearch.split(' ');
+    if (nameParts[0] === searchParts[0]) {
+        return { match: true, score: 70 };
+    }
+
+    // 4️⃣ أي جزء من الاسم يتطابق مع البحث
+    for (var p = 0; p < nameParts.length; p++) {
+        if (nameParts[p].includes(normalizedSearch) || normalizedSearch.includes(nameParts[p])) {
+            return { match: true, score: 60 };
+        }
+    }
+
+    // 5️⃣ تطابق جزئي (حرفين على الأقل)
+    if (normalizedSearch.length >= 2) {
+        for (var i = 0; i <= normalizedName.length - 2; i++) {
+            var chunk = normalizedName.substring(i, i + Math.min(normalizedSearch.length, normalizedName.length - i));
+            if (chunk.includes(normalizedSearch.substring(0, 2))) {
+                return { match: true, score: 40 };
+            }
+        }
+    }
+
+    return { match: false, score: 0 };
 }
 
 /**
@@ -243,30 +288,79 @@ function searchItems(searchText) {
 
 /**
  * البحث في الأطراف (موردين/عملاء/ممولين)
+ * يبحث في شيت الأطراف الرئيسي + شيت أطراف البوت
+ * @param {string} searchText - نص البحث
+ * @param {Object} [options] - خيارات البحث
+ * @param {string} [options.partyType] - فلترة حسب نوع الطرف (مورد/عميل/ممول)
+ * @param {number} [options.maxResults=10] - أقصى عدد نتائج
+ * @param {boolean} [options.useSmartMatch=false] - استخدام smartArabicMatch بدل fuzzySearch
+ * @returns {Array} - قائمة الأطراف المطابقة
  */
-function searchParties(searchText) {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName(CONFIG.SHEETS.PARTIES);
+function searchParties(searchText, options) {
+    var opts = options || {};
+    var partyType = opts.partyType || null;
+    var maxResults = opts.maxResults || 10;
+    var useSmartMatch = opts.useSmartMatch || false;
 
-    if (!sheet) return [];
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var addedNames = {};
+    var parties = [];
 
-    const data = sheet.getDataRange().getValues();
-    const parties = [];
+    // جمع الأطراف من الشيتات
+    var sheetNames = [CONFIG.SHEETS.PARTIES];
+    if (CONFIG.SHEETS.BOT_PARTIES) sheetNames.push(CONFIG.SHEETS.BOT_PARTIES);
 
-    for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-        const name = row[0]; // اسم الطرف
-        const type = row[1]; // نوع الطرف
+    for (var s = 0; s < sheetNames.length; s++) {
+        var sheet = ss.getSheetByName(sheetNames[s]);
+        if (!sheet) continue;
 
-        if (name) {
+        var data = sheet.getDataRange().getValues();
+        for (var i = 1; i < data.length; i++) {
+            var row = data[i];
+            var name = String(row[0] || '').trim();
+            var type = String(row[1] || '').trim();
+
+            if (!name) continue;
+            if (partyType && type !== partyType) continue;
+
+            // تجنب التكرار
+            var normalizedKey = normalizeArabicText(name);
+            if (addedNames[normalizedKey]) continue;
+            addedNames[normalizedKey] = true;
+
+            var specialization = String(row[2] || '').trim();
+
             parties.push({
                 name: name,
-                type: type || 'مورد'
+                type: type || 'مورد',
+                specialization: specialization
             });
         }
     }
 
-    return fuzzySearch(parties, searchText, { keys: ['name'] });
+    if (useSmartMatch) {
+        // استخدام smartArabicMatch (للبوت - نتائج أوسع)
+        var results = [];
+        for (var j = 0; j < parties.length; j++) {
+            var matchResult = smartArabicMatch(parties[j].name, searchText);
+            if (matchResult.match) {
+                results.push({
+                    name: parties[j].name,
+                    type: parties[j].type,
+                    specialization: parties[j].specialization,
+                    score: matchResult.score
+                });
+            }
+        }
+        results.sort(function(a, b) {
+            if (b.score !== a.score) return b.score - a.score;
+            return a.name.localeCompare(b.name, 'ar');
+        });
+        return results.slice(0, maxResults);
+    }
+
+    // استخدام fuzzySearch (الافتراضي)
+    return fuzzySearch(parties, searchText, { keys: ['name'], maxResults: maxResults });
 }
 
 /**

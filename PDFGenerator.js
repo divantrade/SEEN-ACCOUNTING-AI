@@ -117,7 +117,7 @@ function getOrCreateMonthFolder() {
     try {
         const mainFolder = getOrCreateReportsFolder();
         const now = new Date();
-        const monthFolderName = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM');
+        const monthFolderName = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM');
 
         // البحث عن مجلد الشهر
         const folders = mainFolder.getFoldersByName(monthFolderName);
@@ -149,7 +149,7 @@ function savePDFToArchive(pdfBlob, reportType, partyName) {
     try {
         const folder = getOrCreateMonthFolder();
         const now = new Date();
-        const dateStr = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd');
+        const dateStr = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
 
         // بناء اسم الملف
         let fileName = reportType;
@@ -369,23 +369,31 @@ function generateAndSendReport(chatId, reportType, sheet, partyName, saveToArchi
 /**
  * بناء اسم ملف التقرير
  */
-function buildReportFileName(reportType, partyName) {
-    const reportNames = {
-        'statement': 'كشف حساب',
-        'alerts': 'تنبيهات الاستحقاق',
-        'balances': 'تقرير الأرصدة',
-        'profitability': 'ربحية المشاريع',
-        'expenses': 'تقرير المصروفات',
-        'revenues': 'تقرير الإيرادات'
-    };
+// ⭐ خريطة أسماء التقارير الموحدة (بدلاً من التكرار في كل دالة)
+var REPORT_DISPLAY_NAMES_ = {
+    'statement': { name: 'كشف حساب', emoji: '📄' },
+    'alerts': { name: 'تنبيهات الاستحقاق', emoji: '⏰' },
+    'balances': { name: 'تقرير الأرصدة', emoji: '💰' },
+    'profitability': { name: 'ربحية المشاريع', emoji: '📈' },
+    'expenses': { name: 'تقرير المصروفات', emoji: '📊' },
+    'revenues': { name: 'تقرير الإيرادات', emoji: '💵' },
+    'dynamic_expenses': { name: 'تحليل المصروفات', emoji: '📊' },
+    'cashflow': { name: 'التدفقات النقدية', emoji: '💸' },
+    'income_statement': { name: 'قائمة الدخل', emoji: '📋' },
+    'balance_sheet': { name: 'المركز المالي', emoji: '🏦' },
+    'funders': { name: 'تقرير الممولين', emoji: '💼' },
+    'projects': { name: 'تقرير المشروعات', emoji: '🎬' }
+};
 
-    let name = reportNames[reportType] || reportType;
+function buildReportFileName(reportType, partyName) {
+    var info = REPORT_DISPLAY_NAMES_[reportType];
+    let name = info ? info.name : reportType;
     if (partyName) {
         name += ' - ' + partyName;
     }
 
     const now = new Date();
-    const dateStr = Utilities.formatDate(now, 'Asia/Istanbul', 'yyyy-MM-dd');
+    const dateStr = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
     name += ' - ' + dateStr;
 
     return name;
@@ -395,23 +403,17 @@ function buildReportFileName(reportType, partyName) {
  * بناء تعليق التقرير
  */
 function buildReportCaption(reportType, partyName, savedToArchive) {
-    const reportNames = {
-        'statement': '📄 كشف حساب',
-        'alerts': '⏰ تنبيهات الاستحقاق',
-        'balances': '💰 تقرير الأرصدة',
-        'profitability': '📈 ربحية المشاريع',
-        'expenses': '📊 تقرير المصروفات',
-        'revenues': '💵 تقرير الإيرادات'
-    };
+    var info = REPORT_DISPLAY_NAMES_[reportType];
+    var displayName = info ? (info.emoji + ' ' + info.name) : reportType;
 
-    let caption = '*' + (reportNames[reportType] || reportType) + '*';
+    let caption = '*' + displayName + '*';
 
     if (partyName) {
         caption += '\n👤 ' + partyName;
     }
 
     const now = new Date();
-    const dateStr = Utilities.formatDate(now, 'Asia/Istanbul', 'dd/MM/yyyy HH:mm');
+    const dateStr = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy HH:mm');
     caption += '\n📅 ' + dateStr;
 
     if (savedToArchive) {
@@ -493,684 +495,83 @@ function generateStatementPDF(chatId, partyName, partyType) {
 
 /**
  * ⭐ إنشاء كشف حساب للبوت (بدون UI) - نسخة نظيفة للـ PDF
- * ═══════════════════════════════════════════════════════════════════════════
- * بدون إيموجي أو لوجو لضمان التوافق مع PDF export
- * ═══════════════════════════════════════════════════════════════════════════
+ * يستخدم الدالة الموحدة renderStatementSheet_ من Utilities.js
+ * بدون إيموجي وبدون عمود الأوردر لضمان التوافق مع PDF export
  */
 function generateStatementForBot_(ss, partyName, partyType) {
-    const transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
-
-    if (!transSheet) {
-        throw new Error('شيت دفتر الحركات المالية غير موجود!');
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // جلب بيانات الطرف
-    // ═══════════════════════════════════════════════════════════
-    const partyData = getPartyData_(ss, partyName, partyType);
-
-    // ═══════════════════════════════════════════════════════════
-    // جلب بيانات لوجو الشركة من قاعدة بيانات البنود (D2)
-    // ═══════════════════════════════════════════════════════════
-    let logoBlob = null;
-    let logoFileId = '';
-    let logoOriginalUrl = '';
-    let hasCellImage = false;
-    let logoSourceRange = null;
-    try {
-        const itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS || 'قاعدة بيانات البنود');
-        if (itemsSheet) {
-            const d2Range = itemsSheet.getRange('D2');
-            const d2Value = d2Range.getValue();
-            const d2Type = typeof d2Value;
-            let logoUrl = '';
-
-            // الحالة 1: CellImage (صورة مدرجة داخل الخلية)
-            if (d2Value && d2Type === 'object') {
-                hasCellImage = true;
-                logoSourceRange = d2Range;
-                try {
-                    if (typeof d2Value.getContentUrl === 'function') {
-                        logoUrl = d2Value.getContentUrl() || '';
-                    }
-                    if (!logoUrl && typeof d2Value.getUrl === 'function') {
-                        logoUrl = d2Value.getUrl() || '';
-                    }
-                } catch (imgErr) {
-                    Logger.log('🖼️ CellImage read error: ' + imgErr.message);
-                }
-            }
-
-            // الحالة 2: نص عادي (URL مباشر)
-            if (!logoUrl && d2Value && d2Type === 'string') {
-                logoUrl = String(d2Value).trim();
-            }
-
-            // الحالة 3: معادلة IMAGE
-            if (!logoUrl) {
-                const formula = d2Range.getFormula() || '';
-                const formulaMatch = formula.match(/IMAGE\s*\(\s*"([^"]+)"/i);
-                if (formulaMatch) {
-                    logoUrl = formulaMatch[1];
-                }
-            }
-
-            // الحالة 4: صورة عائمة فوق الخلايا (OverGridImage)
-            if (!logoUrl && !logoBlob) {
-                try {
-                    const images = itemsSheet.getImages();
-                    if (images.length > 0) {
-                        logoBlob = images[0].getBlob();
-                    }
-                } catch (imgErr) {
-                    Logger.log('🖼️ getImages error: ' + imgErr.message);
-                }
-            }
-
-            // الحالة 5: البحث عن رابط اللوجو في الخلايا المجاورة (احتياطي)
-            if (!logoUrl && !logoBlob) {
-                try {
-                    const lastCol = Math.min(itemsSheet.getLastColumn(), 10);
-                    if (lastCol >= 5) {
-                        const searchRange = itemsSheet.getRange(1, 5, Math.min(itemsSheet.getLastRow(), 5), lastCol - 4);
-                        const searchValues = searchRange.getValues();
-                        for (let r = 0; r < searchValues.length && !logoUrl; r++) {
-                            for (let c = 0; c < searchValues[r].length && !logoUrl; c++) {
-                                const val = String(searchValues[r][c] || '').trim();
-                                if (val && (val.includes('drive.google.com/file/d/') || val.includes('googleusercontent.com/d/'))) {
-                                    logoUrl = val;
-                                }
-                            }
-                        }
-                    }
-                } catch (searchErr) {
-                    Logger.log('🖼️ Nearby cell search error: ' + searchErr.message);
-                }
-            }
-
-            logoOriginalUrl = logoUrl;
-
-            // استخراج File ID من URL
-            if (logoUrl) {
-                const m = logoUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
-                          logoUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
-                          logoUrl.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/) ||
-                          logoUrl.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
-                if (m) logoFileId = m[1];
-            }
-        }
-    } catch (e) {
-        Logger.log('⚠️ Logo extraction error: ' + e.message);
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // تحديد عنوان الكشف ولون التبويب حسب نوع الطرف
-    // ═══════════════════════════════════════════════════════════
-    let titlePrefix = 'كشف حساب';
-    let tabColor = '#4a86e8';
-
-    if (partyType === 'مورد') {
-        titlePrefix = 'كشف مورد';
-        tabColor = CONFIG.COLORS.TAB.VENDOR_STATEMENT || '#00897b';
-    } else if (partyType === 'عميل') {
-        titlePrefix = 'كشف عميل';
-        tabColor = CONFIG.COLORS.TAB.CLIENT_STATEMENT || '#4caf50';
-    } else if (partyType === 'ممول') {
-        titlePrefix = 'كشف ممول';
-        tabColor = CONFIG.COLORS.TAB.FUNDER_STATEMENT || '#ff9800';
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // إنشاء شيت جديد (حذف القديم إن وجد)
-    // ═══════════════════════════════════════════════════════════
-    const sheetName = titlePrefix + ' - ' + partyName;
-    let sheet = ss.getSheetByName(sheetName);
-
-    if (sheet) {
-        ss.deleteSheet(sheet);
-    }
-
-    sheet = ss.insertSheet(sheetName);
-    sheet.setTabColor(tabColor);
-    sheet.setRightToLeft(true);
-
-    // ═══════════════════════════════════════════════════════════
-    // عرض الأعمدة (8 أعمدة - مع تاريخ الاستحقاق + عمود اللوجو)
-    // ═══════════════════════════════════════════════════════════
-    sheet.setColumnWidth(1, 100);  // تاريخ التسجيل
-    sheet.setColumnWidth(2, 100);  // تاريخ الاستحقاق
-    sheet.setColumnWidth(3, 140);  // المشروع
-    sheet.setColumnWidth(4, 210);  // التفاصيل
-    sheet.setColumnWidth(5, 110);  // مدين
-    sheet.setColumnWidth(6, 110);  // دائن
-    sheet.setColumnWidth(7, 110);  // الرصيد
-    sheet.setColumnWidth(8, 80);   // عمود اللوجو
-
-    // ═══════════════════════════════════════════════════════════
-    // Header الشركة في أعلى التقرير
-    // ═══════════════════════════════════════════════════════════
-    // ارتفاع الصفوف لمنطقة اللوجو
-    sheet.setRowHeight(1, 45);
-    sheet.setRowHeight(2, 35);
-    sheet.setRowHeight(3, 30);
-
-    // خلفية رمادية فاتحة للترويسة
-    sheet.getRange('A1:H3').setBackground('#f8f9fa');
-
-    // صف 1: اسم الشركة (بولد، خط كبير)
-    sheet.getRange('A1:F1').merge();
-    sheet.getRange('A1')
-        .setValue('START SCENE MEDIA PRODUKSIYON LIMITED')
-        .setFontWeight('bold')
-        .setFontSize(14)
-        .setFontColor('#1a237e')
-        .setHorizontalAlignment('center')
-        .setVerticalAlignment('bottom');
-
-    // صف 2: العنوان
-    sheet.getRange('A2:F2').merge();
-    sheet.getRange('A2')
-        .setValue('212 My Office - Office No177 - Istanbul - Bagcilar')
-        .setFontSize(10)
-        .setFontColor('#555555')
-        .setHorizontalAlignment('center')
-        .setVerticalAlignment('middle');
-
-    // صف 3: البريد والموقع
-    sheet.getRange('A3:F3').merge();
-    sheet.getRange('A3')
-        .setValue('Finance@seenfilm.net  |  www.seenfilm.net')
-        .setFontSize(10)
-        .setFontColor('#555555')
-        .setHorizontalAlignment('center')
-        .setVerticalAlignment('top');
-
-    // خط فاصل سفلي للترويسة
-    sheet.getRange('A3:H3').setBorder(
-        false, false, true, false, false, false,
-        '#1a237e', SpreadsheetApp.BorderStyle.SOLID_MEDIUM
-    );
-
-    // ═══════════════════════════════════════════════════════════
-    // إضافة اللوجو في G1:H3 مدمجة
-    // ═══════════════════════════════════════════════════════════
-    let logoInserted = false;
-
-    function ensureLogoMerge_() {
-        sheet.getRange('G1:H3').merge()
-            .setBackground('#f8f9fa')
-            .setHorizontalAlignment('center')
-            .setVerticalAlignment('middle');
-    }
-
-    if (hasCellImage || logoBlob || logoFileId || logoOriginalUrl) {
-
-        // الطريقة الأولى: نسخ CellImage مباشرة من خلية المصدر
-        if (hasCellImage && logoSourceRange && !logoInserted) {
-            try {
-                logoSourceRange.copyTo(sheet.getRange('G1'), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
-                ensureLogoMerge_();
-                logoInserted = true;
-            } catch (e) {
-                Logger.log('⚠️ Method CellCopy FAILED: ' + e.message);
-            }
-        }
-
-        // الطريقة 0: blob مباشر (من OverGridImage)
-        if (logoBlob && !logoInserted) {
-            try {
-                ensureLogoMerge_();
-                const image = sheet.insertImage(logoBlob, 7, 1);
-                image.setWidth(140);
-                image.setHeight(100);
-                logoInserted = true;
-            } catch (e) {
-                Logger.log('⚠️ Method 0 FAILED: ' + e.message);
-            }
-        }
-
-        // الطريقة 1: DriveApp
-        if (logoFileId && !logoInserted) {
-            try {
-                ensureLogoMerge_();
-                const file = DriveApp.getFileById(logoFileId);
-                const blob = file.getBlob();
-                const image = sheet.insertImage(blob, 7, 1);
-                image.setWidth(140);
-                image.setHeight(100);
-                logoInserted = true;
-            } catch (e) {
-                Logger.log('⚠️ Method 1 FAILED: ' + e.message);
-            }
-        }
-
-        // الطريقة 2a: UrlFetchApp + رابط lh3
-        if (logoFileId && !logoInserted) {
-            try {
-                const lh3Url = 'https://lh3.googleusercontent.com/d/' + logoFileId;
-                const response = UrlFetchApp.fetch(lh3Url, { muteHttpExceptions: true, followRedirects: true });
-                if (response.getResponseCode() === 200) {
-                    ensureLogoMerge_();
-                    const image = sheet.insertImage(response.getBlob(), 7, 1);
-                    image.setWidth(140);
-                    image.setHeight(100);
-                    logoInserted = true;
-                }
-            } catch (e) {
-                Logger.log('⚠️ Method 2a FAILED: ' + e.message);
-            }
-        }
-
-        // الطريقة 2b: UrlFetchApp + رابط uc?export=view
-        if (logoFileId && !logoInserted) {
-            try {
-                const directUrl = 'https://drive.google.com/uc?export=view&id=' + logoFileId;
-                const response = UrlFetchApp.fetch(directUrl, { muteHttpExceptions: true, followRedirects: true });
-                if (response.getResponseCode() === 200) {
-                    ensureLogoMerge_();
-                    const image = sheet.insertImage(response.getBlob(), 7, 1);
-                    image.setWidth(140);
-                    image.setHeight(100);
-                    logoInserted = true;
-                }
-            } catch (e) {
-                Logger.log('⚠️ Method 2b FAILED: ' + e.message);
-            }
-        }
-
-        // الطريقة 3: IMAGE formula
-        if (!logoInserted) {
-            try {
-                const imgUrl = logoFileId
-                    ? 'https://lh3.googleusercontent.com/d/' + logoFileId
-                    : logoOriginalUrl;
-                if (imgUrl) {
-                    ensureLogoMerge_();
-                    sheet.getRange('G1').setFormula('=IMAGE("' + imgUrl + '", 2)');
-                    logoInserted = true;
-                }
-            } catch (e) {
-                Logger.log('⚠️ Method 3 FAILED: ' + e.message);
-            }
-        }
-    }
-
-    // ضمان دمج G1:H3 حتى لو مفيش لوجو
-    if (!logoInserted) {
-        ensureLogoMerge_();
-    }
-
-    // صف 4: فاصل
-    sheet.setRowHeight(4, 10);
-
-    // ═══════════════════════════════════════════════════════════
-    // العنوان الرئيسي (كشف مورد/عميل/ممول)
-    // ═══════════════════════════════════════════════════════════
-    sheet.getRange('A5:H5').merge();
-    sheet.getRange('A5')
-        .setValue(titlePrefix)
-        .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
-        .setFontColor(CONFIG.COLORS.TEXT.WHITE)
-        .setFontWeight('bold')
-        .setFontSize(15)
-        .setHorizontalAlignment('center')
-        .setVerticalAlignment('middle');
-
-    // ═══════════════════════════════════════════════════════════
-    // كارت بيانات الطرف
-    // ═══════════════════════════════════════════════════════════
-    const cardHeaderRow = 7;
-    const cardDataStartRow = cardHeaderRow + 1;
-
-    sheet.getRange('A' + cardHeaderRow + ':H' + cardHeaderRow).merge()
-        .setValue('بيانات ' + partyType)
-        .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
-        .setFontColor(CONFIG.COLORS.TEXT.WHITE)
-        .setFontWeight('bold')
-        .setHorizontalAlignment('center');
-
-    sheet.getRange('A' + cardDataStartRow + ':H' + (cardDataStartRow + 3)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
-
-    sheet.getRange('A' + cardDataStartRow).setValue('الاسم:').setFontWeight('bold');
-    sheet.getRange('B' + cardDataStartRow + ':C' + cardDataStartRow).merge().setValue(partyName);
-
-    sheet.getRange('E' + cardDataStartRow).setValue('التخصص:').setFontWeight('bold');
-    sheet.getRange('F' + cardDataStartRow + ':H' + cardDataStartRow).merge().setValue(partyData.specialization || '');
-
-    sheet.getRange('A' + (cardDataStartRow + 1)).setValue('الهاتف:').setFontWeight('bold');
-    sheet.getRange('B' + (cardDataStartRow + 1) + ':C' + (cardDataStartRow + 1)).merge().setValue(partyData.phone || '');
-
-    sheet.getRange('E' + (cardDataStartRow + 1)).setValue('البريد:').setFontWeight('bold');
-    sheet.getRange('F' + (cardDataStartRow + 1) + ':H' + (cardDataStartRow + 1)).merge().setValue(partyData.email || '');
-
-    sheet.getRange('A' + (cardDataStartRow + 2)).setValue('البنك:').setFontWeight('bold');
-    sheet.getRange('B' + (cardDataStartRow + 2) + ':H' + (cardDataStartRow + 2)).merge().setValue(partyData.bankInfo || '');
-
-    sheet.getRange('A' + (cardDataStartRow + 3)).setValue('ملاحظات:').setFontWeight('bold');
-    sheet.getRange('B' + (cardDataStartRow + 3) + ':H' + (cardDataStartRow + 3)).merge().setValue(partyData.notes || '').setWrap(true);
-
-    sheet.getRange('A' + cardDataStartRow + ':H' + (cardDataStartRow + 3)).setBorder(
-        true, true, true, true, true, true,
-        '#1565c0', SpreadsheetApp.BorderStyle.SOLID
-    );
-
-    // ═══════════════════════════════════════════════════════════
-    // استخراج حركات الطرف (بدون فلتر طبيعة الحركة)
-    // ═══════════════════════════════════════════════════════════
-    const data = transSheet.getDataRange().getValues();
-    const rows = [];
-
-    let totalDebit = 0, totalCredit = 0, balance = 0;
-
-    for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-
-        // الفلتر الوحيد: اسم الطرف
-        if (row[8] !== partyName) continue;
-
-        const movementKind = String(row[13] || '');  // N: نوع الحركة
-        const amountUsd = Number(row[12]) || 0;      // M: القيمة بالدولار
-
-        // تجاهل الحركات بدون مبلغ
-        if (!amountUsd) continue;
-
-        const date = row[1];       // B: تاريخ التسجيل
-        const dueDate = row[20];   // U: تاريخ الاستحقاق
-        const project = row[5];    // F: اسم المشروع
-        const details = row[7];    // H: التفاصيل
-
-        let debit = 0, credit = 0;
-
-        // استخدام includes للتعامل مع الإيموجي
-        if (movementKind.includes(CONFIG.MOVEMENT.DEBIT) || movementKind.includes('مدين')) {
-            debit = amountUsd;
-            balance += debit;
-            totalDebit += debit;
-        } else if (movementKind.includes(CONFIG.MOVEMENT.CREDIT) || movementKind.includes('دائن')) {
-            credit = amountUsd;
-            balance -= credit;
-            totalCredit += credit;
-        }
-
-        rows.push([
-            date,
-            (debit > 0 && dueDate) ? dueDate : '',  // تاريخ الاستحقاق فقط للمدين
-            project || '',
-            details || '',
-            debit || '',
-            credit || '',
-            Math.round(balance * 100) / 100
-        ]);
-    }
-
-    // ترتيب زمني
-    rows.sort((a, b) => {
-        const dateA = a[0] instanceof Date ? a[0].getTime() : new Date(a[0]).getTime();
-        const dateB = b[0] instanceof Date ? b[0].getTime() : new Date(b[0]).getTime();
-        return dateA - dateB;
+    return renderStatementSheet_({
+        ss: ss,
+        partyName: partyName,
+        partyType: partyType,
+        useEmoji: false,
+        includeOrderCol: false
     });
-
-    // إعادة حساب الرصيد بعد الترتيب
-    balance = 0;
-    for (let i = 0; i < rows.length; i++) {
-        const debit = rows[i][4] || 0;
-        const credit = rows[i][5] || 0;
-        balance += debit - credit;
-        rows[i][6] = Math.round(balance * 100) / 100;
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // الملخص المالي - ⭐ استخدام ألوان CONFIG الموحدة
-    // ═══════════════════════════════════════════════════════════
-    const summaryHeaderRow = cardDataStartRow + 5;
-    const summaryDataStartRow = summaryHeaderRow + 1;
-
-    sheet.getRange('A' + summaryHeaderRow + ':H' + summaryHeaderRow).merge()
-        .setValue('الملخص المالي')
-        .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
-        .setFontColor(CONFIG.COLORS.TEXT.WHITE)
-        .setFontWeight('bold')
-        .setHorizontalAlignment('center');
-
-    sheet.getRange('A' + summaryDataStartRow + ':H' + (summaryDataStartRow + 1)).setBackground(CONFIG.COLORS.BG.LIGHT_BLUE);
-
-    sheet.getRange('A' + summaryDataStartRow).setValue('إجمالي المدين:').setFontWeight('bold');
-    sheet.getRange('B' + summaryDataStartRow).setValue(totalDebit).setNumberFormat('$#,##0.00');
-
-    sheet.getRange('E' + summaryDataStartRow).setValue('إجمالي الدائن:').setFontWeight('bold');
-    sheet.getRange('F' + summaryDataStartRow).setValue(totalCredit).setNumberFormat('$#,##0.00');
-
-    sheet.getRange('A' + (summaryDataStartRow + 1)).setValue('الرصيد الحالي:').setFontWeight('bold');
-    sheet.getRange('B' + (summaryDataStartRow + 1)).setValue(balance).setNumberFormat('$#,##0.00')
-        .setFontWeight('bold')
-        .setBackground(balance > 0 ? '#ffcdd2' : '#c8e6c9');
-
-    sheet.getRange('E' + (summaryDataStartRow + 1)).setValue('عدد الحركات:').setFontWeight('bold');
-    sheet.getRange('F' + (summaryDataStartRow + 1)).setValue(rows.length);
-
-    sheet.getRange('A' + summaryDataStartRow + ':H' + (summaryDataStartRow + 1)).setBorder(
-        true, true, true, true, true, true,
-        '#1565c0', SpreadsheetApp.BorderStyle.SOLID
-    );
-
-    // ═══════════════════════════════════════════════════════════
-    // رأس جدول الحركات (بدون إيموجي للتوافق مع PDF)
-    // ═══════════════════════════════════════════════════════════
-    const tableHeaderRow = summaryDataStartRow + 3;
-    const headers = [
-        'تاريخ التسجيل',
-        'تاريخ الاستحقاق',
-        'المشروع',
-        'التفاصيل',
-        'مدين (USD)',
-        'دائن (USD)',
-        'الرصيد (USD)'
-    ];
-
-    sheet.getRange(tableHeaderRow, 1, 1, headers.length)
-        .setValues([headers])
-        .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
-        .setFontColor(CONFIG.COLORS.TEXT.WHITE)
-        .setFontWeight('bold')
-        .setHorizontalAlignment('center');
-
-    // ═══════════════════════════════════════════════════════════
-    // بيانات الحركات - ⭐ نفس التلوين المتناوب
-    // ═══════════════════════════════════════════════════════════
-    const dataStartRow = tableHeaderRow + 1;
-
-    if (rows.length > 0) {
-        sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
-        sheet.getRange(dataStartRow, 1, rows.length, 1).setNumberFormat('dd/mm/yyyy');  // تاريخ التسجيل
-        sheet.getRange(dataStartRow, 2, rows.length, 1).setNumberFormat('dd/mm/yyyy');  // تاريخ الاستحقاق
-        sheet.getRange(dataStartRow, 5, rows.length, 3).setNumberFormat('$#,##0.00');
-
-        // تلوين متناوب للصفوف (أبيض و أزرق فاتح) - نفس Main.js
-        for (let i = 0; i < rows.length; i++) {
-            const r = dataStartRow + i;
-            const bg = i % 2 === 0 ? '#ffffff' : CONFIG.COLORS.BG.LIGHT_BLUE;
-            sheet.getRange(r, 1, 1, headers.length).setBackground(bg);
-        }
-
-        // إطار الجدول
-        sheet.getRange(tableHeaderRow, 1, rows.length + 1, headers.length)
-            .setBorder(true, true, true, true, true, true, '#bdbdbd', SpreadsheetApp.BorderStyle.SOLID);
-    } else {
-        sheet.getRange(dataStartRow, 1).setValue('لا توجد حركات').setFontStyle('italic');
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // تذييل التقرير
-    // ═══════════════════════════════════════════════════════════
-    const footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
-    const reportDateStr = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'dd/MM/yyyy HH:mm');
-    sheet.getRange('A' + footerRow + ':H' + footerRow).merge()
-        .setValue('تاريخ التقرير: ' + reportDateStr)
-        .setHorizontalAlignment('center')
-        .setFontSize(9)
-        .setFontColor('#757575');
-
-    const creditRow = footerRow + 1;
-    sheet.getRange('A' + creditRow + ':H' + creditRow).merge()
-        .setValue('Accounting by aldewan.net  •  Developed by KodLab.ai')
-        .setHorizontalAlignment('center')
-        .setFontSize(9)
-        .setFontColor('#9e9e9e');
-
-    // ⭐ مهم جداً: flush لضمان كتابة البيانات قبل التصدير
-    SpreadsheetApp.flush();
-    Logger.log('✅ Statement sheet created for: ' + partyName + ' with ' + rows.length + ' rows');
-
-    return sheet;
 }
 
+// ═══════════════════════════════════════════════════════════
+// ⭐ دالة موحدة لتوليد التقارير (بدلاً من 5 دوال متكررة)
+// ═══════════════════════════════════════════════════════════
+
 /**
- * توليد تقرير التنبيهات وإرساله
+ * خريطة إعدادات التقارير
+ * كل تقرير: updateFn (دالة التحديث) + sheetName + saveToArchive
+ */
+var PDF_REPORT_REGISTRY_ = {
+    alerts:        { updateFn: function() { updateAlerts(true); },                              sheetName: CONFIG.SHEETS.ALERTS,          save: false, errorMsg: 'لم يتم العثور على شيت التنبيهات' },
+    balances:      { updateFn: function() { rebuildVendorSummaryReport(true); },                sheetName: CONFIG.SHEETS.VENDORS_REPORT,  save: false, errorMsg: 'لم يتم العثور على شيت تقرير الأرصدة' },
+    profitability: { updateFn: function() { generateAllProjectsProfitabilityReport(true); },    sheetName: 'تقارير ربحية المشاريع',       save: true,  errorMsg: 'لم يتم إنشاء تقرير الربحية' },
+    expenses:      { updateFn: function() { rebuildExpenseSummaryReport(true); },               sheetName: CONFIG.SHEETS.EXPENSES_REPORT, save: true,  errorMsg: 'لم يتم العثور على تقرير المصروفات' },
+    revenues:      { updateFn: function() { rebuildRevenueSummaryReport(true); },               sheetName: CONFIG.SHEETS.REVENUE_REPORT,  save: true,  errorMsg: 'لم يتم العثور على تقرير الإيرادات' },
+    dynamic_expenses: { updateFn: function() { generateDynamicExpenseReport(true); },           sheetName: CONFIG.SHEETS.DYNAMIC_EXPENSES, save: true, errorMsg: 'لم يتم العثور على تقرير تحليل المصروفات' },
+    cashflow:         { updateFn: function() { rebuildCashFlowReport(true); },                 sheetName: CONFIG.SHEETS.CASHFLOW,         save: true, errorMsg: 'لم يتم العثور على تقرير التدفقات النقدية' },
+    income_statement: { updateFn: function() { rebuildIncomeStatement(true); },                sheetName: CONFIG.SHEETS.INCOME_STATEMENT, save: true, errorMsg: 'لم يتم العثور على قائمة الدخل' },
+    balance_sheet:    { updateFn: function() { rebuildBalanceSheet(true); },                   sheetName: CONFIG.SHEETS.BALANCE_SHEET,    save: true, errorMsg: 'لم يتم العثور على المركز المالي' },
+    funders:          { updateFn: function() { rebuildFunderSummaryReport(true); },            sheetName: CONFIG.SHEETS.FUNDERS_REPORT,   save: true, errorMsg: 'لم يتم العثور على تقرير الممولين' },
+    projects:         { updateFn: function() { rebuildProjectDetailReport(true); },            sheetName: CONFIG.SHEETS.PROJECT_REPORT,   save: true, errorMsg: 'لم يتم العثور على تقرير المشروعات' }
+};
+
+/**
+ * ⭐ دالة موحدة لتوليد أي تقرير PDF وإرساله
  * @param {string} chatId - معرف المحادثة
- * @param {number} daysAhead - عدد الأيام للتنبيهات
+ * @param {string} reportType - نوع التقرير (alerts, balances, profitability, expenses, revenues)
  * @returns {Object} - نتيجة العملية
  */
-function generateAlertsPDF(chatId, daysAhead) {
+function generateReportPDF_(chatId, reportType) {
     try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // تحديث شيت التنبيهات (وضع صامت للبوت)
-        updateAlerts(true);
-
-        // البحث عن شيت التنبيهات
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.ALERTS);
-
-        if (!sheet) {
-            throw new Error('لم يتم العثور على شيت التنبيهات');
+        var config = PDF_REPORT_REGISTRY_[reportType];
+        if (!config) {
+            return { success: false, error: 'نوع تقرير غير معروف: ' + reportType };
         }
 
-        // تصدير وإرسال (بدون حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'alerts', sheet, null, false);
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-        return result;
-
-    } catch (error) {
-        Logger.log('❌ Error generating alerts PDF: ' + error.message);
-        return { success: false, error: error.message };
-    }
-}
-
-/**
- * توليد تقرير الأرصدة وإرساله
- * @param {string} chatId - معرف المحادثة
- * @returns {Object} - نتيجة العملية
- */
-function generateBalancesPDF(chatId) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // تحديث تقرير الموردين
-        rebuildVendorSummaryReport(true);
-
-        // البحث عن شيت تقرير الموردين
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.VENDORS_REPORT);
-
-        if (!sheet) {
-            throw new Error('لم يتم العثور على شيت تقرير الأرصدة');
-        }
-
-        // تصدير وإرسال (بدون حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'balances', sheet, null, false);
-
-        return result;
-
-    } catch (error) {
-        Logger.log('❌ Error generating balances PDF: ' + error.message);
-        return { success: false, error: error.message };
-    }
-}
-
-/**
- * توليد تقرير ربحية المشاريع وإرساله
- * @param {string} chatId - معرف المحادثة
- * @returns {Object} - نتيجة العملية
- */
-function generateProfitabilityPDF(chatId) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // توليد تقرير الربحية (وضع صامت للبوت)
-        generateAllProjectsProfitabilityReport(true);
+        // تحديث البيانات
+        config.updateFn();
 
         // البحث عن الشيت
-        const sheet = ss.getSheetByName('تقارير ربحية المشاريع');
-
+        var sheet = ss.getSheetByName(config.sheetName);
         if (!sheet) {
-            throw new Error('لم يتم إنشاء تقرير الربحية');
+            throw new Error(config.errorMsg);
         }
 
-        // تصدير وإرسال (مع حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'profitability', sheet, null, true);
-
-        return result;
+        // تصدير وإرسال
+        return generateAndSendReport(chatId, reportType, sheet, null, config.save);
 
     } catch (error) {
-        Logger.log('❌ Error generating profitability PDF: ' + error.message);
+        Logger.log('❌ Error generating ' + reportType + ' PDF: ' + error.message);
         return { success: false, error: error.message };
     }
 }
 
-/**
- * توليد تقرير المصروفات وإرساله
- * @param {string} chatId - معرف المحادثة
- * @returns {Object} - نتيجة العملية
- */
-function generateExpensesPDF(chatId) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // تحديث تقرير المصروفات
-        rebuildExpenseSummaryReport(true);
-
-        // البحث عن الشيت
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.EXPENSES_REPORT);
-
-        if (!sheet) {
-            throw new Error('لم يتم العثور على تقرير المصروفات');
-        }
-
-        // تصدير وإرسال (مع حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'expenses', sheet, null, true);
-
-        return result;
-
-    } catch (error) {
-        Logger.log('❌ Error generating expenses PDF: ' + error.message);
-        return { success: false, error: error.message };
-    }
-}
-
-/**
- * توليد تقرير الإيرادات وإرساله
- * @param {string} chatId - معرف المحادثة
- * @returns {Object} - نتيجة العملية
- */
-function generateRevenuesPDF(chatId) {
-    try {
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-        // تحديث تقرير الإيرادات
-        rebuildRevenueSummaryReport(true);
-
-        // البحث عن الشيت
-        const sheet = ss.getSheetByName(CONFIG.SHEETS.REVENUE_REPORT);
-
-        if (!sheet) {
-            throw new Error('لم يتم العثور على تقرير الإيرادات');
-        }
-
-        // تصدير وإرسال (مع حفظ في الأرشيف)
-        const result = generateAndSendReport(chatId, 'revenues', sheet, null, true);
-
-        return result;
-
-    } catch (error) {
-        Logger.log('❌ Error generating revenues PDF: ' + error.message);
-        return { success: false, error: error.message };
-    }
-}
+// ⭐ الدوال العامة تستدعي الدالة الموحدة (للتوافق مع الكود الحالي)
+function generateAlertsPDF(chatId)        { return generateReportPDF_(chatId, 'alerts'); }
+function generateBalancesPDF(chatId)      { return generateReportPDF_(chatId, 'balances'); }
+function generateProfitabilityPDF(chatId) { return generateReportPDF_(chatId, 'profitability'); }
+function generateExpensesPDF(chatId)      { return generateReportPDF_(chatId, 'expenses'); }
+function generateRevenuesPDF(chatId)      { return generateReportPDF_(chatId, 'revenues'); }
+function generateDynamicExpensesPDF(chatId) { return generateReportPDF_(chatId, 'dynamic_expenses'); }
+function generateCashflowPDF(chatId)        { return generateReportPDF_(chatId, 'cashflow'); }
+function generateIncomeStatementPDF(chatId)  { return generateReportPDF_(chatId, 'income_statement'); }
+function generateBalanceSheetPDF(chatId)     { return generateReportPDF_(chatId, 'balance_sheet'); }
+function generateFundersPDF(chatId)          { return generateReportPDF_(chatId, 'funders'); }
+function generateProjectsPDF(chatId)         { return generateReportPDF_(chatId, 'projects'); }

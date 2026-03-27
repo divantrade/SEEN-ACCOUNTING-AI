@@ -24,12 +24,12 @@ function saveAttachmentToDrive(fileId, fileName, session) {
         const fileBlob = downloadTelegramFile(filePath);
 
         // إنشاء اسم الملف
-        const timestamp = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyyMMdd_HHmmss');
+        const timestamp = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyyMMdd_HHmmss');
         const extension = getFileExtension(fileName || filePath);
         const newFileName = `حركة_${timestamp}.${extension}`;
 
         // الحصول على/إنشاء مجلد الشهر
-        const monthFolder = getOrCreateMonthFolder();
+        const monthFolder = getOrCreateAttachmentsMonthFolder_();
 
         // حفظ الملف
         fileBlob.setName(newFileName);
@@ -51,12 +51,12 @@ function saveAttachmentToDrive(fileId, fileName, session) {
 /**
  * الحصول على أو إنشاء مجلد الشهر الحالي
  */
-function getOrCreateMonthFolder() {
+function getOrCreateAttachmentsMonthFolder_() {
     const parentFolderId = CONFIG.TELEGRAM_BOT.ATTACHMENTS_FOLDER_ID;
     const parentFolder = DriveApp.getFolderById(parentFolderId);
 
     // اسم مجلد الشهر
-    const monthName = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM');
+    const monthName = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyy-MM');
 
     // البحث عن المجلد
     const folders = parentFolder.getFoldersByName(monthName);
@@ -121,7 +121,7 @@ function setupAttachmentsFolders() {
         for (let i = 0; i <= 3; i++) {
             const date = new Date(today);
             date.setMonth(date.getMonth() + i);
-            const monthName = Utilities.formatDate(date, 'Asia/Istanbul', 'yyyy-MM');
+            const monthName = Utilities.formatDate(date, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM');
 
             const folders = parentFolder.getFoldersByName(monthName);
             if (!folders.hasNext()) {

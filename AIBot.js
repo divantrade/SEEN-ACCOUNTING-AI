@@ -2,7 +2,20 @@
 /**
  * البوت الذكي الرئيسي - يفهم اللغة الطبيعية ويحولها لحركات مالية
  * يعمل بالتوازي مع البوت التقليدي دون التأثير عليه
+ *
+ * ⭐ التحديث المعماري: يدعم الآن وضعين:
+ * - الوضع الذكي (Smart Agent): Gemini يقرر ويبحث ويسأل عبر Function Calling
+ * - الوضع التقليدي (Legacy): النظام القديم كـ fallback
+ * للتبديل: غيّر USE_SMART_AGENT أدناه
  */
+
+// ==================== إعداد الوضع ====================
+/**
+ * ⭐ مفتاح التبديل بين النظام الذكي والقديم
+ * true = Smart Agent (الجديد مع Function Calling)
+ * false = Legacy (النظام القديم)
+ */
+var USE_SMART_AGENT = true;
 
 // ==================== تخزين جلسات المستخدمين ====================
 const aiUserSessions = {};
@@ -49,8 +62,8 @@ function processAIBotUpdates() {
         while (Date.now() - startTime < MAX_TIME) {
 
             try {
-                // ⚡ تحسين: timeout=3 بدل 5 - استجابة أسرع (0-3 ثوان بدل 0-5)
-                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${currentUpdateId + 1}&timeout=3`;
+                // ⚡ Long Polling: timeout=25 يقلل الطلبات 90% مع نفس سرعة الاستجابة
+                const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${currentUpdateId + 1}&timeout=25`;
 
                 const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
                 const data = JSON.parse(response.getContentText());
@@ -360,6 +373,22 @@ function handleAIMessage(message) {
             }
             break;
 
+        // ⭐ حالات Smart Agent الجديدة
+        case 'smart_waiting_user':
+        case 'smart_waiting_confirm':
+            if (looksLikeNewTransaction_(text)) {
+                Logger.log('🧠 New transaction detected in smart mode, resetting');
+                resetAIUserSession(chatId);
+                if (USE_SMART_AGENT) {
+                    processSmartTransaction_(chatId, text, user);
+                } else {
+                    processNewTransaction(chatId, text, user);
+                }
+            } else {
+                handleSmartUserReply_(chatId, text, user);
+            }
+            break;
+
         default:
             // ⭐ التحقق من وضع التقارير أولاً
             if (isInReportMode(session)) {
@@ -371,7 +400,11 @@ function handleAIMessage(message) {
             // تحليل النص كحركة مالية جديدة
             Logger.log('⚠️ DEFAULT CASE - Processing as new transaction');
             Logger.log('⚠️ Session state was: "' + session.state + '"');
-            processNewTransaction(chatId, text, user);
+            if (USE_SMART_AGENT) {
+                processSmartTransaction_(chatId, text, user);
+            } else {
+                processNewTransaction(chatId, text, user);
+            }
     }
 }
 
@@ -429,6 +462,225 @@ function handleAICommand(chatId, command, user) {
 /**
  * تحليل ومعالجة حركة جديدة
  */
+// ==================== Smart Agent: معالجة الحركات ====================
+
+/**
+ * ⭐ معالجة حركة جديدة باستخدام Smart Agent
+ * يحل محل processNewTransaction عندما USE_SMART_AGENT = true
+ */
+function processSmartTransaction_(chatId, text, user) {
+    Logger.log('🧠═══════════════════════════════════════');
+    Logger.log('🧠 Smart Agent: processSmartTransaction STARTED');
+    Logger.log('🧠 text: ' + text);
+
+    sendAIMessage(chatId, '🔄 *جاري التحليل الذكي...*', { parse_mode: 'Markdown' });
+
+    try {
+        var session = getAIUserSession(chatId);
+        var conversationHistory = session.agentHistory || null;
+
+        CURRENT_AGENT_CHAT_ID_ = chatId;
+        var agentResult = smartAnalyze(text, conversationHistory);
+
+        Logger.log('🧠 Agent result action: ' + agentResult.action);
+
+        handleSmartAgentResult_(chatId, agentResult, text, user);
+
+    } catch (error) {
+        Logger.log('❌ Smart Agent Error: ' + error.message);
+        Logger.log('⚠️ Falling back to legacy...');
+        processNewTransaction(chatId, text, user);
+    }
+}
+
+/**
+ * ⭐ معالجة نتيجة الـ Smart Agent
+ */
+function handleSmartAgentResult_(chatId, agentResult, originalText, user) {
+    var session = getAIUserSession(chatId);
+
+    switch (agentResult.action) {
+        case 'ASK_USER':
+            // AI يريد سؤال المستخدم
+            Logger.log('🧠 Agent asks user: ' + agentResult.question);
+
+            session.state = 'smart_waiting_user';
+            session.agentHistory = agentResult.agentHistory;
+            session.originalText = originalText;
+            session.user = user;
+            saveAIUserSession(chatId, session);
+
+            // إرسال السؤال مع أزرار إن وُجدت
+            var askOptions = { parse_mode: 'Markdown' };
+            if (agentResult.options && agentResult.options.length > 0) {
+                var buttons = agentResult.options.map(function(opt) {
+                    return [{ text: opt.text, callback_data: 'smart_' + opt.value }];
+                });
+                buttons.push([{ text: '❌ إلغاء', callback_data: 'smart_cancel' }]);
+                askOptions.reply_markup = JSON.stringify({ inline_keyboard: buttons });
+            }
+            sendAIMessage(chatId, agentResult.question, askOptions);
+            break;
+
+        case 'SHOW_CONFIRMATION':
+            // AI يريد عرض ملخص للتأكيد
+            Logger.log('🧠 Agent shows confirmation');
+
+            var tx = agentResult.transaction;
+            session.state = 'smart_waiting_confirm';
+            session.transaction = tx;
+            session.agentHistory = agentResult.agentHistory;
+            session.user = user;
+            saveAIUserSession(chatId, session);
+
+            // بناء الملخص
+            var summary = buildSmartConfirmationMessage_(tx);
+
+            var confirmButtons = [
+                [{ text: '✅ تأكيد وحفظ', callback_data: 'smart_confirm' }],
+                [{ text: '✏️ تعديل', callback_data: 'ai_edit' }],
+                [{ text: '❌ إلغاء', callback_data: 'smart_cancel' }]
+            ];
+
+            sendAIMessage(chatId, summary, {
+                parse_mode: 'Markdown',
+                reply_markup: JSON.stringify({ inline_keyboard: confirmButtons })
+            });
+            break;
+
+        case 'SEND_MESSAGE':
+            // AI يريد إرسال رسالة نصية (معلومات أو سؤال حر)
+            Logger.log('🧠 Agent sends message');
+
+            session.state = 'smart_waiting_user';
+            session.agentHistory = agentResult.agentHistory;
+            session.user = user;
+            saveAIUserSession(chatId, session);
+
+            sendAIMessage(chatId, sanitizeMarkdown_(agentResult.message), { parse_mode: 'Markdown' });
+            break;
+
+        case 'LEGACY_RESULT':
+            // Fallback - النظام القديم أرجع نتيجة
+            Logger.log('🧠 Using legacy result');
+            session.transaction = agentResult.result.transaction;
+            session.validation = agentResult.result.validation;
+            session.originalText = originalText;
+            saveAIUserSession(chatId, session);
+            showTransactionConfirmation(chatId, session);
+            break;
+
+        case 'ERROR':
+            sendAIMessage(chatId, '❌ ' + (agentResult.error || 'حدث خطأ غير متوقع'));
+            break;
+
+        default:
+            Logger.log('⚠️ Unknown agent action: ' + agentResult.action);
+            sendAIMessage(chatId, '❌ حدث خطأ في معالجة الحركة');
+    }
+}
+
+/**
+ * ⭐ معالجة رد المستخدم في وضع Smart Agent
+ */
+function handleSmartUserReply_(chatId, text, user) {
+    Logger.log('🧠 Smart Agent: handling user reply: ' + text);
+
+    var session = getAIUserSession(chatId);
+
+    try {
+        var agentResult = smartContinue(text, session);
+        handleSmartAgentResult_(chatId, agentResult, session.originalText || text, user);
+    } catch (error) {
+        Logger.log('❌ Smart continue error: ' + error.message);
+        sendAIMessage(chatId, '❌ حدث خطأ. جاري إعادة المحاولة...');
+        // Reset and try legacy
+        resetAIUserSession(chatId);
+        processNewTransaction(chatId, session.originalText || text, user);
+    }
+}
+
+/**
+ * ⭐ معالجة callbacks الـ Smart Agent
+ */
+function handleSmartCallback_(chatId, callbackData, user) {
+    Logger.log('🧠 Smart callback: ' + callbackData);
+
+    if (callbackData === 'smart_cancel') {
+        sendAIMessage(chatId, '❌ تم إلغاء العملية');
+        resetAIUserSession(chatId);
+        return true;
+    }
+
+    if (callbackData === 'smart_confirm') {
+        var session = getAIUserSession(chatId);
+        if (session.transaction) {
+            try {
+                var result = saveAITransaction(session.transaction);
+                if (result.success) {
+                    sendAIMessage(chatId, '✅ *تم تسجيل الحركة بنجاح!*\n📌 رقم الحركة: #' + result.transactionId, { parse_mode: 'Markdown' });
+                } else {
+                    sendAIMessage(chatId, '❌ خطأ في الحفظ: ' + (result.error || 'خطأ غير معروف'));
+                }
+            } catch (e) {
+                sendAIMessage(chatId, '❌ خطأ: ' + e.message);
+            }
+            resetAIUserSession(chatId);
+        }
+        return true;
+    }
+
+    // أزرار الاختيار من Smart Agent (smart_VALUE)
+    if (callbackData.indexOf('smart_') === 0) {
+        var value = callbackData.substring(6); // إزالة 'smart_'
+        handleSmartUserReply_(chatId, value, user);
+        return true;
+    }
+
+    return false; // ليس callback خاص بالـ Smart Agent
+}
+
+/**
+ * ⭐ بناء رسالة التأكيد للـ Smart Agent
+ */
+function buildSmartConfirmationMessage_(tx) {
+    var emoji = getTransactionEmoji(tx.nature);
+    var msg = emoji + ' *تأكيد الحركة*\n';
+    msg += '━━━━━━━━━━━━━━━━\n';
+
+    if (tx.nature) msg += '📤 *الطبيعة:* ' + tx.nature + '\n';
+    if (tx.classification) msg += '📊 *التصنيف:* ' + tx.classification + '\n';
+    if (tx.project) {
+        var projDisplay = tx.project;
+        if (tx.project_code) projDisplay += ' (' + tx.project_code + ')';
+        msg += '🎬 *المشروع:* ' + projDisplay + '\n';
+    }
+    if (tx.item) msg += '📋 *البند:* ' + tx.item + '\n';
+    if (tx.party) {
+        msg += '👤 *الطرف:* ' + tx.party;
+        if (tx.is_new_party || tx.isNewParty) msg += ' (جديد)';
+        msg += '\n';
+    }
+
+    msg += '💰 *المبلغ:* ' + formatNumber(tx.amount) + ' ' + (tx.currency || 'USD') + '\n';
+
+    if (tx.currency && tx.currency !== 'USD') {
+        var usdAmt = calculateUSDAmount(tx.amount, tx.currency, tx.exchange_rate || tx.exchangeRate);
+        msg += '💵 *بالدولار:* ' + formatNumber(usdAmt) + ' USD\n';
+    }
+
+    if (tx.due_date) msg += '📅 *التاريخ:* ' + tx.due_date + '\n';
+    if (tx.payment_method) msg += '💳 *طريقة الدفع:* ' + tx.payment_method + '\n';
+    if (tx.payment_term) msg += '⏰ *شرط الدفع:* ' + tx.payment_term + '\n';
+    if (tx.details) msg += '📝 *التفاصيل:* ' + tx.details + '\n';
+    if (tx.unit_count) msg += '📊 *عدد الوحدات:* ' + tx.unit_count + '\n';
+
+    msg += '━━━━━━━━━━━━━━━━';
+    return msg;
+}
+
+// ==================== النظام القديم (Legacy) ====================
+
 function processNewTransaction(chatId, text, user) {
     Logger.log('═══════════════════════════════════════');
     Logger.log('📊 processNewTransaction STARTED');
@@ -1353,7 +1605,7 @@ function handleLoanDueDateInput(chatId, text, session) {
     }
 
     // حفظ تاريخ الاستحقاق
-    const formattedDate = Utilities.formatDate(dueDate, 'Asia/Istanbul', 'yyyy-MM-dd');
+    const formattedDate = Utilities.formatDate(dueDate, CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
     session.transaction.loan_due_date = formattedDate;
 
     if (!session.validation.enriched) {
@@ -1364,7 +1616,7 @@ function handleLoanDueDateInput(chatId, text, session) {
 
     saveAIUserSession(chatId, session);
 
-    const displayDate = Utilities.formatDate(dueDate, 'Asia/Istanbul', 'dd-MM-yyyy');
+    const displayDate = Utilities.formatDate(dueDate, CONFIG.COMPANY.TIMEZONE, 'dd-MM-yyyy');
     sendAIMessage(chatId, `✅ تم تحديد تاريخ السداد: *${displayDate}*`, { parse_mode: 'Markdown' });
 
     continueValidation(chatId, session);
@@ -1935,6 +2187,13 @@ function handleAICallback(callbackQuery) {
         Logger.log('📥 Cancel callback - processing immediately');
         sendAIMessage(chatId, AI_CONFIG.AI_MESSAGES.CANCELLED);
         resetAIUserSession(chatId);
+        return;
+    }
+
+    // ⭐ معالجة callbacks الـ Smart Agent
+    if (data.indexOf('smart_') === 0) {
+        Logger.log('🧠 Smart Agent callback: ' + data);
+        handleSmartCallback_(chatId, data, user);
         return;
     }
 
@@ -2581,7 +2840,7 @@ function addNewPartyFromAI(transaction, user, chatId) {
 
         if (!sheet) return;
 
-        const timestamp = Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd HH:mm:ss');
+        const timestamp = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
 
         // تحديد نوع الطرف
         const partyType = transaction.partyType || inferPartyType(transaction.nature, transaction.classification);
@@ -2617,7 +2876,7 @@ function addNewPartyFromAI(transaction, user, chatId) {
  */
 function generateTransactionId() {
     const now = new Date();
-    const timestamp = Utilities.formatDate(now, 'Asia/Istanbul', 'yyMMddHHmmss');
+    const timestamp = Utilities.formatDate(now, CONFIG.COMPANY.TIMEZONE, 'yyMMddHHmmss');
     const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
     return `AI${timestamp}${random}`;
 }
@@ -3372,16 +3631,24 @@ function buildProjectSuggestionsKeyboard(mainMatch, alternatives) {
  * الحصول على جلسة المستخدم
  */
 function getAIUserSession(chatId) {
+    // ⚡ أولاً: البحث في الذاكرة (فوري)
+    if (aiUserSessions[chatId]) {
+        return aiUserSessions[chatId];
+    }
+
+    // ثانياً: البحث في CacheService (أبطأ)
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
     const cachedData = cache.get(key);
 
     if (cachedData) {
-        return JSON.parse(cachedData);
+        var session = JSON.parse(cachedData);
+        aiUserSessions[chatId] = session; // حفظ في الذاكرة للمرات القادمة
+        return session;
     }
 
     // جلسة جديدة افتراضية
-    return {
+    var newSession = {
         state: AI_CONFIG.AI_CONVERSATION_STATES.IDLE,
         transaction: null,
         validation: null,
@@ -3389,12 +3656,18 @@ function getAIUserSession(chatId) {
         currentMissingIndex: 0,
         originalText: ''
     };
+    aiUserSessions[chatId] = newSession;
+    return newSession;
 }
 
 /**
  * حفظ جلسة المستخدم
  */
 function saveAIUserSession(chatId, session) {
+    // ⚡ حفظ في الذاكرة فوراً
+    aiUserSessions[chatId] = session;
+
+    // حفظ في CacheService كنسخة احتياطية
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
     try {
@@ -3442,6 +3715,8 @@ function saveAIUserSession(chatId, session) {
  * إعادة تعيين الجلسة
  */
 function resetAIUserSession(chatId) {
+    // ⚡ حذف من الذاكرة والـ Cache
+    delete aiUserSessions[chatId];
     const cache = CacheService.getScriptCache();
     const key = `AI_SESSION_${chatId}`;
     cache.remove(key);
@@ -3719,7 +3994,7 @@ function parseArabicDate(dateStr) {
 
         return convertedStr;
     } catch (error) {
-        return Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyy-MM-dd');
+        return Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyy-MM-dd');
     }
 }
 
@@ -3778,46 +4053,7 @@ function stopAIBot() {
     Logger.log('تم إيقاف البوت الذكي');
 }
 
-/**
- * حذف Webhook إذا كان موجوداً - مطلوب لعمل Long Polling
- * شغّل هذه الدالة مرة واحدة إذا كان البوت لا يستجيب
- */
-function deleteAIBotWebhook() {
-    const token = PropertiesService.getScriptProperties().getProperty('AI_BOT_TOKEN');
-    if (!token) {
-        Logger.log('❌ لم يتم تعيين AI_BOT_TOKEN');
-        return;
-    }
-
-    // أولاً: فحص الـ Webhook الحالي
-    const infoUrl = `https://api.telegram.org/bot${token}/getWebhookInfo`;
-    const infoResponse = UrlFetchApp.fetch(infoUrl);
-    const infoData = JSON.parse(infoResponse.getContentText());
-
-    Logger.log('📋 معلومات Webhook الحالية:');
-    Logger.log(JSON.stringify(infoData, null, 2));
-
-    if (infoData.result && infoData.result.url && infoData.result.url !== '') {
-        Logger.log('⚠️ يوجد Webhook مُفعّل: ' + infoData.result.url);
-        Logger.log('🗑️ جاري حذف الـ Webhook...');
-
-        // حذف الـ Webhook
-        const deleteUrl = `https://api.telegram.org/bot${token}/deleteWebhook`;
-        const deleteResponse = UrlFetchApp.fetch(deleteUrl);
-        const deleteData = JSON.parse(deleteResponse.getContentText());
-
-        if (deleteData.ok) {
-            Logger.log('✅ تم حذف الـ Webhook بنجاح!');
-            Logger.log('🔄 الآن البوت سيعمل بـ Long Polling');
-        } else {
-            Logger.log('❌ فشل حذف الـ Webhook: ' + JSON.stringify(deleteData));
-        }
-    } else {
-        Logger.log('✅ لا يوجد Webhook مُفعّل - البوت يعمل بـ Long Polling');
-    }
-
-    return infoData;
-}
+// deleteAIBotWebhook() موجودة في AIConfig.js (النسخة الأكثر اكتمالاً)
 
 // ==================== دوال الأوردر المشترك (Shared Order) ====================
 
@@ -3987,7 +4223,7 @@ function saveSharedOrderFromAI(chatId, session) {
             : new Date();
 
         // إنشاء رقم الأوردر المشترك
-        const sharedOrderId = 'SO-' + Utilities.formatDate(new Date(), 'Asia/Istanbul', 'yyyyMMdd-HHmmss');
+        const sharedOrderId = 'SO-' + Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'yyyyMMdd-HHmmss');
 
         const savedTransactions = [];
         let transactionCounter = 0;
@@ -4629,4 +4865,65 @@ function setupAIBot() {
 
     Logger.log('=== تم إعداد البوت الذكي بنجاح! ===');
     return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//         دوال مشتركة (كانت في TelegramBot.js - تستخدمها ملفات أخرى)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * إرسال إشعار للمستخدم بالاعتماد (تستخدمها ReviewSystem.js)
+ */
+function notifyUserApproval(chatId, transactionData) {
+    var message = BOT_CONFIG.INTERACTIVE_MESSAGES.APPROVED_NOTIFICATION
+        .replace('{id}', transactionData.transactionId)
+        .replace('{date}', transactionData.date)
+        .replace('{amount}', transactionData.amount + ' ' + transactionData.currency)
+        .replace('{party}', transactionData.partyName);
+
+    sendAIMessage(chatId, message, { parse_mode: 'Markdown' });
+}
+
+/**
+ * إرسال إشعار للمستخدم بالرفض (تستخدمها ReviewSystem.js)
+ */
+function notifyUserRejection(chatId, transactionData, reason) {
+    var message = BOT_CONFIG.INTERACTIVE_MESSAGES.REJECTED_NOTIFICATION
+        .replace('{id}', transactionData.transactionId)
+        .replace('{date}', transactionData.date)
+        .replace('{amount}', transactionData.amount + ' ' + transactionData.currency)
+        .replace('{party}', transactionData.partyName)
+        .replace('{reason}', reason);
+
+    var dynamicKeyboard = {
+        inline_keyboard: [
+            [{ text: '✏️ تعديل وإعادة إرسال', callback_data: 'edit_resend_' + transactionData.transactionId }],
+            [{ text: '🗑️ حذف نهائي', callback_data: 'delete_rejected_' + transactionData.transactionId }]
+        ]
+    };
+
+    sendAIMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify(dynamicKeyboard)
+    });
+}
+
+/**
+ * الحصول على معلومات ملف من تليجرام (تستخدمها DriveAttachments.js)
+ */
+function getFileInfo(fileId) {
+    var token = getAIBotToken();
+    var url = 'https://api.telegram.org/bot' + token + '/getFile?file_id=' + fileId;
+    var response = UrlFetchApp.fetch(url);
+    return JSON.parse(response.getContentText());
+}
+
+/**
+ * تنزيل ملف من تليجرام (تستخدمها DriveAttachments.js)
+ */
+function downloadTelegramFile(filePath) {
+    var token = getAIBotToken();
+    var url = 'https://api.telegram.org/file/bot' + token + '/' + filePath;
+    var response = UrlFetchApp.fetch(url);
+    return response.getBlob();
 }
