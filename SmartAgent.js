@@ -89,7 +89,7 @@ ${contextSummary}
 ## تعليمات العمل (اتبعها بالترتيب بدقة):
 1. حلل رسالة المستخدم واستخرج البيانات المالية
 2. **إلزامي**: إذا ذُكر اسم طرف، استخدم search_parties فوراً قبل أي شيء آخر
-   - النتيجة ستعطيك: نوع الطرف + تخصصه + المشاريع التي عمل فيها
+   - النتيجة ستعطيك: نوع الطرف + تخصصه + المشاريع التي عمل فيها (party_projects)
    - استخدم التخصص لتحديد البند تلقائياً (مثال: تخصص "مونتاج" = بند "مونتاج")
    - استخدم نوع الطرف لتحديد التصنيف (مورد = مصروفات مباشرة عادةً)
    - إذا وجدت مشاريع سابقة (party_projects)، اعرضها على المستخدم للاختيار
@@ -97,15 +97,84 @@ ${contextSummary}
 4. استخدم search_projects للتأكد من اسم المشروع (إذا اختار المستخدم أو ذكر مشروعاً)
 5. **مهم**: لا تسأل المستخدم عن معلومة يمكنك استنتاجها من نتائج البحث
 6. إذا بقيت معلومات ناقصة لا يمكن استنتاجها، استخدم ask_user (اجمع عدة أسئلة في سؤال واحد)
-7. عندما تكتمل البيانات، استخدم show_confirmation لعرض الملخص
-8. لا تحفظ إلا بعد تأكيد المستخدم عبر show_confirmation
+7. **إلزامي قبل show_confirmation**: تأكد أن كل هذه الحقول موجودة:
+   - طبيعة الحركة (nature)
+   - التصنيف (classification)
+   - البند (item)
+   - الطرف (party) - إذا كانت الحركة تحتاج طرف
+   - المبلغ (amount) والعملة (currency)
+   - طريقة الدفع (payment_method) - **لا تفترضها أبداً، اسأل المستخدم إذا لم يذكرها**
+   - المشروع (project) - إذا كان التصنيف مصروفات مباشرة أو إيراد
+8. عندما تكتمل كل البيانات أعلاه، استخدم show_confirmation لعرض الملخص
+9. لا تحفظ إلا بعد تأكيد المستخدم عبر show_confirmation
+
+## التوزيع الذكي FIFO (للدفعات فقط):
+- عندما تكون الحركة "دفعة مصروف" أو "تحصيل إيراد":
+  1. بعد search_parties، استخدم get_party_accruals لمعرفة المستحقات المعلقة
+  2. إذا وجدت مستحقات على مشروعين أو أكثر:
+     - اعرض على المستخدم: "يوجد مستحقات على X مشاريع. هل تريد توزيع الدفعة تلقائياً (FIFO) أم اختيار مشروع واحد؟"
+     - إذا اختار التوزيع → سيتم التوزيع تلقائياً عند الحفظ
+  3. إذا مستحقات على مشروع واحد → اقترحه تلقائياً
+
+## فحص الرصيد:
+- قبل show_confirmation للدفعات، استخدم check_balance لفحص الرصيد
+- إذا الرصيد غير كافٍ، أبلغ المستخدم بالتحذير لكن لا تمنعه من المتابعة
+
+## التعامل مع طلب توزيع على مشاريع:
+- إذا قال المستخدم "وزعها على المشاريع" أو "قسّمها" أو "على كل المشاريع":
+  1. استخدم نتائج search_parties → party_projects لمعرفة مشاريع الطرف
+  2. اعرض قائمة المشاريع واسأل عن التوزيع (كم لكل مشروع)
+  3. لا تتجاهل طلب التوزيع أبداً
+- إذا قال "انار إلى مشاريعه" أو "شوف مشاريعه" أو "ابحث عن مشاريعه":
+  1. النتائج موجودة بالفعل في party_projects من search_parties
+  2. اعرضها مباشرة على المستخدم
+  3. إذا لم تكن موجودة، أخبر المستخدم أنه لا توجد مشاريع مسجلة لهذا الطرف
 
 ## قواعد الاستنتاج التلقائي:
-- طرف تخصصه "مونتاج/مكساج/تلوين/جرافيك/تصوير" = التصنيف "مصروفات مباشرة"
+- طرف تخصصه "مونتاج/مكساج/تلوين/جرافيك/تصوير" = التصنيف "مصروفات مباشرة" والبند = تخصصه
 - طرف نوعه "ممول" = الطبيعة "تمويل" أو "سداد تمويل"
 - طرف نوعه "عميل" = الطبيعة "إيراد"
 - إذا الطرف عمل في مشروع واحد فقط، اقترحه تلقائياً
 - إذا المستخدم قال "شوف أفلام X" أو "مشاريع X"، ابحث في party_projects
+- إذا search_parties أرجع party_items، استخدم أول بند كاقتراح افتراضي
+
+## تصحيحات تلقائية إلزامية (لا تسأل المستخدم، طبّقها مباشرة):
+
+### الرواتب والأجور:
+- إذا ذُكرت كلمات: "راتب/مرتب/أجر/أجور/مكافأة/حوافز/بدل/رواتب/مرتبات/مكافآت"
+- → التصنيف = "مصروفات عمومية" (حتى لو قال المستخدم مصروفات مباشرة)
+- → البند = "رواتب" أو "مكافآت" حسب السياق
+- → لا تسأل عن المشروع (المصروفات العمومية لا تحتاج مشروع)
+
+### التحويل الداخلي:
+- إذا ذُكرت كلمات: "تحويل داخلي/حولت من الخزنة للبنك/من البنك للخزنة/تحويل بين الحسابات"
+- → الطبيعة = "تحويل داخلي"
+- → التصنيف = "تحويل للبنك" أو "تحويل للخزنة" حسب الاتجاه
+- → البند = "تحويل داخلي"
+- → الطرف = لا يوجد (احذفه)
+- → المشروع = لا يوجد (احذفه)
+- → شرط الدفع = "فوري"
+- → سعر الصرف = 0
+
+### المصاريف البنكية:
+- إذا ذُكرت كلمات: "مصاريف بنكية/عمولة بنكية/رسوم بنكية/مصاريف تحويل/عمولة تحويل/رسوم مصرفية/مصاريف البنك"
+- → الطبيعة = "دفعة مصروف"
+- → التصنيف = "مصروفات عمومية"
+- → البند = "مصاريف بنكية"
+- → طريقة الدفع = "تحويل بنكي"
+- → شرط الدفع = "فوري"
+- → الطرف = اختياري (اذكره إن ذُكر في النص)
+- → المشروع = لا يوجد
+
+### تغيير العملة / صرف:
+- إذا ذُكرت كلمات: "بعت دولار/شريت دولار/غيرت عملة/صرفت/تصريف/صرافة"
+- → الطبيعة = "تغيير عملة"
+- → التصنيف = "بيع دولار" أو "شراء دولار" حسب السياق
+- → البند = "تغيير عملة"
+- → الطرف = لا يوجد
+- → المشروع = لا يوجد
+- → شرط الدفع = "فوري"
+- → **سعر الصرف مطلوب دائماً** - اسأل المستخدم إذا لم يذكره
 
 ## التعامل مع نتائج البحث:
 - إذا search_parties أرجع partial_match=true مع similar_parties: اعرض الأسماء المشابهة واسأل المستخدم "هل تقصد أحد هؤلاء؟"
@@ -147,6 +216,9 @@ function smartAnalyze(userMessage, conversationHistory) {
 
         if (!result.success) {
             Logger.log('❌ Smart Agent: فشل الاتصال - ' + result.error);
+            // ⭐ محاولة المحللات المتخصصة قبل الـ fallback
+            var specialParsed = trySpecializedParsers_(userMessage);
+            if (specialParsed) return specialParsed;
             // fallback للنظام القديم
             return fallbackToLegacy_(userMessage);
         }
@@ -156,6 +228,9 @@ function smartAnalyze(userMessage, conversationHistory) {
 
     } catch (e) {
         Logger.log('❌ Smart Agent خطأ: ' + e.message);
+        // ⭐ محاولة المحللات المتخصصة قبل الـ fallback
+        var specialParsed = trySpecializedParsers_(userMessage);
+        if (specialParsed) return specialParsed;
         return fallbackToLegacy_(userMessage);
     }
 }
@@ -380,6 +455,12 @@ function handleBatchFunctionCalls_(functionCalls, history) {
             break;
         }
 
+        // حقول ناقصة - أعد النتيجة لـ Gemini ليسأل عنها
+        if (toolResult.action === 'MISSING_FIELDS') {
+            toolResults.push({ name: toolName, result: toolResult });
+            break; // لا تنفذ أدوات أخرى، أعد لـ Gemini
+        }
+
         // أداة عادية - اجمع النتيجة
         toolResults.push({ name: toolName, result: toolResult });
     }
@@ -514,6 +595,24 @@ function buildContextSummary_() {
             }
         }
 
+        // تحميل البنود (اسم + طبيعة + تصنيف)
+        var itemsSheet = ss.getSheetByName(CONFIG.SHEETS.ITEMS);
+        if (itemsSheet && itemsSheet.getLastRow() > 1) {
+            var itemsData = itemsSheet.getRange(2, 1, Math.min(itemsSheet.getLastRow() - 1, 40), 3).getValues();
+            var itemsList = [];
+            for (var k = 0; k < itemsData.length; k++) {
+                var itemName = String(itemsData[k][0] || '').trim();
+                var itemNature = String(itemsData[k][1] || '').trim();
+                var itemClass = String(itemsData[k][2] || '').trim();
+                if (itemName) {
+                    itemsList.push(itemName + (itemNature ? ' [' + itemNature + '/' + itemClass + ']' : ''));
+                }
+            }
+            if (itemsList.length > 0) {
+                summary += '## البنود المحاسبية المتاحة:\n' + itemsList.join(' | ') + '\n\n';
+            }
+        }
+
     } catch (e) {
         Logger.log('⚠️ buildContextSummary_ error: ' + e.message);
     }
@@ -528,6 +627,46 @@ function buildContextSummary_() {
 /**
  * في حالة فشل الـ Agent، نستخدم النظام القديم
  */
+/**
+ * ⭐ محاولة المحللات المتخصصة (مصاريف بنكية / تغيير عملة)
+ * تعمل كخطة بديلة عند فشل Gemini في فهم هذه الأنماط المحددة
+ */
+function trySpecializedParsers_(userMessage) {
+    // محلل المصاريف البنكية
+    if (typeof tryParseBankFees_ === 'function') {
+        var bankResult = tryParseBankFees_(userMessage);
+        if (bankResult) {
+            Logger.log('✅ Smart Agent: Bank fees fallback parser succeeded');
+            return {
+                action: 'SHOW_CONFIRMATION',
+                transaction: bankResult,
+                agentHistory: [{
+                    role: 'user',
+                    parts: [{ text: userMessage }]
+                }]
+            };
+        }
+    }
+
+    // محلل تغيير العملة
+    if (typeof tryParseCurrencyExchange_ === 'function') {
+        var exchangeResult = tryParseCurrencyExchange_(userMessage);
+        if (exchangeResult) {
+            Logger.log('✅ Smart Agent: Currency exchange fallback parser succeeded');
+            return {
+                action: 'SHOW_CONFIRMATION',
+                transaction: exchangeResult,
+                agentHistory: [{
+                    role: 'user',
+                    parts: [{ text: userMessage }]
+                }]
+            };
+        }
+    }
+
+    return null; // لم تنجح أي محلل متخصص
+}
+
 function fallbackToLegacy_(userMessage) {
     Logger.log('⚠️ Smart Agent: fallback للنظام القديم');
     try {

@@ -102,6 +102,49 @@ var AGENT_TOOL_DECLARATIONS = [
         }
     },
     {
+        name: 'check_balance',
+        description: 'فحص رصيد حساب معين (بنك أو خزنة) قبل تسجيل الدفعة. استخدم هذه الأداة قبل show_confirmation لإظهار تحذير إذا الرصيد غير كافٍ.',
+        parameters: {
+            type: 'OBJECT',
+            properties: {
+                payment_method: {
+                    type: 'STRING',
+                    description: 'طريقة الدفع',
+                    enum: ['نقدي', 'تحويل بنكي', 'بطاقة']
+                },
+                currency: {
+                    type: 'STRING',
+                    description: 'العملة',
+                    enum: ['USD', 'TRY', 'EGP']
+                },
+                amount: {
+                    type: 'NUMBER',
+                    description: 'المبلغ المراد دفعه'
+                }
+            },
+            required: ['payment_method', 'currency', 'amount']
+        }
+    },
+    {
+        name: 'get_party_accruals',
+        description: 'جلب المستحقات المعلقة لطرف معين (مشاريع عليها رصيد مستحق). استخدم هذه الأداة عندما تكون الحركة دفعة مصروف أو تحصيل إيراد وللطرف مستحقات على عدة مشاريع - لتقديم خيار التوزيع الذكي (FIFO).',
+        parameters: {
+            type: 'OBJECT',
+            properties: {
+                party_name: {
+                    type: 'STRING',
+                    description: 'اسم الطرف'
+                },
+                payment_nature: {
+                    type: 'STRING',
+                    description: 'طبيعة الدفعة',
+                    enum: ['دفعة مصروف', 'تحصيل إيراد']
+                }
+            },
+            required: ['party_name', 'payment_nature']
+        }
+    },
+    {
         name: 'save_transaction',
         description: 'حفظ الحركة المالية في دفتر الحركات بعد التأكد من اكتمال جميع البيانات المطلوبة. لا تستدعِ هذه الأداة إلا بعد تأكيد المستخدم.',
         parameters: {
@@ -243,6 +286,10 @@ function executeAgentTool_(toolName, args) {
             return executeSearchItems_(args);
         case 'get_account_balance':
             return executeGetAccountBalance_(args);
+        case 'check_balance':
+            return executeCheckBalance_(args);
+        case 'get_party_accruals':
+            return executeGetPartyAccruals_(args);
         case 'ask_user':
             return executeAskUser_(args);
         case 'save_transaction':
@@ -319,15 +366,20 @@ function executeSearchParties_(args) {
             })
         };
 
-        // البحث عن مشاريع الطرف من سجل الحركات
+        // البحث عن مشاريع وبنود الطرف من سجل الحركات
         try {
             var partyProjects = findProjectsByParty_(topMatch.name);
             if (partyProjects.length > 0) {
                 response.party_projects = partyProjects;
                 response.hint = 'هذا الطرف عمل سابقاً في المشاريع المذكورة في party_projects';
             }
+            var partyItems = findItemsByParty_(topMatch.name);
+            if (partyItems.length > 0) {
+                response.party_items = partyItems;
+                response.hint = (response.hint || '') + '. البنود التي استخدمها هذا الطرف سابقاً: ' + partyItems.join('، ');
+            }
         } catch (e) {
-            Logger.log('⚠️ خطأ في البحث عن مشاريع الطرف: ' + e.message);
+            Logger.log('⚠️ خطأ في البحث عن مشاريع/بنود الطرف: ' + e.message);
         }
 
         return response;
@@ -375,6 +427,48 @@ function findProjectsByParty_(partyName) {
         return Object.keys(projectSet);
     } catch (e) {
         Logger.log('⚠️ findProjectsByParty_ error: ' + e.message);
+        return [];
+    }
+}
+
+/**
+ * البحث عن البنود التي استخدمها طرف معين من سجل الحركات
+ */
+function findItemsByParty_(partyName) {
+    try {
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        var sheets = [CONFIG.SHEETS.TRANSACTIONS, CONFIG.SHEETS.BOT_TRANSACTIONS];
+        var itemSet = {};
+
+        for (var s = 0; s < sheets.length; s++) {
+            var sheet = ss.getSheetByName(sheets[s]);
+            if (!sheet || sheet.getLastRow() < 2) continue;
+
+            var data = sheet.getDataRange().getValues();
+            var headers = data[0];
+
+            var partyCol = -1, itemCol = -1;
+            for (var h = 0; h < headers.length; h++) {
+                var header = String(headers[h]).trim();
+                if (header === 'الطرف' || header === 'اسم الطرف') partyCol = h;
+                if (header === 'البند' || header === 'اسم البند') itemCol = h;
+            }
+            if (partyCol === -1 || itemCol === -1) continue;
+
+            for (var i = data.length - 1; i >= 1; i--) {
+                var rowParty = String(data[i][partyCol] || '').trim();
+                var rowItem = String(data[i][itemCol] || '').trim();
+                if (rowParty === partyName && rowItem && !itemSet[rowItem]) {
+                    itemSet[rowItem] = true;
+                    if (Object.keys(itemSet).length >= 5) break;
+                }
+            }
+            if (Object.keys(itemSet).length >= 5) break;
+        }
+
+        return Object.keys(itemSet);
+    } catch (e) {
+        Logger.log('⚠️ findItemsByParty_ error: ' + e.message);
         return [];
     }
 }
@@ -452,11 +546,110 @@ function executeAskUser_(args) {
 /**
  * عرض تأكيد الحركة
  */
+/**
+ * فحص رصيد الحساب - يستخدم calculateCurrentBalance_ الموجودة في AIBot.js
+ */
+function executeCheckBalance_(args) {
+    try {
+        var balanceInfo = calculateCurrentBalance_(args.payment_method, args.currency);
+        if (!balanceInfo || !balanceInfo.success) {
+            return { checked: false, message: 'لم نتمكن من حساب الرصيد' };
+        }
+        var remaining = balanceInfo.balance - args.amount;
+        return {
+            checked: true,
+            account_name: balanceInfo.accountName,
+            current_balance: balanceInfo.balance,
+            amount_requested: args.amount,
+            remaining_after: Math.round(remaining * 100) / 100,
+            sufficient: remaining >= 0,
+            warning: remaining < 0 ? 'الرصيد غير كافٍ! العجز: ' + Math.abs(remaining).toLocaleString() + ' ' + args.currency : ''
+        };
+    } catch (e) {
+        Logger.log('❌ executeCheckBalance_ error: ' + e.message);
+        return { checked: false, message: e.message };
+    }
+}
+
+/**
+ * جلب المستحقات المعلقة لطرف معين - يستخدم getOutstandingAccruals_ الموجودة في AIBot.js
+ */
+function executeGetPartyAccruals_(args) {
+    try {
+        var accruals = getOutstandingAccruals_(args.party_name, args.payment_nature);
+        if (!accruals || !accruals.found) {
+            return {
+                found: false,
+                message: 'لا توجد مستحقات معلقة لـ "' + args.party_name + '"'
+            };
+        }
+        return {
+            found: true,
+            total_outstanding: accruals.totalOutstanding,
+            project_count: accruals.projects.length,
+            projects: accruals.projects.map(function(p) {
+                return {
+                    project_name: p.projectName,
+                    project_code: p.projectCode,
+                    outstanding: p.outstanding,
+                    accrued: p.accrued,
+                    paid: p.paid
+                };
+            }),
+            hint: accruals.projects.length >= 2 ?
+                'يوجد مستحقات على ' + accruals.projects.length + ' مشاريع. اعرض على المستخدم خيار التوزيع الذكي (FIFO) أو اختيار مشروع واحد.' :
+                'يوجد مستحق على مشروع واحد فقط'
+        };
+    } catch (e) {
+        Logger.log('❌ executeGetPartyAccruals_ error: ' + e.message);
+        return { found: false, message: e.message };
+    }
+}
+
 function executeShowConfirmation_(args) {
-    // مثل ask_user - تُعيد تعليمات للـ SmartAgent
+    var tx = args.transaction || {};
+
+    // التحقق من الحقول الإلزامية قبل العرض
+    var missing = [];
+    if (!tx.nature) missing.push('طبيعة الحركة');
+    if (!tx.amount) missing.push('المبلغ');
+    if (!tx.currency) missing.push('العملة');
+
+    // طريقة الدفع إلزامية للدفعات (ليس الاستحقاقات)
+    var isPayment = tx.nature && (tx.nature.indexOf('دفعة') !== -1 || tx.nature.indexOf('تحصيل') !== -1 || tx.nature.indexOf('سداد') !== -1 || tx.nature.indexOf('استلام') !== -1);
+    if (isPayment && !tx.payment_method) missing.push('طريقة الدفع');
+
+    // المشروع إلزامي لمصروفات مباشرة وإيرادات
+    var needsProject = tx.classification && (tx.classification.indexOf('مباشرة') !== -1 || tx.classification.indexOf('إيراد') !== -1 || tx.classification.indexOf('ايراد') !== -1);
+    if (needsProject && !tx.project && !tx.project_code) missing.push('المشروع');
+
+    if (missing.length > 0) {
+        return {
+            action: 'MISSING_FIELDS',
+            missing: missing,
+            message: 'لا يمكن التأكيد، الحقول التالية ناقصة: ' + missing.join('، ')
+        };
+    }
+
+    // فحص الرصيد تلقائياً للدفعات
+    if (isPayment && tx.payment_method && tx.currency && tx.amount) {
+        try {
+            var balanceInfo = calculateCurrentBalance_(tx.payment_method, tx.currency);
+            if (balanceInfo && balanceInfo.success) {
+                var remaining = balanceInfo.balance - tx.amount;
+                tx._balance_info = {
+                    account_name: balanceInfo.accountName,
+                    current_balance: balanceInfo.balance,
+                    remaining_after: Math.round(remaining * 100) / 100,
+                    sufficient: remaining >= 0
+                };
+            }
+        } catch (e) { /* تجاهل */ }
+    }
+
     return {
         action: 'SHOW_CONFIRMATION',
-        transaction: args.transaction
+        transaction: tx
     };
 }
 

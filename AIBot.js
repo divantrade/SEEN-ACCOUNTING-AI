@@ -513,7 +513,27 @@ function handleSmartAgentResult_(chatId, agentResult, originalText, user) {
 
             // إرسال السؤال مع أزرار إن وُجدت
             var askOptions = { parse_mode: 'Markdown' };
-            if (agentResult.options && agentResult.options.length > 0) {
+
+            // ⭐ لوحة مفاتيح ذكية للمشاريع (تعرض مشاريع الطرف أولاً)
+            if (agentResult.field_name === 'project' && typeof buildProjectsKeyboard === 'function') {
+                var partyName = (session.transaction && session.transaction.party) || '';
+                var projKeyboard = buildProjectsKeyboard(true, partyName);
+                // تحويل callbacks من ai_project_ إلى smart_ للتوافق
+                if (projKeyboard && projKeyboard.inline_keyboard) {
+                    projKeyboard.inline_keyboard.forEach(function(row) {
+                        row.forEach(function(btn) {
+                            if (btn.callback_data && btn.callback_data.indexOf('ai_project_') === 0) {
+                                btn.callback_data = 'smart_' + btn.callback_data.substring(11);
+                            } else if (btn.callback_data === 'ai_skip_project') {
+                                btn.callback_data = 'smart_بدون مشروع';
+                            } else if (btn.callback_data === 'ai_cancel') {
+                                btn.callback_data = 'smart_cancel';
+                            }
+                        });
+                    });
+                    askOptions.reply_markup = JSON.stringify(projKeyboard);
+                }
+            } else if (agentResult.options && agentResult.options.length > 0) {
                 var buttons = agentResult.options.map(function(opt) {
                     return [{ text: opt.text, callback_data: 'smart_' + opt.value }];
                 });
@@ -642,6 +662,20 @@ function handleSmartCallback_(chatId, callbackData, user) {
                     unit_count: tx.unit_count || tx.unitCount || '',
                     loan_due_date: tx.loan_due_date || ''
                 };
+
+                // ⭐ فحص أهلية التوزيع الذكي FIFO قبل الحفظ
+                if (!session.smartPaymentChecked) {
+                    var smartEligibility = checkSmartPaymentEligibility_(normalizedTx);
+                    if (smartEligibility) {
+                        session.transaction = normalizedTx;
+                        session.smartPayment = smartEligibility;
+                        session.smartPaymentChecked = true;
+                        saveAIUserSession(chatId, session);
+                        showSmartPaymentConfirmation_(chatId, session);
+                        return true;
+                    }
+                }
+
                 var result = saveAITransaction(normalizedTx, user, chatId);
                 if (result.success) {
                     sendAIMessage(chatId, '✅ *تم تسجيل الحركة بنجاح!*\n📌 رقم الحركة: #' + result.transactionId, { parse_mode: 'Markdown' });
@@ -702,6 +736,21 @@ function buildSmartConfirmationMessage_(tx) {
     if (tx.unit_count) msg += '📊 *عدد الوحدات:* ' + tx.unit_count + '\n';
 
     msg += '━━━━━━━━━━━━━━━━';
+
+    // عرض معلومات الرصيد إذا متاحة
+    if (tx._balance_info) {
+        var bi = tx._balance_info;
+        msg += '\n\n';
+        if (bi.sufficient) {
+            msg += '💰 رصيد ' + bi.account_name + ': *' + formatNumber(bi.current_balance) + '*';
+            msg += ' (بعد الحركة: *' + formatNumber(bi.remaining_after) + '*)';
+        } else {
+            msg += '⚠️ *تحذير: الرصيد غير كافٍ!*\n';
+            msg += '💰 رصيد ' + bi.account_name + ': *' + formatNumber(bi.current_balance) + '*\n';
+            msg += '🔴 العجز: *' + formatNumber(Math.abs(bi.remaining_after)) + '*';
+        }
+    }
+
     return msg;
 }
 
