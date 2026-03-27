@@ -15,7 +15,7 @@
  * true = Smart Agent (الجديد مع Function Calling)
  * false = Legacy (النظام القديم)
  */
-var USE_SMART_AGENT = true;
+var USE_SMART_AGENT = false;
 
 // ==================== تخزين جلسات المستخدمين ====================
 const aiUserSessions = {};
