@@ -89,15 +89,21 @@ ${contextSummary}
 ## تعليمات العمل (اتبعها بالترتيب بدقة):
 1. حلل رسالة المستخدم واستخرج البيانات المالية
 2. **إلزامي**: إذا ذُكر اسم طرف، استخدم search_parties فوراً قبل أي شيء آخر
-   - النتيجة ستعطيك: نوع الطرف + تخصصه + المشاريع التي عمل فيها (party_projects)
-   - استخدم التخصص لتحديد البند تلقائياً (مثال: تخصص "مونتاج" = بند "مونتاج")
-   - استخدم نوع الطرف لتحديد التصنيف (مورد = مصروفات مباشرة عادةً)
-   - إذا وجدت مشاريع سابقة (party_projects)، اعرضها على المستخدم للاختيار
-3. استخدم search_items للتأكد من البند (إذا لم يُستنتج من تخصص الطرف)
-4. استخدم search_projects للتأكد من اسم المشروع (إذا اختار المستخدم أو ذكر مشروعاً)
-5. **مهم**: لا تسأل المستخدم عن معلومة يمكنك استنتاجها من نتائج البحث
-6. إذا بقيت معلومات ناقصة لا يمكن استنتاجها، استخدم ask_user (اجمع عدة أسئلة في سؤال واحد)
-7. **إلزامي قبل show_confirmation**: تأكد أن كل هذه الحقول موجودة:
+   - النتيجة ستعطيك: نوع الطرف + تخصصه + المشاريع التي عمل فيها (party_projects) + البنود التي استخدمها (party_items)
+   - **استنتج البند تلقائياً** من: تخصص الطرف (specialization) أو party_items (أول بند) — لا تسأل المستخدم عن البند
+   - **استنتج التصنيف تلقائياً** من نوع الطرف: مورد = مصروفات مباشرة، عميل = إيرادات أفلام، ممول = تمويل
+   - **إذا الطرف عمل في مشروع واحد فقط**: اقترحه تلقائياً بدون سؤال
+   - **إذا عمل في عدة مشاريع**: اذكرها في السؤال ليختار المستخدم
+3. **إلزامي للدفعات والتحصيلات**: بعد search_parties مباشرة، استخدم get_party_accruals
+   - هذا يجب أن يحدث في نفس الدورة مع search_parties (استدعِ الأداتين معاً)
+   - إذا وُجدت مستحقات على مشروع واحد → حدد المشروع والبند تلقائياً
+   - إذا مستحقات على عدة مشاريع → اعرضها للمستخدم (اذكر المبالغ لكل مشروع)
+4. استخدم search_items فقط إذا لم يُستنتج البند من تخصص الطرف أو party_items
+5. استخدم search_projects للتأكد من اسم المشروع إذا ذكر المستخدم مشروعاً محدداً
+6. **مهم جداً**: لا تسأل المستخدم عن معلومة يمكنك استنتاجها. الاستنتاج التلقائي أفضل من كثرة الأسئلة
+7. إذا بقيت معلومات ناقصة لا يمكن استنتاجها، استخدم ask_user (**اجمع كل الأسئلة في سؤال واحد**)
+   - مثال: بدلاً من سؤالين منفصلين عن طريقة الدفع ثم المشروع، اسأل: "ما طريقة الدفع؟ وعلى أي مشروع؟"
+8. **إلزامي قبل show_confirmation**: تأكد أن كل هذه الحقول موجودة:
    - طبيعة الحركة (nature)
    - التصنيف (classification)
    - البند (item)
@@ -105,20 +111,19 @@ ${contextSummary}
    - المبلغ (amount) والعملة (currency)
    - طريقة الدفع (payment_method) - **لا تفترضها أبداً، اسأل المستخدم إذا لم يذكرها**
    - المشروع (project) - إذا كان التصنيف مصروفات مباشرة أو إيراد
-8. عندما تكتمل كل البيانات أعلاه، استخدم show_confirmation لعرض الملخص
-9. لا تحفظ إلا بعد تأكيد المستخدم عبر show_confirmation
+9. عندما تكتمل كل البيانات أعلاه، استخدم show_confirmation لعرض الملخص
+10. لا تحفظ إلا بعد تأكيد المستخدم عبر show_confirmation
 
-## التوزيع الذكي FIFO (للدفعات فقط):
-- عندما تكون الحركة "دفعة مصروف" أو "تحصيل إيراد":
-  1. بعد search_parties، استخدم get_party_accruals لمعرفة المستحقات المعلقة
-  2. إذا وجدت مستحقات على مشروعين أو أكثر:
-     - اعرض على المستخدم: "يوجد مستحقات على X مشاريع. هل تريد توزيع الدفعة تلقائياً (FIFO) أم اختيار مشروع واحد؟"
-     - إذا اختار التوزيع → سيتم التوزيع تلقائياً عند الحفظ
-  3. إذا مستحقات على مشروع واحد → اقترحه تلقائياً
+## استراتيجية الاستنتاج الذكي (قبل أن تسأل المستخدم):
+- "دفعت لشريف" + شريف مورد تخصصه مونتاج + عمل في فيلم واحد =
+  → nature: دفعة مصروف، classification: مصروفات مباشرة، item: مونتاج، project: (الفيلم الوحيد)
+  → **اسأل فقط عن طريقة الدفع**
+- "دفعت لشريف" + شريف عمل في 3 أفلام =
+  → استخدم get_party_accruals أولاً، ثم اسأل عن طريقة الدفع والمشروع **في سؤال واحد**
 
 ## فحص الرصيد:
-- قبل show_confirmation للدفعات، استخدم check_balance لفحص الرصيد
-- إذا الرصيد غير كافٍ، أبلغ المستخدم بالتحذير لكن لا تمنعه من المتابعة
+- يتم تلقائياً عند show_confirmation (لا تحتاج استدعاء check_balance يدوياً)
+- إذا الرصيد غير كافٍ، سيظهر تحذير في رسالة التأكيد
 
 ## التعامل مع طلب توزيع على مشاريع:
 - إذا قال المستخدم "وزعها على المشاريع" أو "قسّمها" أو "على كل المشاريع":
@@ -422,6 +427,7 @@ function processAgentResponse_(geminiResult, currentContents) {
 function handleBatchFunctionCalls_(functionCalls, history) {
     var toolResults = [];
     var userAction = null;
+    var collectedData = {}; // ⭐ تجميع البيانات المستخرجة من الأدوات
 
     // تنفيذ جميع الأدوات
     for (var i = 0; i < functionCalls.length; i++) {
@@ -433,6 +439,21 @@ function handleBatchFunctionCalls_(functionCalls, history) {
 
         var toolResult = executeAgentTool_(toolName, args);
 
+        // ⭐ تجميع بيانات الطرف من search_parties
+        if (toolName === 'search_parties' && toolResult.found && toolResult.results && toolResult.results.length > 0) {
+            collectedData.party = toolResult.results[0].name;
+            collectedData.party_type = toolResult.results[0].type;
+            collectedData.party_specialization = toolResult.results[0].specialization;
+            if (toolResult.party_projects) collectedData.party_projects = toolResult.party_projects;
+            if (toolResult.party_items) collectedData.party_items = toolResult.party_items;
+            Logger.log('📦 Collected party data: ' + collectedData.party + ' (' + collectedData.party_type + ')');
+        }
+
+        // ⭐ تجميع بيانات المستحقات
+        if (toolName === 'get_party_accruals' && toolResult.has_accruals) {
+            collectedData.accruals = toolResult;
+        }
+
         // أدوات خاصة تحتاج تفاعل المستخدم - أوقف التنفيذ
         if (toolResult.action === 'WAIT_FOR_USER') {
             userAction = {
@@ -441,6 +462,7 @@ function handleBatchFunctionCalls_(functionCalls, history) {
                 options: toolResult.options,
                 field_name: toolResult.field_name,
                 agentHistory: history,
+                collectedData: collectedData,
                 pendingToolResponse: { name: toolName, response: toolResult }
             };
             break;

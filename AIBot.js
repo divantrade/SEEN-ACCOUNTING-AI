@@ -505,6 +505,29 @@ function handleSmartAgentResult_(chatId, agentResult, originalText, user) {
             // AI يريد سؤال المستخدم
             Logger.log('🧠 Agent asks user: ' + agentResult.question);
 
+            // ⭐ حفظ البيانات المجمعة من الأدوات في الجلسة
+            if (agentResult.collectedData && Object.keys(agentResult.collectedData).length > 0) {
+                if (!session.transaction) session.transaction = {};
+                var cd = agentResult.collectedData;
+                if (cd.party) session.transaction.party = cd.party;
+                if (cd.party_type) session.transaction.party_type = cd.party_type;
+                if (cd.party_specialization) session.transaction.party_specialization = cd.party_specialization;
+                if (cd.party_projects) session.transaction._party_projects = cd.party_projects;
+                if (cd.party_items) session.transaction._party_items = cd.party_items;
+                if (cd.accruals) session.transaction._accruals = cd.accruals;
+                Logger.log('📦 Saved collected data to session: party=' + (cd.party || 'none'));
+            }
+            // ⭐ fallback: استخراج بيانات الطرف من سجل المحادثة إذا لم تُجمع
+            if ((!session.transaction || !session.transaction.party) && agentResult.agentHistory) {
+                var extractedParty = extractPartyFromHistory_(agentResult.agentHistory);
+                if (extractedParty) {
+                    if (!session.transaction) session.transaction = {};
+                    session.transaction.party = extractedParty.name;
+                    if (extractedParty.party_projects) session.transaction._party_projects = extractedParty.party_projects;
+                    Logger.log('📦 Extracted party from history: ' + extractedParty.name);
+                }
+            }
+
             session.state = 'smart_waiting_user';
             session.agentHistory = agentResult.agentHistory;
             session.originalText = originalText;
@@ -752,6 +775,33 @@ function buildSmartConfirmationMessage_(tx) {
     }
 
     return msg;
+}
+
+/**
+ * ⭐ استخراج بيانات الطرف من سجل المحادثة (agentHistory)
+ * يبحث في ردود الأدوات عن نتيجة search_parties الناجحة
+ */
+function extractPartyFromHistory_(history) {
+    if (!history || !Array.isArray(history)) return null;
+    for (var i = history.length - 1; i >= 0; i--) {
+        var entry = history[i];
+        if (entry.role !== 'function' || !entry.parts) continue;
+        for (var j = 0; j < entry.parts.length; j++) {
+            var part = entry.parts[j];
+            if (part.functionResponse && part.functionResponse.name === 'search_parties') {
+                var resp = part.functionResponse.response;
+                if (resp && resp.found && resp.results && resp.results.length > 0) {
+                    return {
+                        name: resp.results[0].name,
+                        type: resp.results[0].type,
+                        specialization: resp.results[0].specialization,
+                        party_projects: resp.party_projects || null
+                    };
+                }
+            }
+        }
+    }
+    return null;
 }
 
 // ==================== النظام القديم (Legacy) ====================
