@@ -30,7 +30,7 @@ var AGENT_TOOL_DECLARATIONS = [
     },
     {
         name: 'search_parties',
-        description: 'البحث في قائمة الأطراف (موردين/عملاء/ممولين). استخدم هذه الأداة للتأكد من وجود طرف أو البحث عن اسم مشابه.',
+        description: 'البحث في قائمة الأطراف (موردين/عملاء/ممولين). إلزامي عند ذكر اسم طرف. يُرجع: اسم الطرف + نوعه + تخصصه + المشاريع التي عمل فيها سابقاً. استخدم النتائج لاستنتاج التصنيف والبند والمشروع تلقائياً.',
         parameters: {
             type: 'OBJECT',
             properties: {
@@ -297,14 +297,72 @@ function executeSearchParties_(args) {
                 suggestion: 'يمكن إضافته كطرف جديد'
             };
         }
-        return {
+
+        var topMatch = results[0];
+        var response = {
             found: true,
             results: results.map(function(p) {
-                return { name: p.name, type: p.type };
+                return { name: p.name, type: p.type, specialization: p.specialization || '' };
             })
         };
+
+        // البحث عن مشاريع الطرف من سجل الحركات
+        try {
+            var partyProjects = findProjectsByParty_(topMatch.name);
+            if (partyProjects.length > 0) {
+                response.party_projects = partyProjects;
+                response.hint = 'هذا الطرف عمل سابقاً في المشاريع المذكورة في party_projects';
+            }
+        } catch (e) {
+            Logger.log('⚠️ خطأ في البحث عن مشاريع الطرف: ' + e.message);
+        }
+
+        return response;
     } catch (e) {
         return { error: e.message };
+    }
+}
+
+/**
+ * البحث عن المشاريع التي عمل فيها طرف معين من سجل الحركات
+ */
+function findProjectsByParty_(partyName) {
+    try {
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        var sheets = [CONFIG.SHEETS.TRANSACTIONS, CONFIG.SHEETS.BOT_TRANSACTIONS];
+        var projectSet = {};
+
+        for (var s = 0; s < sheets.length; s++) {
+            var sheet = ss.getSheetByName(sheets[s]);
+            if (!sheet || sheet.getLastRow() < 2) continue;
+
+            var data = sheet.getDataRange().getValues();
+            var headers = data[0];
+
+            // البحث عن أعمدة الطرف والمشروع
+            var partyCol = -1, projectCol = -1;
+            for (var h = 0; h < headers.length; h++) {
+                var header = String(headers[h]).trim();
+                if (header === 'الطرف' || header === 'اسم الطرف') partyCol = h;
+                if (header === 'المشروع' || header === 'كود المشروع') projectCol = h;
+            }
+            if (partyCol === -1 || projectCol === -1) continue;
+
+            for (var i = data.length - 1; i >= 1; i--) {
+                var rowParty = String(data[i][partyCol] || '').trim();
+                var rowProject = String(data[i][projectCol] || '').trim();
+                if (rowParty === partyName && rowProject && !projectSet[rowProject]) {
+                    projectSet[rowProject] = true;
+                    if (Object.keys(projectSet).length >= 5) break;
+                }
+            }
+            if (Object.keys(projectSet).length >= 5) break;
+        }
+
+        return Object.keys(projectSet);
+    } catch (e) {
+        Logger.log('⚠️ findProjectsByParty_ error: ' + e.message);
+        return [];
     }
 }
 

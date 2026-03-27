@@ -328,9 +328,12 @@ function searchParties(searchText, options) {
             if (addedNames[normalizedKey]) continue;
             addedNames[normalizedKey] = true;
 
+            var specialization = String(row[2] || '').trim();
+
             parties.push({
                 name: name,
-                type: type || 'مورد'
+                type: type || 'مورد',
+                specialization: specialization
             });
         }
     }
@@ -344,6 +347,7 @@ function searchParties(searchText, options) {
                 results.push({
                     name: parties[j].name,
                     type: parties[j].type,
+                    specialization: parties[j].specialization,
                     score: matchResult.score
                 });
             }
