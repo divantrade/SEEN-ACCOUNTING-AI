@@ -319,15 +319,20 @@ function executeSearchParties_(args) {
             })
         };
 
-        // البحث عن مشاريع الطرف من سجل الحركات
+        // البحث عن مشاريع وبنود الطرف من سجل الحركات
         try {
             var partyProjects = findProjectsByParty_(topMatch.name);
             if (partyProjects.length > 0) {
                 response.party_projects = partyProjects;
                 response.hint = 'هذا الطرف عمل سابقاً في المشاريع المذكورة في party_projects';
             }
+            var partyItems = findItemsByParty_(topMatch.name);
+            if (partyItems.length > 0) {
+                response.party_items = partyItems;
+                response.hint = (response.hint || '') + '. البنود التي استخدمها هذا الطرف سابقاً: ' + partyItems.join('، ');
+            }
         } catch (e) {
-            Logger.log('⚠️ خطأ في البحث عن مشاريع الطرف: ' + e.message);
+            Logger.log('⚠️ خطأ في البحث عن مشاريع/بنود الطرف: ' + e.message);
         }
 
         return response;
@@ -375,6 +380,48 @@ function findProjectsByParty_(partyName) {
         return Object.keys(projectSet);
     } catch (e) {
         Logger.log('⚠️ findProjectsByParty_ error: ' + e.message);
+        return [];
+    }
+}
+
+/**
+ * البحث عن البنود التي استخدمها طرف معين من سجل الحركات
+ */
+function findItemsByParty_(partyName) {
+    try {
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        var sheets = [CONFIG.SHEETS.TRANSACTIONS, CONFIG.SHEETS.BOT_TRANSACTIONS];
+        var itemSet = {};
+
+        for (var s = 0; s < sheets.length; s++) {
+            var sheet = ss.getSheetByName(sheets[s]);
+            if (!sheet || sheet.getLastRow() < 2) continue;
+
+            var data = sheet.getDataRange().getValues();
+            var headers = data[0];
+
+            var partyCol = -1, itemCol = -1;
+            for (var h = 0; h < headers.length; h++) {
+                var header = String(headers[h]).trim();
+                if (header === 'الطرف' || header === 'اسم الطرف') partyCol = h;
+                if (header === 'البند' || header === 'اسم البند') itemCol = h;
+            }
+            if (partyCol === -1 || itemCol === -1) continue;
+
+            for (var i = data.length - 1; i >= 1; i--) {
+                var rowParty = String(data[i][partyCol] || '').trim();
+                var rowItem = String(data[i][itemCol] || '').trim();
+                if (rowParty === partyName && rowItem && !itemSet[rowItem]) {
+                    itemSet[rowItem] = true;
+                    if (Object.keys(itemSet).length >= 5) break;
+                }
+            }
+            if (Object.keys(itemSet).length >= 5) break;
+        }
+
+        return Object.keys(itemSet);
+    } catch (e) {
+        Logger.log('⚠️ findItemsByParty_ error: ' + e.message);
         return [];
     }
 }
