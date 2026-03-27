@@ -291,6 +291,19 @@ function executeSearchParties_(args) {
     try {
         var results = searchParties(args.query);
         if (results.length === 0) {
+            // محاولة ثانية بالمطابقة الذكية (أوسع)
+            var smartResults = searchParties(args.query, { useSmartMatch: true });
+            if (smartResults.length > 0) {
+                return {
+                    found: false,
+                    partial_match: true,
+                    message: 'لم يتم العثور على تطابق كامل لـ "' + args.query + '" لكن وُجدت أسماء مشابهة',
+                    similar_parties: smartResults.map(function(p) {
+                        return { name: p.name, type: p.type, specialization: p.specialization || '' };
+                    }),
+                    hint: 'اعرض الأسماء المشابهة على المستخدم ليختار منها، أو أضفه كطرف جديد'
+                };
+            }
             return {
                 found: false,
                 message: 'لم يتم العثور على طرف مطابق لـ "' + args.query + '"',

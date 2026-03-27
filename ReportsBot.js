@@ -129,6 +129,7 @@ function handleReportCallback(chatId, data, session) {
             const partyType = data.replace('report_party_', '');
             session.reportData.partyType = partyType;
             session.reportState = REPORTS_CONFIG.STATES.WAITING_PARTY_NAME;
+            session.state = AI_CONFIG.AI_CONVERSATION_STATES.IDLE;
             saveAIUserSession(chatId, session);
 
             // ⭐ رسالة ديناميكية حسب نوع الطرف

@@ -274,6 +274,14 @@ function handleAIMessage(message) {
     Logger.log('📍 Has validation: ' + (session.validation ? 'yes' : 'no'));
     Logger.log('═══════════════════════════════════════');
 
+    // ⭐ التحقق من وضع التقارير أولاً (قبل أي معالجة أخرى)
+    if (isInReportMode(session)) {
+        if (session.reportState === REPORTS_CONFIG.STATES.WAITING_PARTY_NAME) {
+            handleReportPartySearch(chatId, text, session);
+            return;
+        }
+    }
+
     // معالجة حسب حالة المحادثة
     switch (session.state) {
         case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_MISSING_FIELD:
@@ -390,13 +398,6 @@ function handleAIMessage(message) {
             break;
 
         default:
-            // ⭐ التحقق من وضع التقارير أولاً
-            if (isInReportMode(session)) {
-                if (session.reportState === REPORTS_CONFIG.STATES.WAITING_PARTY_NAME) {
-                    handleReportPartySearch(chatId, text, session);
-                    return;
-                }
-            }
             // تحليل النص كحركة مالية جديدة
             Logger.log('⚠️ DEFAULT CASE - Processing as new transaction');
             Logger.log('⚠️ Session state was: "' + session.state + '"');
