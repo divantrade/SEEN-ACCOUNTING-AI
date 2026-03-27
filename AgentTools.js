@@ -453,10 +453,33 @@ function executeAskUser_(args) {
  * عرض تأكيد الحركة
  */
 function executeShowConfirmation_(args) {
-    // مثل ask_user - تُعيد تعليمات للـ SmartAgent
+    var tx = args.transaction || {};
+
+    // التحقق من الحقول الإلزامية قبل العرض
+    var missing = [];
+    if (!tx.nature) missing.push('طبيعة الحركة');
+    if (!tx.amount) missing.push('المبلغ');
+    if (!tx.currency) missing.push('العملة');
+
+    // طريقة الدفع إلزامية للدفعات (ليس الاستحقاقات)
+    var isPayment = tx.nature && (tx.nature.indexOf('دفعة') !== -1 || tx.nature.indexOf('تحصيل') !== -1 || tx.nature.indexOf('سداد') !== -1 || tx.nature.indexOf('استلام') !== -1);
+    if (isPayment && !tx.payment_method) missing.push('طريقة الدفع');
+
+    // المشروع إلزامي لمصروفات مباشرة وإيرادات
+    var needsProject = tx.classification && (tx.classification.indexOf('مباشرة') !== -1 || tx.classification.indexOf('إيراد') !== -1 || tx.classification.indexOf('ايراد') !== -1);
+    if (needsProject && !tx.project && !tx.project_code) missing.push('المشروع');
+
+    if (missing.length > 0) {
+        return {
+            action: 'MISSING_FIELDS',
+            missing: missing,
+            message: 'لا يمكن التأكيد، الحقول التالية ناقصة: ' + missing.join('، ')
+        };
+    }
+
     return {
         action: 'SHOW_CONFIRMATION',
-        transaction: args.transaction
+        transaction: tx
     };
 }
 
