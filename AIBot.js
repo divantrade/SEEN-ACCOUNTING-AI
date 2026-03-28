@@ -2366,17 +2366,6 @@ function handleAICallback(callbackQuery) {
         startManualDistribution_(chatId, session);
         return;
     }
-    if (data.startsWith('ai_mdist_proj_')) {
-        Logger.log('🧠 Manual dist project selected: ' + data);
-        var mdProjKey = data.replace('ai_mdist_proj_', '');
-        handleManualDistProjectSelect_(chatId, session, mdProjKey);
-        return;
-    }
-    if (data === 'ai_mdist_done') {
-        Logger.log('🧠 Manual dist done - confirm');
-        handleManualDistConfirm_(chatId, session, user);
-        return;
-    }
     if (data.startsWith('ai_mdist_proj_amt_')) {
         Logger.log('🧠 Manual dist quick amount: ' + data);
         var quickAmt = parseFloat(data.replace('ai_mdist_proj_amt_', ''));
@@ -2385,9 +2374,20 @@ function handleAICallback(callbackQuery) {
         }
         return;
     }
+    if (data === 'ai_mdist_done') {
+        Logger.log('🧠 Manual dist done - confirm');
+        handleManualDistConfirm_(chatId, session, user);
+        return;
+    }
     if (data === 'ai_mdist_back') {
         Logger.log('🧠 Manual dist back to project list');
         showManualDistProjectList_(chatId, session);
+        return;
+    }
+    if (data.startsWith('ai_mdist_proj_')) {
+        Logger.log('🧠 Manual dist project selected: ' + data);
+        var mdProjKey = data.replace('ai_mdist_proj_', '');
+        handleManualDistProjectSelect_(chatId, session, mdProjKey);
         return;
     }
     if (data.startsWith('ai_adv_proj_')) {
