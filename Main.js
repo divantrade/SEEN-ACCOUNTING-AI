@@ -6560,7 +6560,7 @@ function generateDynamicExpenseReport(silent) {
 
     var key = category + '||' + item + '||' + party;
     if (!map[key]) {
-      map[key] = { category: category, item: item || '(بدون بند)', party: party || '(بدون جهة)', accrual: 0, paid: 0, settlement: 0 };
+      map[key] = { category: category, item: item || '(بدون بند)', party: party || '(بدون جهة)', classification: classification, natureType: natureType, accrual: 0, paid: 0, settlement: 0 };
     }
     var v = map[key];
 
@@ -6582,7 +6582,7 @@ function generateDynamicExpenseReport(silent) {
     var remaining = v.accrual - v.paid;
     var pct = v.accrual > 0 ? v.paid / v.accrual : (v.paid > 0 ? 1 : 0);
 
-    rows.push([v.category, v.item, v.party, v.accrual, v.paid, remaining, pct]);
+    rows.push([v.category, v.classification, v.natureType, v.item, v.party, v.accrual, v.paid, remaining, pct]);
 
     // تجميع الإجماليات
     var t;
@@ -6627,7 +6627,7 @@ function generateDynamicExpenseReport(silent) {
   };
 
   // عنوان
-  sheet.getRange('A1:G1').merge()
+  sheet.getRange('A1:I1').merge()
     .setValue('📊 تحليل المصروفات')
     .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
@@ -6635,35 +6635,35 @@ function generateDynamicExpenseReport(silent) {
     .setHorizontalAlignment('center');
 
   // رأس جدول الملخص
-  var dashHeaders = ['البيان', '', '', 'مستحق (USD)', 'مدفوع (USD)', 'متبقي (USD)', '% السداد'];
-  sheet.getRange(2, 1, 1, 7).setValues([dashHeaders])
+  var dashHeaders = ['البيان', '', '', '', '', 'مستحق (USD)', 'مدفوع (USD)', 'متبقي (USD)', '% السداد'];
+  sheet.getRange(2, 1, 1, 9).setValues([dashHeaders])
     .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
     .setFontWeight('bold').setHorizontalAlignment('center');
 
   // بيانات الملخص
   var dashData = [
-    ['🏢 إجمالي المصروفات العمومية', '', '', totals.overhead.accrual, totals.overhead.paid, totals.overhead.accrual - totals.overhead.paid, totals.overhead.accrual > 0 ? totals.overhead.paid / totals.overhead.accrual : ''],
-    ['🎬 إجمالي مصروفات الأفلام', '', '', totals.directFilm.accrual, totals.directFilm.paid, totals.directFilm.accrual - totals.directFilm.paid, totals.directFilm.accrual > 0 ? totals.directFilm.paid / totals.directFilm.accrual : ''],
-    ['📋 مصروفات مباشرة بدون مشروع', '', '', totals.directNoFilm.accrual, totals.directNoFilm.paid, totals.directNoFilm.accrual - totals.directNoFilm.paid, totals.directNoFilm.accrual > 0 ? totals.directNoFilm.paid / totals.directNoFilm.accrual : ''],
-    ['📌 الإجمالي العام', '', '', totalAll.accrual, totalAll.paid, totalAll.accrual - totalAll.paid, totalAll.accrual > 0 ? totalAll.paid / totalAll.accrual : '']
+    ['🏢 إجمالي المصروفات العمومية', '', '', '', '', totals.overhead.accrual, totals.overhead.paid, totals.overhead.accrual - totals.overhead.paid, totals.overhead.accrual > 0 ? totals.overhead.paid / totals.overhead.accrual : ''],
+    ['🎬 إجمالي مصروفات الأفلام', '', '', '', '', totals.directFilm.accrual, totals.directFilm.paid, totals.directFilm.accrual - totals.directFilm.paid, totals.directFilm.accrual > 0 ? totals.directFilm.paid / totals.directFilm.accrual : ''],
+    ['📋 مصروفات مباشرة بدون مشروع', '', '', '', '', totals.directNoFilm.accrual, totals.directNoFilm.paid, totals.directNoFilm.accrual - totals.directNoFilm.paid, totals.directNoFilm.accrual > 0 ? totals.directNoFilm.paid / totals.directNoFilm.accrual : ''],
+    ['📌 الإجمالي العام', '', '', '', '', totalAll.accrual, totalAll.paid, totalAll.accrual - totalAll.paid, totalAll.accrual > 0 ? totalAll.paid / totalAll.accrual : '']
   ];
-  sheet.getRange(3, 1, 4, 7).setValues(dashData);
+  sheet.getRange(3, 1, 4, 9).setValues(dashData);
 
   // تنسيق الملخص
-  sheet.getRange('A3:C6').setFontWeight('bold');
-  sheet.getRange(3, 4, 4, 3).setNumberFormat('$#,##0.00');
-  sheet.getRange(3, 7, 4, 1).setNumberFormat('0.0%');
-  sheet.getRange('A6:G6').setFontWeight('bold').setBackground('#e8eaf6'); // صف الإجمالي
+  sheet.getRange('A3:E6').setFontWeight('bold');
+  sheet.getRange(3, 6, 4, 3).setNumberFormat('$#,##0.00');
+  sheet.getRange(3, 9, 4, 1).setNumberFormat('0.0%');
+  sheet.getRange('A6:I6').setFontWeight('bold').setBackground('#e8eaf6'); // صف الإجمالي
 
   // إطار الملخص
-  sheet.getRange('A2:G6').setBorder(true, true, true, true, true, true, '#1565c0', SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange('A2:I6').setBorder(true, true, true, true, true, true, '#1565c0', SpreadsheetApp.BorderStyle.SOLID);
 
   // تلوين المتبقي
   for (var r = 3; r <= 6; r++) {
-    var remVal = sheet.getRange(r, 6).getValue();
-    if (remVal > 0) sheet.getRange(r, 6).setBackground('#ffcdd2');
-    else if (remVal === 0) sheet.getRange(r, 6).setBackground('#c8e6c9');
+    var remVal = sheet.getRange(r, 8).getValue();
+    if (remVal > 0) sheet.getRange(r, 8).setBackground('#ffcdd2');
+    else if (remVal === 0) sheet.getRange(r, 8).setBackground('#c8e6c9');
   }
 
   // صف 7: فاصل
@@ -6673,8 +6673,8 @@ function generateDynamicExpenseReport(silent) {
   // جدول التفاصيل (صف 8+)
   // ═══════════════════════════════════════════════════════════
   var tableHeaderRow = 8;
-  var tableHeaders = ['التصنيف', 'البند', 'المورد / الجهة', 'مستحق (USD)', 'مدفوع (USD)', 'متبقي (USD)', '% السداد'];
-  sheet.getRange(tableHeaderRow, 1, 1, 7).setValues([tableHeaders])
+  var tableHeaders = ['التصنيف', 'تصنيف الحركة', 'طبيعة الحركة', 'البند', 'المورد / الجهة', 'مستحق (USD)', 'مدفوع (USD)', 'متبقي (USD)', '% السداد'];
+  sheet.getRange(tableHeaderRow, 1, 1, 9).setValues([tableHeaders])
     .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
     .setFontColor(CONFIG.COLORS.TEXT.WHITE)
     .setFontWeight('bold').setHorizontalAlignment('center');
@@ -6682,22 +6682,22 @@ function generateDynamicExpenseReport(silent) {
   var dataStartRow = tableHeaderRow + 1;
 
   if (rows.length > 0) {
-    sheet.getRange(dataStartRow, 1, rows.length, 7).setValues(rows);
-    sheet.getRange(dataStartRow, 4, rows.length, 3).setNumberFormat('$#,##0.00');
-    sheet.getRange(dataStartRow, 7, rows.length, 1).setNumberFormat('0.0%');
+    sheet.getRange(dataStartRow, 1, rows.length, 9).setValues(rows);
+    sheet.getRange(dataStartRow, 6, rows.length, 3).setNumberFormat('$#,##0.00');
+    sheet.getRange(dataStartRow, 9, rows.length, 1).setNumberFormat('0.0%');
 
     // تلوين متناوب
     for (var ri = 0; ri < rows.length; ri++) {
       var bg = ri % 2 === 0 ? '#ffffff' : CONFIG.COLORS.BG.LIGHT_BLUE;
-      sheet.getRange(dataStartRow + ri, 1, 1, 7).setBackground(bg);
+      sheet.getRange(dataStartRow + ri, 1, 1, 9).setBackground(bg);
     }
 
     // إطار الجدول
-    sheet.getRange(tableHeaderRow, 1, rows.length + 1, 7)
+    sheet.getRange(tableHeaderRow, 1, rows.length + 1, 9)
       .setBorder(true, true, true, true, true, true, '#bdbdbd', SpreadsheetApp.BorderStyle.SOLID);
 
     // ⭐ إضافة الفلتر على الجدول
-    var filterRange = sheet.getRange(tableHeaderRow, 1, rows.length + 1, 7);
+    var filterRange = sheet.getRange(tableHeaderRow, 1, rows.length + 1, 9);
     filterRange.createFilter();
   } else {
     sheet.getRange(dataStartRow, 1).setValue('لا توجد مصروفات').setFontStyle('italic');
@@ -6706,13 +6706,15 @@ function generateDynamicExpenseReport(silent) {
   // ═══════════════════════════════════════════════════════════
   // تنسيق الأعمدة
   // ═══════════════════════════════════════════════════════════
-  sheet.setColumnWidth(1, 200);  // التصنيف
-  sheet.setColumnWidth(2, 160);  // البند
-  sheet.setColumnWidth(3, 160);  // المورد
-  sheet.setColumnWidth(4, 120);  // مستحق
-  sheet.setColumnWidth(5, 120);  // مدفوع
-  sheet.setColumnWidth(6, 120);  // متبقي
-  sheet.setColumnWidth(7, 80);   // %
+  sheet.setColumnWidth(1, 160);  // التصنيف
+  sheet.setColumnWidth(2, 140);  // تصنيف الحركة
+  sheet.setColumnWidth(3, 140);  // طبيعة الحركة
+  sheet.setColumnWidth(4, 160);  // البند
+  sheet.setColumnWidth(5, 160);  // المورد
+  sheet.setColumnWidth(6, 120);  // مستحق
+  sheet.setColumnWidth(7, 120);  // مدفوع
+  sheet.setColumnWidth(8, 120);  // متبقي
+  sheet.setColumnWidth(9, 80);   // %
 
   // تجميد صفوف الـ Dashboard + رأس الجدول
   sheet.setFrozenRows(tableHeaderRow);
@@ -6722,10 +6724,10 @@ function generateDynamicExpenseReport(silent) {
   // ═══════════════════════════════════════════════════════════
   var footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
   var reportDate = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy HH:mm');
-  sheet.getRange(footerRow, 1, 1, 7).merge()
+  sheet.getRange(footerRow, 1, 1, 9).merge()
     .setValue('تاريخ التقرير: ' + reportDate)
     .setHorizontalAlignment('center').setFontSize(9).setFontColor('#757575');
-  sheet.getRange(footerRow + 1, 1, 1, 7).merge()
+  sheet.getRange(footerRow + 1, 1, 1, 9).merge()
     .setValue(CONFIG.COMPANY.CREDITS)
     .setHorizontalAlignment('center').setFontSize(9).setFontColor('#9e9e9e');
 
