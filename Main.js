@@ -6560,17 +6560,20 @@ function generateDynamicExpenseReport(silent) {
 
     var key = category + '||' + item + '||' + party;
     if (!map[key]) {
-      map[key] = { category: category, item: item || '(بدون بند)', party: party || '(بدون جهة)', classification: classification, natureType: natureType, accrual: 0, paid: 0, settlement: 0 };
+      map[key] = { category: category, item: item || '(بدون بند)', party: party || '(بدون جهة)', classification: classification, hasAccrual: false, hasPaid: false, hasSettlement: false, accrual: 0, paid: 0, settlement: 0 };
     }
     var v = map[key];
 
     if (natureType.includes('تسوية استحقاق مصروف')) {
       v.accrual -= amountUsd;
       v.settlement += amountUsd;
+      v.hasSettlement = true;
     } else if (natureType.includes('استحقاق مصروف')) {
       v.accrual += amountUsd;
+      v.hasAccrual = true;
     } else if (natureType.includes('دفعة مصروف')) {
       v.paid += amountUsd;
+      v.hasPaid = true;
     }
   }
 
@@ -6582,7 +6585,14 @@ function generateDynamicExpenseReport(silent) {
     var remaining = v.accrual - v.paid;
     var pct = v.accrual > 0 ? v.paid / v.accrual : (v.paid > 0 ? 1 : 0);
 
-    rows.push([v.category, v.classification, v.natureType, v.item, v.party, v.accrual, v.paid, remaining, pct]);
+    // بناء وصف طبيعة الحركة من الأنواع الفعلية الموجودة
+    var natureTypes = [];
+    if (v.hasAccrual) natureTypes.push('استحقاق');
+    if (v.hasPaid) natureTypes.push('دفعة');
+    if (v.hasSettlement) natureTypes.push('تسوية');
+    var natureDisplay = natureTypes.join(' + ');
+
+    rows.push([v.category, v.classification, natureDisplay, v.item, v.party, v.accrual, v.paid, remaining, pct]);
 
     // تجميع الإجماليات
     var t;
@@ -6600,7 +6610,7 @@ function generateDynamicExpenseReport(silent) {
     var ob = order[b[0].substring(0, 2)] || 9;
     if (oa !== ob) return oa - ob;
     if (a[0] !== b[0]) return a[0].localeCompare(b[0], 'ar');
-    return a[1].localeCompare(b[1], 'ar');
+    return a[3].localeCompare(b[3], 'ar'); // ترتيب حسب البند (عمود 4)
   });
 
   // ═══════════════════════════════════════════════════════════
