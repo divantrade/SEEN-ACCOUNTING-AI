@@ -381,6 +381,16 @@ function handleAIMessage(message) {
             }
             break;
 
+        case AI_CONFIG.AI_CONVERSATION_STATES.WAITING_MANUAL_DIST_AMOUNT:
+            // ⭐ إدخال مبلغ للتوزيع اليدوي
+            if (looksLikeNewTransaction_(text)) {
+                resetAIUserSession(chatId);
+                processNewTransaction(chatId, text, message.from);
+            } else {
+                handleManualDistAmountEntry_(chatId, session, text);
+            }
+            break;
+
         // ⭐ حالات Smart Agent الجديدة
         case 'smart_waiting_user':
         case 'smart_waiting_confirm':
@@ -2348,6 +2358,36 @@ function handleAICallback(callbackQuery) {
         session.smartPaymentChecked = true;
         saveAIUserSession(chatId, session);
         showTransactionConfirmation(chatId, session);
+        return;
+    }
+    // ⭐ التوزيع اليدوي
+    if (data === 'ai_smart_manual') {
+        Logger.log('🧠 Manual distribution mode');
+        startManualDistribution_(chatId, session);
+        return;
+    }
+    if (data.startsWith('ai_mdist_proj_')) {
+        Logger.log('🧠 Manual dist project selected: ' + data);
+        var mdProjKey = data.replace('ai_mdist_proj_', '');
+        handleManualDistProjectSelect_(chatId, session, mdProjKey);
+        return;
+    }
+    if (data === 'ai_mdist_done') {
+        Logger.log('🧠 Manual dist done - confirm');
+        handleManualDistConfirm_(chatId, session, user);
+        return;
+    }
+    if (data.startsWith('ai_mdist_proj_amt_')) {
+        Logger.log('🧠 Manual dist quick amount: ' + data);
+        var quickAmt = parseFloat(data.replace('ai_mdist_proj_amt_', ''));
+        if (quickAmt > 0 && session.manualDistPending) {
+            applyManualDistAmount_(chatId, session, quickAmt);
+        }
+        return;
+    }
+    if (data === 'ai_mdist_back') {
+        Logger.log('🧠 Manual dist back to project list');
+        showManualDistProjectList_(chatId, session);
         return;
     }
     if (data.startsWith('ai_adv_proj_')) {
@@ -4793,6 +4833,9 @@ function showSmartPaymentConfirmation_(chatId, session) {
                 { text: '❌ إلغاء', callback_data: 'ai_cancel' }
             ],
             [
+                { text: '✋ توزيع يدوي (أختار المشاريع والمبالغ)', callback_data: 'ai_smart_manual' }
+            ],
+            [
                 { text: '📝 تسجيل كدفعة واحدة (بدون توزيع)', callback_data: 'ai_smart_skip' }
             ]
         ]
@@ -4938,6 +4981,361 @@ function handleSmartPaymentConfirmation_(chatId, session, user) {
         resetAIUserSession(chatId);
     }
 }
+
+// ==================== التوزيع اليدوي ====================
+
+/**
+ * ⭐ بدء وضع التوزيع اليدوي - عرض قائمة المشاريع التي عليها مستحقات
+ */
+function startManualDistribution_(chatId, session) {
+    var smartData = session.smartPayment;
+    if (!smartData || !smartData.accruals) {
+        sendAIMessage(chatId, '❌ خطأ: لا توجد بيانات مستحقات.');
+        return;
+    }
+
+    // تهيئة بيانات التوزيع اليدوي
+    session.manualDist = {
+        distributions: [],       // [{projectName, projectCode, amount}]
+        totalAmount: session.transaction.amount,
+        remainingAmount: session.transaction.amount
+    };
+    saveAIUserSession(chatId, session);
+
+    showManualDistProjectList_(chatId, session);
+}
+
+/**
+ * ⭐ عرض قائمة المشاريع المتاحة للتوزيع اليدوي
+ */
+function showManualDistProjectList_(chatId, session) {
+    var tx = session.transaction;
+    var smartData = session.smartPayment;
+    var manualDist = session.manualDist;
+    var accruals = smartData.accruals;
+
+    // حساب المتبقي
+    var distributed = 0;
+    manualDist.distributions.forEach(function(d) { distributed += d.amount; });
+    manualDist.remainingAmount = Math.round((manualDist.totalAmount - distributed) * 100) / 100;
+    saveAIUserSession(chatId, session);
+
+    var msg = '✋ *توزيع يدوي للدفعة*\n';
+    msg += '━━━━━━━━━━━━━━━━\n';
+    msg += '💰 *المبلغ الكلي:* ' + formatNumber(manualDist.totalAmount) + ' ' + tx.currency + '\n';
+
+    // عرض ما تم توزيعه
+    if (manualDist.distributions.length > 0) {
+        msg += '\n📋 *تم التوزيع:*\n';
+        manualDist.distributions.forEach(function(d, idx) {
+            msg += (idx + 1) + '. ' + d.projectName + ': *' + formatNumber(d.amount) + '* ' + tx.currency + '\n';
+        });
+    }
+
+    msg += '\n💵 *المتبقي:* ' + formatNumber(manualDist.remainingAmount) + ' ' + tx.currency + '\n';
+    msg += '━━━━━━━━━━━━━━━━\n';
+
+    if (manualDist.remainingAmount <= 0) {
+        msg += '\n✅ تم توزيع المبلغ بالكامل!';
+    } else {
+        msg += '\n👇 اختر مشروعاً لتوزيع جزء من المبلغ عليه:';
+    }
+
+    // بناء أزرار المشاريع (فقط التي لم يتم اختيارها + عليها مستحقات)
+    var selectedCodes = {};
+    manualDist.distributions.forEach(function(d) {
+        selectedCodes[d.projectCode || d.projectName] = true;
+    });
+
+    var buttons = [];
+    accruals.projects.forEach(function(p) {
+        var key = p.projectCode || p.projectName;
+        if (selectedCodes[key]) return; // تم اختياره بالفعل
+
+        var btnText = p.projectName;
+        if (p.outstanding) btnText += ' (مستحق: ' + formatNumber(p.outstanding) + ')';
+
+        buttons.push([{ text: btnText, callback_data: 'ai_mdist_proj_' + key }]);
+    });
+
+    // أزرار التحكم
+    var controlBtns = [];
+    if (manualDist.distributions.length > 0) {
+        controlBtns.push({ text: '✅ تأكيد وحفظ (' + manualDist.distributions.length + ' مشاريع)', callback_data: 'ai_mdist_done' });
+    }
+    controlBtns.push({ text: '❌ إلغاء', callback_data: 'ai_cancel' });
+    buttons.push(controlBtns);
+
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_SMART_PAYMENT_CONFIRM;
+    saveAIUserSession(chatId, session);
+
+    sendAIMessage(chatId, msg, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify({ inline_keyboard: buttons })
+    });
+}
+
+/**
+ * ⭐ المستخدم اختار مشروعاً - اسأله عن المبلغ
+ */
+function handleManualDistProjectSelect_(chatId, session, projKey) {
+    var smartData = session.smartPayment;
+    var accruals = smartData.accruals;
+    var manualDist = session.manualDist;
+
+    // البحث عن المشروع في المستحقات
+    var project = null;
+    for (var i = 0; i < accruals.projects.length; i++) {
+        var p = accruals.projects[i];
+        if ((p.projectCode || p.projectName) === projKey) {
+            project = p;
+            break;
+        }
+    }
+
+    if (!project) {
+        sendAIMessage(chatId, '❌ لم يُعثر على المشروع');
+        showManualDistProjectList_(chatId, session);
+        return;
+    }
+
+    // حفظ المشروع المختار للانتظار
+    session.manualDistPending = {
+        projectName: project.projectName,
+        projectCode: project.projectCode || '',
+        outstanding: project.outstanding
+    };
+    session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_MANUAL_DIST_AMOUNT;
+    saveAIUserSession(chatId, session);
+
+    var tx = session.transaction;
+    var remaining = manualDist.remainingAmount;
+
+    var msg = '🎬 *' + project.projectName + '*\n';
+    msg += '📊 المستحق: *' + formatNumber(project.outstanding) + '* ' + tx.currency + '\n';
+    msg += '💵 المتبقي من الدفعة: *' + formatNumber(remaining) + '* ' + tx.currency + '\n\n';
+    msg += '💬 كم تريد أن تدفع لهذا المشروع؟\n';
+    msg += '_اكتب المبلغ أو اضغط أحد الخيارات:_';
+
+    // أزرار سريعة
+    var quickBtns = [];
+    // سداد كامل المستحق (إذا يكفي المتبقي)
+    if (project.outstanding <= remaining) {
+        quickBtns.push({ text: '💯 سداد كامل المستحق (' + formatNumber(project.outstanding) + ')', callback_data: 'ai_mdist_proj_amt_' + project.outstanding });
+    }
+    // كامل المتبقي
+    if (remaining !== project.outstanding && remaining > 0) {
+        quickBtns.push({ text: '💰 كامل المتبقي (' + formatNumber(remaining) + ')', callback_data: 'ai_mdist_proj_amt_' + remaining });
+    }
+
+    var keyboard = [];
+    quickBtns.forEach(function(btn) { keyboard.push([btn]); });
+    keyboard.push([{ text: '↩️ رجوع', callback_data: 'ai_mdist_back' }]);
+
+    sendAIMessage(chatId, msg, {
+        parse_mode: 'Markdown',
+        reply_markup: JSON.stringify({ inline_keyboard: keyboard })
+    });
+}
+
+/**
+ * ⭐ المستخدم أدخل المبلغ للتوزيع اليدوي (نص)
+ */
+function handleManualDistAmountEntry_(chatId, session, text) {
+    var pending = session.manualDistPending;
+    if (!pending) {
+        sendAIMessage(chatId, '❌ خطأ: لم يتم اختيار مشروع');
+        showManualDistProjectList_(chatId, session);
+        return;
+    }
+
+    // تنظيف واستخراج الرقم
+    var cleanText = text.replace(/[٠-٩]/g, function(d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); });
+    cleanText = cleanText.replace(/[^0-9.,]/g, '').replace(',', '.');
+    var amount = parseFloat(cleanText);
+
+    if (!amount || amount <= 0 || isNaN(amount)) {
+        sendAIMessage(chatId, '❌ المبلغ غير صحيح. أدخل رقماً صحيحاً:', { parse_mode: 'Markdown' });
+        return;
+    }
+
+    applyManualDistAmount_(chatId, session, amount);
+}
+
+/**
+ * ⭐ تطبيق المبلغ على المشروع المختار
+ */
+function applyManualDistAmount_(chatId, session, amount) {
+    var manualDist = session.manualDist;
+    var pending = session.manualDistPending;
+
+    amount = Math.round(amount * 100) / 100;
+
+    // التحقق من أن المبلغ لا يتجاوز المتبقي
+    if (amount > manualDist.remainingAmount) {
+        sendAIMessage(chatId, '⚠️ المبلغ (' + formatNumber(amount) + ') أكبر من المتبقي (' + formatNumber(manualDist.remainingAmount) + '). أدخل مبلغاً أقل:', { parse_mode: 'Markdown' });
+        return;
+    }
+
+    // إضافة التوزيع
+    manualDist.distributions.push({
+        projectName: pending.projectName,
+        projectCode: pending.projectCode,
+        amount: amount,
+        closesBalance: amount >= pending.outstanding,
+        originalOutstanding: pending.outstanding
+    });
+
+    // تحديث المتبقي
+    var distributed = 0;
+    manualDist.distributions.forEach(function(d) { distributed += d.amount; });
+    manualDist.remainingAmount = Math.round((manualDist.totalAmount - distributed) * 100) / 100;
+
+    session.manualDistPending = null;
+    saveAIUserSession(chatId, session);
+
+    var tx = session.transaction;
+    sendAIMessage(chatId, '✅ تم: *' + pending.projectName + '* ← *' + formatNumber(amount) + '* ' + tx.currency +
+        (manualDist.remainingAmount > 0 ? '\n💵 المتبقي: *' + formatNumber(manualDist.remainingAmount) + '* ' + tx.currency : '\n✅ تم توزيع المبلغ بالكامل!'),
+        { parse_mode: 'Markdown' });
+
+    // عرض قائمة المشاريع مرة أخرى (أو تأكيد إذا انتهى المبلغ)
+    showManualDistProjectList_(chatId, session);
+}
+
+/**
+ * ⭐ تأكيد وحفظ التوزيع اليدوي
+ */
+function handleManualDistConfirm_(chatId, session, user) {
+    try {
+        var tx = session.transaction;
+        var manualDist = session.manualDist;
+        var distributions = manualDist.distributions;
+
+        if (!distributions || distributions.length === 0) {
+            sendAIMessage(chatId, '❌ لم يتم توزيع أي مبلغ بعد.');
+            showManualDistProjectList_(chatId, session);
+            return;
+        }
+
+        var userName = (user.first_name || '') + ' ' + (user.last_name || '');
+        userName = userName.trim();
+        var savedCount = 0;
+        var errors = [];
+        var savedIds = [];
+
+        // حفظ كل توزيع كحركة مستقلة
+        for (var i = 0; i < distributions.length; i++) {
+            var d = distributions[i];
+
+            var transactionData = {
+                date: tx.due_date && tx.due_date !== 'TODAY' ? tx.due_date : new Date(),
+                nature: tx.nature,
+                classification: tx.classification,
+                projectCode: d.projectCode || '',
+                projectName: d.projectName || '',
+                item: tx.item || '',
+                details: tx.nature.indexOf('تحصيل إيراد') !== -1 ? 'تحصيل فاتورة ' + d.projectName : 'سداد فاتورة ' + d.projectName,
+                partyName: tx.party,
+                amount: d.amount,
+                currency: tx.currency,
+                exchangeRate: tx.exchangeRate || 0,
+                paymentMethod: tx.payment_method || '',
+                paymentTermType: 'فوري',
+                weeks: '',
+                customDate: '',
+                telegramUser: userName,
+                chatId: chatId,
+                attachmentUrl: '',
+                isNewParty: false,
+                unitCount: '',
+                statementMark: '',
+                orderNumber: '',
+                notes: tx.originalText || session.originalText || ''
+            };
+
+            var result = addTransactionDirectly(transactionData, '🤖 بوت ذكي (توزيع يدوي)');
+
+            if (result.success) {
+                savedCount++;
+                savedIds.push(result.transactionId);
+            } else {
+                errors.push(d.projectName + ': ' + result.error);
+            }
+        }
+
+        // المبلغ المتبقي (إن وُجد)
+        if (manualDist.remainingAmount > 0) {
+            var advData = {
+                date: tx.due_date && tx.due_date !== 'TODAY' ? tx.due_date : new Date(),
+                nature: tx.nature,
+                classification: tx.classification,
+                projectCode: '',
+                projectName: '',
+                item: tx.item || '',
+                details: 'دفعة مقدمة - ' + tx.party,
+                partyName: tx.party,
+                amount: manualDist.remainingAmount,
+                currency: tx.currency,
+                exchangeRate: tx.exchangeRate || 0,
+                paymentMethod: tx.payment_method || '',
+                paymentTermType: 'فوري',
+                weeks: '',
+                customDate: '',
+                telegramUser: userName,
+                chatId: chatId,
+                attachmentUrl: '',
+                isNewParty: false,
+                unitCount: '',
+                statementMark: '',
+                orderNumber: '',
+                notes: tx.originalText || session.originalText || ''
+            };
+
+            var advResult = addTransactionDirectly(advData, '🤖 بوت ذكي (متبقي يدوي)');
+            if (advResult.success) {
+                savedCount++;
+                savedIds.push(advResult.transactionId);
+            }
+        }
+
+        // ملخص النتيجة
+        var resultMsg = '';
+        if (savedCount > 0 && errors.length === 0) {
+            resultMsg = '✅ *تم تسجيل ' + savedCount + ' دفعة بنجاح!*\n\n';
+            distributions.forEach(function(d, idx) {
+                resultMsg += (idx + 1) + '. ' + d.projectName + ': ' + formatNumber(d.amount) + ' ' + tx.currency + '\n';
+            });
+            if (manualDist.remainingAmount > 0) {
+                resultMsg += '\n⚡ دفعة مقدمة: ' + formatNumber(manualDist.remainingAmount) + ' ' + tx.currency + '\n';
+            }
+            resultMsg += '\n📌 أرقام الحركات: ' + savedIds.join(', ');
+        } else if (savedCount > 0) {
+            resultMsg = '⚠️ *تم تسجيل ' + savedCount + ' دفعة، وفشل ' + errors.length + ':*\n';
+            errors.forEach(function(e) { resultMsg += '❌ ' + e + '\n'; });
+        } else {
+            resultMsg = '❌ *فشل تسجيل جميع الدفعات*\n';
+            errors.forEach(function(e) { resultMsg += '❌ ' + e + '\n'; });
+        }
+
+        sendAIMessage(chatId, resultMsg, { parse_mode: 'Markdown' });
+
+        if (savedCount > 0) {
+            savedIds.forEach(function(id) {
+                try { notifyReviewers(id, tx); } catch (e) { /* تجاهل */ }
+            });
+        }
+
+        resetAIUserSession(chatId);
+
+    } catch (error) {
+        Logger.log('❌ handleManualDistConfirm_ error: ' + error.message);
+        sendAIMessage(chatId, '❌ خطأ: ' + error.message);
+        resetAIUserSession(chatId);
+    }
+}
+
+// ==================== نهاية التوزيع اليدوي ====================
 
 /**
  * عرض خيارات اختيار المشروع للدفعة المقدمة (المبلغ الزائد)

@@ -122,6 +122,7 @@ const AI_CONFIG = {
         WAITING_SHARED_ORDER_CONFIRMATION: 'ai_waiting_shared_order_confirm',  // ⭐ انتظار تأكيد الأوردر المشترك
         WAITING_SMART_PAYMENT_CONFIRM: 'ai_waiting_smart_payment',           // ⭐ انتظار تأكيد التوزيع الذكي للدفعة
         WAITING_ADVANCE_PROJECT: 'ai_waiting_advance_project',               // ⭐ انتظار اختيار مشروع للدفعة المقدمة
+        WAITING_MANUAL_DIST_AMOUNT: 'ai_waiting_manual_dist_amount',         // ⭐ انتظار إدخال المبلغ للتوزيع اليدوي
         WAITING_ITEM_SELECTION: 'ai_waiting_item'                              // ⭐ انتظار اختيار البند
     },
 
