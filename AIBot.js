@@ -5042,21 +5042,21 @@ function showManualDistProjectList_(chatId, session) {
     }
 
     // بناء أزرار المشاريع (فقط التي لم يتم اختيارها + عليها مستحقات)
-    var selectedCodes = {};
+    var selectedIndexes = {};
     manualDist.distributions.forEach(function(d) {
-        selectedCodes[d.projectCode || d.projectName] = true;
+        if (d._srcIndex !== undefined) selectedIndexes[d._srcIndex] = true;
     });
 
     var buttons = [];
-    accruals.projects.forEach(function(p) {
-        var key = p.projectCode || p.projectName;
-        if (selectedCodes[key]) return; // تم اختياره بالفعل
+    for (var pi = 0; pi < accruals.projects.length; pi++) {
+        if (selectedIndexes[pi]) continue; // تم اختياره بالفعل
 
+        var p = accruals.projects[pi];
         var btnText = p.projectName;
         if (p.outstanding) btnText += ' (مستحق: ' + formatNumber(p.outstanding) + ')';
 
-        buttons.push([{ text: btnText, callback_data: 'ai_mdist_proj_' + key }]);
-    });
+        buttons.push([{ text: btnText, callback_data: 'ai_mdist_proj_' + pi }]);
+    }
 
     // أزرار التحكم
     var controlBtns = [];
@@ -5083,14 +5083,11 @@ function handleManualDistProjectSelect_(chatId, session, projKey) {
     var accruals = smartData.accruals;
     var manualDist = session.manualDist;
 
-    // البحث عن المشروع في المستحقات
+    // البحث عن المشروع بالفهرس
+    var projIdx = parseInt(projKey);
     var project = null;
-    for (var i = 0; i < accruals.projects.length; i++) {
-        var p = accruals.projects[i];
-        if ((p.projectCode || p.projectName) === projKey) {
-            project = p;
-            break;
-        }
+    if (!isNaN(projIdx) && projIdx >= 0 && projIdx < accruals.projects.length) {
+        project = accruals.projects[projIdx];
     }
 
     if (!project) {
@@ -5103,7 +5100,8 @@ function handleManualDistProjectSelect_(chatId, session, projKey) {
     session.manualDistPending = {
         projectName: project.projectName,
         projectCode: project.projectCode || '',
-        outstanding: project.outstanding
+        outstanding: project.outstanding,
+        _srcIndex: projIdx
     };
     session.state = AI_CONFIG.AI_CONVERSATION_STATES.WAITING_MANUAL_DIST_AMOUNT;
     saveAIUserSession(chatId, session);
@@ -5183,7 +5181,8 @@ function applyManualDistAmount_(chatId, session, amount) {
         projectCode: pending.projectCode,
         amount: amount,
         closesBalance: amount >= pending.outstanding,
-        originalOutstanding: pending.outstanding
+        originalOutstanding: pending.outstanding,
+        _srcIndex: pending._srcIndex
     });
 
     // تحديث المتبقي
