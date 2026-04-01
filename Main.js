@@ -17179,7 +17179,7 @@ function generateFilmCostReport(silent) {
     grandSettled += p.totalSettled;
     grandBudget += (budgetByProject[projectCodes[pc]] || { _total: 0 })._total;
   }
-  var grandOutstanding = (grandAccrued + grandSettled) - grandPaid;
+  var grandOutstanding = (grandAccrued - grandSettled) - grandPaid;
 
   // ═══════════════════════════════════════════════════════════
   // 5️⃣ إنشاء شيت التقرير
@@ -17259,7 +17259,7 @@ function generateFilmCostReport(silent) {
     ['إجمالي الميزانية المرصودة', grandBudget, '', '', '', '', ''],
     ['إجمالي التكاليف المستحقة (استحقاق)', grandAccrued, '', '', '', '', ''],
     ['إجمالي تسويات الاستحقاق', grandSettled, '', '', '', '', ''],
-    ['إجمالي المستحق بعد التسويات', grandAccrued + grandSettled, '', '', '', '', ''],
+    ['إجمالي المستحق بعد التسويات', grandAccrued - grandSettled, '', '', '', '', ''],
     ['إجمالي المسدد فعلياً (دفعات)', grandPaid, '', '', '', '', ''],
     ['إجمالي الديون المعلقة (لم تُسدد)', grandOutstanding, '', '', '', '', '']
   ];
@@ -17285,13 +17285,13 @@ function generateFilmCostReport(silent) {
   currentRow++;
   if (grandBudget > 0) {
     reportSheet.getRange(currentRow, 1).setValue('نسبة الصرف من الميزانية:');
-    reportSheet.getRange(currentRow, 2).setValue(Math.round(((grandAccrued + grandSettled) / grandBudget) * 100) + '%')
+    reportSheet.getRange(currentRow, 2).setValue(Math.round(((grandAccrued - grandSettled) / grandBudget) * 100) + '%')
       .setFontWeight('bold');
     currentRow++;
   }
-  if ((grandAccrued + grandSettled) > 0) {
+  if ((grandAccrued - grandSettled) > 0) {
     reportSheet.getRange(currentRow, 1).setValue('نسبة السداد من المستحق:');
-    reportSheet.getRange(currentRow, 2).setValue(Math.round((grandPaid / (grandAccrued + grandSettled)) * 100) + '%')
+    reportSheet.getRange(currentRow, 2).setValue(Math.round((grandPaid / (grandAccrued - grandSettled)) * 100) + '%')
       .setFontWeight('bold');
     currentRow++;
   }
@@ -17332,7 +17332,7 @@ function generateFilmCostReport(silent) {
   for (var ci = 0; ci < classKeys.length; ci++) {
     var cKey = classKeys[ci];
     var cData = classificationTotals[cKey];
-    var cAccruedTotal = cData.accrued + cData.settled;
+    var cAccruedTotal = cData.accrued - cData.settled;
     var cOutstanding = cAccruedTotal - cData.paid;
     var cPercent = cAccruedTotal > 0 ? Math.round((cData.paid / cAccruedTotal) * 100) + '%' : '-';
 
@@ -17361,7 +17361,7 @@ function generateFilmCostReport(silent) {
     classGrandPaid += classificationTotals[ck].paid;
     classGrandSettled += classificationTotals[ck].settled;
   }
-  var classGrandAccruedTotal = classGrandAccrued + classGrandSettled;
+  var classGrandAccruedTotal = classGrandAccrued - classGrandSettled;
   var classGrandOutstanding = classGrandAccruedTotal - classGrandPaid;
   var classGrandPercent = classGrandAccruedTotal > 0 ? Math.round((classGrandPaid / classGrandAccruedTotal) * 100) + '%' : '-';
 
@@ -17399,7 +17399,7 @@ function generateFilmCostReport(silent) {
     var fCode = projectCodes[fi];
     var fData = projects[fCode];
     var fBudget = (budgetByProject[fCode] || { _total: 0 })._total;
-    var fAccruedTotal = fData.totalAccrued + fData.totalSettled;
+    var fAccruedTotal = fData.totalAccrued - fData.totalSettled;
     var fOutstanding = fAccruedTotal - fData.totalPaid;
     var fPayPercent = fAccruedTotal > 0 ? Math.round((fData.totalPaid / fAccruedTotal) * 100) + '%' : '-';
 
@@ -17430,9 +17430,9 @@ function generateFilmCostReport(silent) {
   }
 
   // صف إجمالي جدول الأفلام
-  var allPayPercent = (grandAccrued + grandSettled) > 0 ? Math.round((grandPaid / (grandAccrued + grandSettled)) * 100) + '%' : '-';
+  var allPayPercent = (grandAccrued - grandSettled) > 0 ? Math.round((grandPaid / (grandAccrued - grandSettled)) * 100) + '%' : '-';
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-    '', 'الإجمالي', grandBudget, grandAccrued + grandSettled, grandPaid, grandOutstanding, allPayPercent
+    '', 'الإجمالي', grandBudget, grandAccrued - grandSettled, grandPaid, grandOutstanding, allPayPercent
   ]])
     .setBackground(CLR.TOTAL_BG)
     .setFontColor(CLR.TOTAL_FG)
@@ -17450,7 +17450,7 @@ function generateFilmCostReport(silent) {
     var projName = projectNames[projCode] || '';
     var projBudget = budgetByProject[projCode] || {};
     var projBudgetTotal = projBudget._total || 0;
-    var projAccruedTotal = projData.totalAccrued + projData.totalSettled;
+    var projAccruedTotal = projData.totalAccrued - projData.totalSettled;
     var projOutstanding = projAccruedTotal - projData.totalPaid;
 
     // ───────────────────────────────────────
@@ -17507,7 +17507,7 @@ function generateFilmCostReport(silent) {
     var entryKeys = Object.keys(projData.entries).sort();
     for (var ei = 0; ei < entryKeys.length; ei++) {
       var e = projData.entries[entryKeys[ei]];
-      var eAccrued = e.accrued + e.settled;
+      var eAccrued = e.accrued - e.settled;
       var ePaid = e.paid;
       var eOutstanding = eAccrued - ePaid;
       var ePercent = eAccrued > 0 ? Math.round((ePaid / eAccrued) * 100) + '%' : (ePaid > 0 ? '⚠️' : '-');
