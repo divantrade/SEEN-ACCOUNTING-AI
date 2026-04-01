@@ -17074,6 +17074,15 @@ function generateFilmCostReport(silent) {
     if (pCode) projectNames[pCode.toUpperCase()] = pName;
   }
 
+  // ─── تجميع البنود المتشابهة ───
+  var ITEM_GROUP_MAP = {
+    'تصوير': 'تصوير ولوكيشن',
+    'لوكيشن': 'تصوير ولوكيشن',
+    'تعليق صوتي': 'تعليق صوتي ودوبلاج واقتباسات',
+    'دوبلاج': 'تعليق صوتي ودوبلاج واقتباسات',
+    'اقتباسات': 'تعليق صوتي ودوبلاج واقتباسات'
+  };
+
   // ═══════════════════════════════════════════════════════════
   // 2️⃣ قراءة الميزانيات المخططة
   // ═══════════════════════════════════════════════════════════
@@ -17082,7 +17091,8 @@ function generateFilmCostReport(silent) {
     var budgetData = budgetSheet.getDataRange().getValues();
     for (var b = 1; b < budgetData.length; b++) {
       var bCode = String(budgetData[b][0] || '').trim().toUpperCase();
-      var bItem = String(budgetData[b][2] || '').trim();
+      var bItemRaw = String(budgetData[b][2] || '').trim();
+      var bItem = ITEM_GROUP_MAP[bItemRaw] || bItemRaw;
       var bAmount = Number(budgetData[b][3]) || 0;
       if (!bCode || !bItem || bAmount <= 0) continue;
 
@@ -17111,7 +17121,8 @@ function generateFilmCostReport(silent) {
   for (var i = 1; i < transData.length; i++) {
     var natureType = String(transData[i][colC] || '').trim();
     var projectCode = String(transData[i][colE] || '').trim().toUpperCase();
-    var item = String(transData[i][colG] || '').trim();
+    var rawItem = String(transData[i][colG] || '').trim();
+    var item = ITEM_GROUP_MAP[rawItem] || rawItem;  // دمج البنود المتشابهة
     var vendor = String(transData[i][colI] || '').trim() || 'بدون مورد';
     var amountUsd = Number(transData[i][colM]) || 0;
 
