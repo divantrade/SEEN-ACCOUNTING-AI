@@ -3224,7 +3224,7 @@ function generatePartyReceivablesReport(silent) {
                  natureType.indexOf('استرداد') !== -1) {
         isCredit = true;
       } else if (natureType.indexOf('استحقاق') !== -1 || natureType.indexOf('تمويل') !== -1 ||
-                 natureType.indexOf('تأمين مدفوع') !== -1) {
+                 natureType.indexOf('تأمين مدفوع') !== -1 || natureType.indexOf('سلفة') !== -1) {
         isDebit = true;
       } else {
         // حركة غير معروفة - نتجاهلها بدل افتراض أنها مدين
@@ -3236,16 +3236,25 @@ function generatePartyReceivablesReport(silent) {
     var isRevenue = natureType.indexOf('إيراد') !== -1 || natureType.indexOf('تحصيل') !== -1 ||
                     natureType.indexOf('تأمين مدفوع') !== -1 || natureType.indexOf('استرداد تأمين') !== -1;
 
-    var key = party + '||' + classification;
+    // التجميع حسب الطرف + الاتجاه (إيراد/مصروف)
+    // بدلاً من الطرف + التصنيف - لأن الاستحقاق وسداده قد يكونان بتصنيفات مختلفة
+    // مثال: سلفة تصنيفها "تمويل (دخول قرض)" وسدادها "سداد تمويل"
+    var direction = isRevenue ? 'R' : 'E';
+    var key = party + '||' + direction;
     if (!entries[key]) {
       entries[key] = {
         party: party,
-        classification: classification,
+        classifications: {},  // تتبع التصنيفات ومبالغها للعرض
         accrued: 0,
         paid: 0,
         settled: 0,
         isRevenue: isRevenue
       };
+    }
+
+    // تتبع التصنيف ومبلغه (فقط للاستحقاقات - لتحديد التصنيف الرئيسي)
+    if (isDebit) {
+      entries[key].classifications[classification] = (entries[key].classifications[classification] || 0) + amountUsd;
     }
 
     if (isDebit) { entries[key].accrued += amountUsd; }
@@ -3284,27 +3293,46 @@ function generatePartyReceivablesReport(silent) {
     // تجاهل الأرصدة الصغيرة
     if (Math.abs(balance) < 0.01) continue;
 
+    // تحديد التصنيف الرئيسي (الأكبر مبلغاً) من التصنيفات المسجلة
+    var primaryClassification = 'بدون تصنيف';
+    var maxClassAmount = 0;
+    var classNames = Object.keys(e.classifications);
+    for (var ci = 0; ci < classNames.length; ci++) {
+      if (e.classifications[classNames[ci]] > maxClassAmount) {
+        maxClassAmount = e.classifications[classNames[ci]];
+        primaryClassification = classNames[ci];
+      }
+    }
+
     var item = {
       party: e.party,
-      classification: e.classification,
+      classification: primaryClassification,
       totalDebit: e.accrued,
       totalCredit: e.paid + e.settled,
       balance: Math.abs(balance),
       isRevenue: e.isRevenue
     };
 
-    // تجميع للملخص حسب التصنيف
-    if (!classSummary[e.classification]) {
-      classSummary[e.classification] = { owed: 0, oweUs: 0 };
+    // تجميع للملخص حسب التصنيفات (توزيع الرصيد على التصنيفات بنسب الاستحقاق)
+    for (var ci2 = 0; ci2 < classNames.length; ci2++) {
+      var clsName = classNames[ci2];
+      if (!classSummary[clsName]) {
+        classSummary[clsName] = { owed: 0, oweUs: 0 };
+      }
+      // توزيع الرصيد المتبقي على التصنيفات بنسبة مساهمة كل تصنيف في الاستحقاق
+      var clsRatio = e.accrued > 0 ? e.classifications[clsName] / e.accrued : 0;
+      if (e.isRevenue && balance > 0) {
+        classSummary[clsName].oweUs += balance * clsRatio;
+      } else if (!e.isRevenue && balance > 0) {
+        classSummary[clsName].owed += balance * clsRatio;
+      }
     }
 
     if (e.isRevenue) {
       if (balance > 0) {
         receivables.push(item);
         totalReceivables += balance;
-        classSummary[e.classification].oweUs += balance;
       } else if (balance < 0) {
-        // تحصيل زائد - حصّلنا أكثر من المستحق (علينا إرجاعه)
         item.overpaymentNote = 'تحصيل زائد عن المستحق';
         overpayments.push(item);
         totalOverpayments += Math.abs(balance);
@@ -3313,9 +3341,7 @@ function generatePartyReceivablesReport(silent) {
       if (balance > 0) {
         payables.push(item);
         totalPayables += balance;
-        classSummary[e.classification].owed += balance;
       } else if (balance < 0) {
-        // دفعة زائدة - دفعنا أكثر من المستحق (لنا عندهم)
         item.overpaymentNote = 'دفعة زائدة عن المستحق';
         overpayments.push(item);
         totalOverpayments += Math.abs(balance);
@@ -3377,7 +3403,10 @@ function generatePartyReceivablesReport(silent) {
   // ═══════════════════════════════════════════════════════════════════════
   // ملخص حسب التصنيف
   // ═══════════════════════════════════════════════════════════════════════
-  var classKeys = Object.keys(classSummary).sort(function(a, b) {
+  var classKeys = Object.keys(classSummary).filter(function(k) {
+    // إزالة التصنيفات التي ليس لها أرصدة فعلية
+    return classSummary[k].owed > 0.01 || classSummary[k].oweUs > 0.01;
+  }).sort(function(a, b) {
     var netA = classSummary[a].owed - classSummary[a].oweUs;
     var netB = classSummary[b].owed - classSummary[b].oweUs;
     return Math.abs(netB) - Math.abs(netA);
