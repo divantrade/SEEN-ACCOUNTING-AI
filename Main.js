@@ -17192,7 +17192,7 @@ function generateFilmCostReport(silent) {
     SECTION_FG: '#ffffff',
     HEADER_BG: '#cfd8dc',     // رمادي فاتح لرؤوس الجداول
     HEADER_FG: '#263238',
-    FILM_BG: '#546e7a',       // رمادي-أزرق لترويسة الفيلم
+    FILM_BG: '#1b5e20',       // أخضر كحلي غامق لترويسة الفيلم (مميز عن الرمادي)
     FILM_FG: '#ffffff',
     ITEM_BG: '#eceff1',       // رمادي فاتح جداً لصفوف البنود
     ZEBRA: '#f5f5f5',         // رمادي خفيف جداً للتظليل المتناوب
@@ -17489,8 +17489,8 @@ function generateFilmCostReport(silent) {
       projOutstanding,
       projPayPercent
     ]])
-      .setBackground(CLR.TOTAL_BG)
-      .setFontColor(CLR.TOTAL_FG)
+      .setBackground(CLR.FILM_BG)
+      .setFontColor(CLR.FILM_FG)
       .setFontWeight('bold');
     reportSheet.getRange(currentRow, 3, 1, 4).setNumberFormat('$#,##0.00');
     currentRow += 2;
