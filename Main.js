@@ -17770,15 +17770,15 @@ function generateOldDebtsReport(silent) {
   if (reportSheet) ss.deleteSheet(reportSheet);
   reportSheet = ss.insertSheet(reportSheetName);
   reportSheet.setRightToLeft(true);
-  reportSheet.setTabColor('#b71c1c');
+  reportSheet.setTabColor('#8d6e63');
 
   var CLR = {
-    TITLE_BG: '#b71c1c', TITLE_FG: '#ffffff',
-    SUBTITLE_BG: '#ffebee', SUBTITLE_FG: '#b71c1c',
-    HEADER_BG: '#d32f2f', HEADER_FG: '#ffffff',
-    ZEBRA: '#fff3f3',
-    TOTAL_BG: '#b71c1c', TOTAL_FG: '#ffffff',
-    RED_TEXT: '#c62828', GREEN_TEXT: '#2e7d32'
+    TITLE_BG: '#6d4c41', TITLE_FG: '#ffffff',
+    SUBTITLE_BG: '#efebe9', SUBTITLE_FG: '#5d4037',
+    HEADER_BG: '#8d6e63', HEADER_FG: '#ffffff',
+    ZEBRA: '#faf5f2',
+    TOTAL_BG: '#6d4c41', TOTAL_FG: '#ffffff',
+    RED_TEXT: '#bf360c', GREEN_TEXT: '#2e7d32'
   };
 
   var numCols = 4;
