@@ -17622,16 +17622,14 @@ function generateOverheadExpensesReport(silent) {
     TITLE_BG: '#37474f', TITLE_FG: '#ffffff',
     SUBTITLE_BG: '#eceff1', SUBTITLE_FG: '#455a64',
     MONTH_BG: '#455a64', MONTH_FG: '#ffffff',
-    ITEM_BG: '#cfd8dc', ITEM_FG: '#263238',
     HEADER_BG: '#78909c', HEADER_FG: '#ffffff',
     ZEBRA: '#f5f5f5',
-    ITEM_TOTAL_BG: '#b0bec5', ITEM_TOTAL_FG: '#263238',
     MONTH_TOTAL_BG: '#546e7a', MONTH_TOTAL_FG: '#ffffff',
     GRAND_TOTAL_BG: '#37474f', GRAND_TOTAL_FG: '#ffffff',
     RED_TEXT: '#c62828', GREEN_TEXT: '#2e7d32'
   };
 
-  var numCols = 4;
+  var numCols = 5;
   var currentRow = 1;
 
   // العنوان
@@ -17662,7 +17660,7 @@ function generateOverheadExpensesReport(silent) {
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════
-  // 3️⃣ عرض كل شهر: بند → أطراف
+  // 3️⃣ عرض كل شهر: جدول مسطح بند + طرف
   // ═══════════════════════════════════════════════════════════
   for (var mi = 0; mi < monthKeys.length; mi++) {
     var m = months[monthKeys[mi]];
@@ -17676,83 +17674,66 @@ function generateOverheadExpensesReport(silent) {
       .setFontWeight('bold').setFontSize(13).setHorizontalAlignment('center');
     currentRow++;
 
-    // البنود مرتبة أبجدياً
+    // رؤوس الأعمدة
+    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['البند', 'الطرف', 'المستحق', 'المدفوع', 'الباقي']])
+      .setBackground(CLR.HEADER_BG).setFontColor(CLR.HEADER_FG)
+      .setFontWeight('bold').setHorizontalAlignment('center');
+    currentRow++;
+
+    // البنود مرتبة أبجدياً، وتحت كل بند الأطراف
     var itemNames = Object.keys(m.items).sort();
+    var rowIdx = 0;
     for (var ii = 0; ii < itemNames.length; ii++) {
       var itemName = itemNames[ii];
       var itm = m.items[itemName];
-      var itmAccrued = itm.totals.accrued - itm.totals.settled;
-      var itmOutstanding = itmAccrued - itm.totals.paid;
-
-      // ترويسة البند
-      reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-        .setValue('▸ ' + itemName)
-        .setBackground(CLR.ITEM_BG).setFontColor(CLR.ITEM_FG)
-        .setFontWeight('bold').setFontSize(11);
-      currentRow++;
-
-      // رؤوس الأعمدة
-      reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['الطرف', 'المستحق', 'المدفوع', 'الباقي']])
-        .setBackground(CLR.HEADER_BG).setFontColor(CLR.HEADER_FG)
-        .setFontWeight('bold').setHorizontalAlignment('center');
-      currentRow++;
-
-      // الأطراف تحت هذا البند
       var partyNames = Object.keys(itm.parties).sort();
+
       for (var pi = 0; pi < partyNames.length; pi++) {
         var p = itm.parties[partyNames[pi]];
         var pAccrued = p.accrued - p.settled;
         var pOutstanding = pAccrued - p.paid;
 
         reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-          partyNames[pi], pAccrued, p.paid, pOutstanding
+          itemName, partyNames[pi], pAccrued, p.paid, pOutstanding
         ]]);
-        reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+        reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
 
         if (pOutstanding > 0) {
-          reportSheet.getRange(currentRow, 4).setFontColor(CLR.RED_TEXT);
+          reportSheet.getRange(currentRow, 5).setFontColor(CLR.RED_TEXT);
         } else if (pOutstanding < -0.01) {
-          reportSheet.getRange(currentRow, 4).setFontColor('#e65100').setFontWeight('bold');
+          reportSheet.getRange(currentRow, 5).setFontColor('#e65100').setFontWeight('bold');
         } else if (pOutstanding === 0 && pAccrued > 0) {
-          reportSheet.getRange(currentRow, 4).setFontColor(CLR.GREEN_TEXT);
+          reportSheet.getRange(currentRow, 5).setFontColor(CLR.GREEN_TEXT);
         }
 
-        if (pi % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
-        currentRow++;
-      }
-
-      // إجمالي البند
-      if (partyNames.length > 1) {
-        reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-          'إجمالي ' + itemName, itmAccrued, itm.totals.paid, itmOutstanding
-        ]])
-          .setBackground(CLR.ITEM_TOTAL_BG).setFontColor(CLR.ITEM_TOTAL_FG).setFontWeight('bold');
-        reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+        if (rowIdx % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+        rowIdx++;
         currentRow++;
       }
     }
 
     // إجمالي الشهر
     reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      'إجمالي ' + m.label, mAccrued, m.totals.paid, mOutstanding
+      'إجمالي ' + m.label, '', mAccrued, m.totals.paid, mOutstanding
     ]])
       .setBackground(CLR.MONTH_TOTAL_BG).setFontColor(CLR.MONTH_TOTAL_FG).setFontWeight('bold');
-    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
     currentRow += 2;
   }
 
   // الإجمالي العام
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-    'الإجمالي العام', grandAccruedTotal, grandPaid, grandOutstanding
+    'الإجمالي العام', '', grandAccruedTotal, grandPaid, grandOutstanding
   ]])
     .setBackground(CLR.GRAND_TOTAL_BG).setFontColor(CLR.GRAND_TOTAL_FG).setFontWeight('bold').setFontSize(12);
-  reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+  reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
 
   // تنسيقات
-  reportSheet.setColumnWidth(1, 200);
-  reportSheet.setColumnWidth(2, 130);
+  reportSheet.setColumnWidth(1, 160);
+  reportSheet.setColumnWidth(2, 160);
   reportSheet.setColumnWidth(3, 130);
   reportSheet.setColumnWidth(4, 130);
+  reportSheet.setColumnWidth(5, 130);
   reportSheet.setFrozenRows(2);
 
   if (!silent) {
