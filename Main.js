@@ -66,6 +66,7 @@ function onOpen() {
         .addItem('📋 تقرير ميزانية مشروع', 'generateProjectBudgetReport')
         .addItem('📊 تقرير ميزانية مجمع (عدة مشاريع)', 'showCombinedBudgetReportForm')
         .addItem('🎬 تقرير تكاليف الأفلام (مستحق/مسدد/معلق)', 'generateFilmCostReport')
+        .addItem('🏢 تقرير المصروفات العمومية (مستحق/مسدد/معلق)', 'generateOverheadExpensesReport')
         .addSeparator()
         .addSubMenu(
           ui.createMenu('📊 تقرير تكلفة الوحدة')
@@ -16976,6 +16977,12 @@ function generateAllReportsPackage() {
   // ═══════════════════════════════════════════════════════════
   ss.toast('6.5/10 - تقرير تكاليف الأفلام...', '📦', -1);
   try { results.push(generateFilmCostReport(true)); } catch(e) { results.push({ success: false, name: 'تقرير تكاليف الأفلام', error: e.message }); }
+
+  // ═══════════════════════════════════════════════════════════
+  // المرحلة 6.6: تقرير المصروفات العمومية
+  // ═══════════════════════════════════════════════════════════
+  ss.toast('6.6/10 - تقرير المصروفات العمومية...', '📦', -1);
+  try { results.push(generateOverheadExpensesReport(true)); } catch(e) { results.push({ success: false, name: 'تقرير المصروفات العمومية', error: e.message }); }
 
   // ═══════════════════════════════════════════════════════════
   // المرحلة 7: التقارير التشغيلية
