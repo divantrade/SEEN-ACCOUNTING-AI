@@ -3177,8 +3177,6 @@ function generatePartyReceivablesReport(silent) {
   // تجميع الحركات حسب الطرف فقط (إجمالي مدين - إجمالي دائن)
   // ═══════════════════════════════════════════════════════════════════════
   const partyTotals = {};
-  // تجميع حسب التصنيف
-  const classificationTotals = {}; // { classification: { debit, credit } }
 
   for (let i = 1; i < data.length; i++) {
     const movementKind = String(data[i][13] || ''); // N - نوع الحركة
@@ -3205,7 +3203,8 @@ function generatePartyReceivablesReport(silent) {
       partyTotals[party] = {
         totalDebit: 0,
         totalCredit: 0,
-        nature: natureType,  // لتحديد نوع الاستحقاق
+        nature: natureType,
+        classification: classification || 'بدون تصنيف',
         transactionCount: 0
       };
     }
@@ -3223,16 +3222,6 @@ function generatePartyReceivablesReport(silent) {
       partyTotals[party].totalCredit += amountUsd;
     }
 
-    // تجميع حسب التصنيف
-    var classKey = classification || 'بدون تصنيف';
-    if (!classificationTotals[classKey]) {
-      classificationTotals[classKey] = { debit: 0, credit: 0 };
-    }
-    if (isDebitAccrual || isInsurancePaid || isFundingIn) {
-      classificationTotals[classKey].debit += amountUsd;
-    } else if (isCreditPayment || isCreditSettlement) {
-      classificationTotals[classKey].credit += amountUsd;
-    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -3264,7 +3253,8 @@ function generatePartyReceivablesReport(silent) {
       totalCredit: data.totalCredit,
       balance: Math.abs(balance),
       transactionCount: data.transactionCount,
-      nature: isRevenue ? 'إيراد' : 'مصروف'
+      nature: isRevenue ? 'إيراد' : 'مصروف',
+      classification: data.classification
     };
 
     if (isRevenue) {
@@ -3299,7 +3289,7 @@ function generatePartyReceivablesReport(silent) {
   }
 
   let currentRow = 1;
-  const numCols = 5;
+  const numCols = 6;
 
   // ═══════════════════════════════════════════════════════════════════════
   // العنوان الرئيسي
@@ -3334,75 +3324,6 @@ function generatePartyReceivablesReport(silent) {
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════════════════
-  // تفصيل حسب نوع الاستحقاق (تصنيف الحركة)
-  // ═══════════════════════════════════════════════════════════════════════
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('📋 تفصيل حسب نوع الاستحقاق')
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setBackground('#6a1b9a')
-    .setFontColor('white')
-    .setHorizontalAlignment('center');
-  currentRow++;
-
-  // رؤوس جدول التصنيفات
-  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['التصنيف', '', 'المستحق', 'المسدد', 'الباقي']]);
-  reportSheet.getRange(currentRow, 1, 1, numCols)
-    .setFontWeight('bold')
-    .setBackground('#e0e0e0')
-    .setHorizontalAlignment('center');
-  currentRow++;
-
-  // ترتيب التصنيفات حسب الرصيد (الأكبر أولاً)
-  var classKeys = Object.keys(classificationTotals).sort(function(a, b) {
-    var balA = classificationTotals[a].debit - classificationTotals[a].credit;
-    var balB = classificationTotals[b].debit - classificationTotals[b].credit;
-    return Math.abs(balB) - Math.abs(balA);
-  });
-
-  var classTotalDebit = 0, classTotalCredit = 0;
-  for (var ci = 0; ci < classKeys.length; ci++) {
-    var ct = classificationTotals[classKeys[ci]];
-    var ctBalance = ct.debit - ct.credit;
-    classTotalDebit += ct.debit;
-    classTotalCredit += ct.credit;
-
-    // تجاهل التصنيفات بدون رصيد
-    if (Math.abs(ctBalance) < 0.01 && ct.debit === 0) continue;
-
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      classKeys[ci], '', ct.debit, ct.credit, ctBalance
-    ]]);
-    reportSheet.getRange(currentRow, 3).setNumberFormat('$#,##0.00');
-    reportSheet.getRange(currentRow, 4).setNumberFormat('$#,##0.00');
-    reportSheet.getRange(currentRow, 5).setNumberFormat('$#,##0.00').setFontWeight('bold');
-
-    if (ctBalance > 0.01) {
-      reportSheet.getRange(currentRow, 5).setFontColor('#b71c1c');
-    } else if (ctBalance < -0.01) {
-      reportSheet.getRange(currentRow, 5).setFontColor('#e65100');
-    } else {
-      reportSheet.getRange(currentRow, 5).setFontColor('#2e7d32');
-    }
-
-    if (ci % 2 === 0) {
-      reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#fafafa');
-    }
-    currentRow++;
-  }
-
-  // إجمالي التصنيفات
-  var classTotalBalance = classTotalDebit - classTotalCredit;
-  reportSheet.getRange(currentRow, 1, 1, 2).merge();
-  reportSheet.getRange(currentRow, 1).setValue('الإجمالي').setFontWeight('bold');
-  reportSheet.getRange(currentRow, 3).setValue(classTotalDebit).setNumberFormat('$#,##0.00').setFontWeight('bold');
-  reportSheet.getRange(currentRow, 4).setValue(classTotalCredit).setNumberFormat('$#,##0.00').setFontWeight('bold');
-  reportSheet.getRange(currentRow, 5).setValue(classTotalBalance).setNumberFormat('$#,##0.00').setFontWeight('bold').setFontSize(11);
-  reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#e1bee7');
-  currentRow += 2;
-
-  // ═══════════════════════════════════════════════════════════════════════
   // دالة مساعدة لإضافة قسم
   // ═══════════════════════════════════════════════════════════════════════
   function addSection(title, items, total, bgColor, textColor) {
@@ -3428,7 +3349,7 @@ function generatePartyReceivablesReport(silent) {
     }
 
     // رأس الجدول
-    const headers = ['#', 'الطرف', 'إجمالي المدين', 'إجمالي الدائن', 'الرصيد'];
+    const headers = ['#', 'الطرف', 'التصنيف', 'إجمالي المدين', 'إجمالي الدائن', 'الرصيد'];
     reportSheet.getRange(currentRow, 1, 1, numCols).setValues([headers]);
     reportSheet.getRange(currentRow, 1, 1, numCols)
       .setFontWeight('bold')
@@ -3442,15 +3363,16 @@ function generatePartyReceivablesReport(silent) {
       reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
         i + 1,
         item.party,
+        item.classification,
         item.totalDebit,
         item.totalCredit,
         item.balance
       ]]);
 
       // تنسيق الأرقام
-      reportSheet.getRange(currentRow, 3).setNumberFormat('$#,##0.00');
       reportSheet.getRange(currentRow, 4).setNumberFormat('$#,##0.00');
-      reportSheet.getRange(currentRow, 5).setNumberFormat('$#,##0.00').setFontWeight('bold');
+      reportSheet.getRange(currentRow, 5).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 6).setNumberFormat('$#,##0.00').setFontWeight('bold');
 
       // تلوين الصفوف بالتناوب
       if (i % 2 === 0) {
@@ -3461,13 +3383,13 @@ function generatePartyReceivablesReport(silent) {
     }
 
     // الإجمالي
-    reportSheet.getRange(currentRow, 1, 1, 4).merge();
+    reportSheet.getRange(currentRow, 1, 1, 5).merge();
     reportSheet.getRange(currentRow, 1)
       .setValue('الإجمالي:')
       .setFontWeight('bold')
       .setHorizontalAlignment('left')
       .setBackground(bgColor);
-    reportSheet.getRange(currentRow, 5)
+    reportSheet.getRange(currentRow, 6)
       .setValue(total)
       .setNumberFormat('$#,##0.00')
       .setFontWeight('bold')
@@ -3503,13 +3425,13 @@ function generatePartyReceivablesReport(silent) {
   currentRow++;
 
   // إجمالي المستحقات علينا
-  reportSheet.getRange(currentRow, 1, 1, 3).merge();
+  reportSheet.getRange(currentRow, 1, 1, 4).merge();
   reportSheet.getRange(currentRow, 1)
     .setValue('💸 إجمالي المستحقات علينا:')
     .setFontWeight('bold')
     .setBackground('#ffcdd2');
-  reportSheet.getRange(currentRow, 4, 1, 2).merge();
-  reportSheet.getRange(currentRow, 4)
+  reportSheet.getRange(currentRow, 5, 1, 2).merge();
+  reportSheet.getRange(currentRow, 5)
     .setValue(totalPayables)
     .setNumberFormat('$#,##0.00')
     .setFontWeight('bold')
@@ -3519,13 +3441,13 @@ function generatePartyReceivablesReport(silent) {
   currentRow++;
 
   // إجمالي المستحقات لنا
-  reportSheet.getRange(currentRow, 1, 1, 3).merge();
+  reportSheet.getRange(currentRow, 1, 1, 4).merge();
   reportSheet.getRange(currentRow, 1)
     .setValue('💰 إجمالي المستحقات لنا:')
     .setFontWeight('bold')
     .setBackground('#c8e6c9');
-  reportSheet.getRange(currentRow, 4, 1, 2).merge();
-  reportSheet.getRange(currentRow, 4)
+  reportSheet.getRange(currentRow, 5, 1, 2).merge();
+  reportSheet.getRange(currentRow, 5)
     .setValue(totalReceivables)
     .setNumberFormat('$#,##0.00')
     .setFontWeight('bold')
@@ -3535,14 +3457,14 @@ function generatePartyReceivablesReport(silent) {
   currentRow++;
 
   // صافي الموقف
-  reportSheet.getRange(currentRow, 1, 1, 3).merge();
+  reportSheet.getRange(currentRow, 1, 1, 4).merge();
   reportSheet.getRange(currentRow, 1)
     .setValue('📊 صافي الموقف المالي:')
     .setFontWeight('bold')
     .setFontSize(12)
     .setBackground('#fff9c4');
-  reportSheet.getRange(currentRow, 4, 1, 2).merge();
-  reportSheet.getRange(currentRow, 4)
+  reportSheet.getRange(currentRow, 5, 1, 2).merge();
+  reportSheet.getRange(currentRow, 5)
     .setValue(netPosition)
     .setNumberFormat('$#,##0.00')
     .setFontWeight('bold')
@@ -3555,9 +3477,10 @@ function generatePartyReceivablesReport(silent) {
   // ═══════════════════════════════════════════════════════════════════════
   reportSheet.setColumnWidth(1, 40);   // #
   reportSheet.setColumnWidth(2, 180);  // الطرف
-  reportSheet.setColumnWidth(3, 120);  // إجمالي المدين
-  reportSheet.setColumnWidth(4, 120);  // إجمالي الدائن
-  reportSheet.setColumnWidth(5, 120);  // الرصيد
+  reportSheet.setColumnWidth(3, 140);  // التصنيف
+  reportSheet.setColumnWidth(4, 120);  // إجمالي المدين
+  reportSheet.setColumnWidth(5, 120);  // إجمالي الدائن
+  reportSheet.setColumnWidth(6, 120);  // الرصيد
 
   // تجميد الصفوف العلوية
   reportSheet.setFrozenRows(3);
