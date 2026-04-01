@@ -85,7 +85,6 @@ function onOpen() {
         .addItem('🏢 تقرير الموردين الملخص', 'rebuildVendorSummaryReport')
         .addItem('💼 تقرير الممولين الملخص', 'rebuildFunderSummaryReport')
         .addItem('💸 تقرير المصروفات الملخص', 'rebuildExpenseSummaryReport')
-        .addItem('📊 تحليل المصروفات (ديناميكي)', 'generateDynamicExpenseReport')
         .addItem('💰 تقرير الإيرادات الملخص', 'rebuildRevenueSummaryReport')
         .addItem('💵 تقرير التدفقات النقدية', 'rebuildCashFlowReport')
         .addSeparator()
@@ -6511,248 +6510,6 @@ function rebuildRevenueSummaryReport(silent) {
       return rows;
     }
   }, silent);
-}
-
-// ==================== تقرير تحليل المصروفات الديناميكي ====================
-
-/**
- * ⭐ تقرير تحليل المصروفات - يفصل العمومية عن المباشرة ويعرض تكلفة كل فيلم
- * Dashboard ملخص في الأعلى + جدول موحد بفلتر في الأسفل
- * @param {boolean} silent - وضع صامت (للبوت/PDF)
- */
-function generateDynamicExpenseReport(silent) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
-  if (!transSheet) {
-    if (silent) return { success: false, name: 'تحليل المصروفات', error: 'دفتر الحركات غير موجود' };
-    SpreadsheetApp.getUi().alert('⚠️ تأكد من وجود "دفتر الحركات المالية".');
-    return;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // قراءة ومعالجة البيانات
-  // ═══════════════════════════════════════════════════════════
-  var data = transSheet.getDataRange().getValues();
-  var map = {};
-
-  // إجماليات للـ Dashboard
-  var totals = {
-    overhead:      { accrual: 0, paid: 0 },
-    directNoFilm:  { accrual: 0, paid: 0 },
-    directFilm:    { accrual: 0, paid: 0 }
-  };
-
-  for (var i = 1; i < data.length; i++) {
-    var row = data[i];
-    var natureType = String(row[2] || '');   // C: طبيعة الحركة
-    var classification = String(row[3] || ''); // D: تصنيف الحركة
-    var projectCode = String(row[4] || '').trim();   // E: كود المشروع
-    var projectName = String(row[5] || '').trim();   // F: اسم المشروع
-    var item = String(row[6] || '').trim();          // G: البند
-    var party = String(row[8] || '').trim();         // I: المورد/الجهة
-    var amountUsd = Number(row[12]) || 0;            // M: القيمة بالدولار
-
-    if (!amountUsd) continue;
-    if (!natureType.includes('استحقاق مصروف') && !natureType.includes('دفعة مصروف') && !natureType.includes('تسوية استحقاق مصروف')) continue;
-
-    // تحديد الفئة
-    var category;
-    if (classification.includes('عمومية')) {
-      category = '🏢 عمومية';
-    } else if (projectCode) {
-      category = '🎬 ' + (projectName || projectCode);
-    } else {
-      category = '📋 مباشرة بدون مشروع';
-    }
-
-    var key = category + '||' + item + '||' + party;
-    if (!map[key]) {
-      map[key] = { category: category, item: item || '(بدون بند)', party: party || '(بدون جهة)', classification: classification, hasAccrual: false, hasPaid: false, hasSettlement: false, accrual: 0, paid: 0, settlement: 0 };
-    }
-    var v = map[key];
-
-    if (natureType.includes('تسوية استحقاق مصروف')) {
-      v.accrual -= amountUsd;
-      v.settlement += amountUsd;
-      v.hasSettlement = true;
-    } else if (natureType.includes('استحقاق مصروف')) {
-      v.accrual += amountUsd;
-      v.hasAccrual = true;
-    } else if (natureType.includes('دفعة مصروف')) {
-      v.paid += amountUsd;
-      v.hasPaid = true;
-    }
-  }
-
-  // بناء صفوف الجدول وحساب الإجماليات
-  var rows = [];
-  var keys = Object.keys(map);
-  for (var j = 0; j < keys.length; j++) {
-    var v = map[keys[j]];
-    var remaining = v.accrual - v.paid;
-    var pct = v.accrual > 0 ? v.paid / v.accrual : (v.paid > 0 ? 1 : 0);
-
-    // بناء وصف طبيعة الحركة من الأنواع الفعلية الموجودة
-    var natureTypes = [];
-    if (v.hasAccrual) natureTypes.push('استحقاق');
-    if (v.hasPaid) natureTypes.push('دفعة');
-    if (v.hasSettlement) natureTypes.push('تسوية');
-    var natureDisplay = natureTypes.join(' + ');
-
-    rows.push([v.category, v.classification, natureDisplay, v.item, v.party, v.accrual, v.paid, remaining, pct]);
-
-    // تجميع الإجماليات
-    var t;
-    if (v.category === '🏢 عمومية') t = totals.overhead;
-    else if (v.category === '📋 مباشرة بدون مشروع') t = totals.directNoFilm;
-    else t = totals.directFilm;
-    t.accrual += v.accrual;
-    t.paid += v.paid;
-  }
-
-  // ترتيب: عمومية أولاً، ثم مباشرة بدون مشروع، ثم الأفلام
-  rows.sort(function(a, b) {
-    var order = { '🏢': 1, '📋': 2, '🎬': 3 };
-    var oa = order[a[0].substring(0, 2)] || 9;
-    var ob = order[b[0].substring(0, 2)] || 9;
-    if (oa !== ob) return oa - ob;
-    if (a[0] !== b[0]) return a[0].localeCompare(b[0], 'ar');
-    return a[3].localeCompare(b[3], 'ar'); // ترتيب حسب البند (عمود 4)
-  });
-
-  // ═══════════════════════════════════════════════════════════
-  // إنشاء/تحديث الشيت
-  // ═══════════════════════════════════════════════════════════
-  var sheetName = CONFIG.SHEETS.DYNAMIC_EXPENSES;
-  var sheet = ss.getSheetByName(sheetName);
-  if (sheet) {
-    sheet.clear();
-    // إزالة الفلتر القديم
-    var existingFilter = sheet.getFilter();
-    if (existingFilter) existingFilter.remove();
-  } else {
-    sheet = ss.insertSheet(sheetName);
-  }
-  sheet.setRightToLeft(true);
-
-  // ═══════════════════════════════════════════════════════════
-  // Dashboard (صفوف 1-7)
-  // ═══════════════════════════════════════════════════════════
-  var totalAll = {
-    accrual: totals.overhead.accrual + totals.directNoFilm.accrual + totals.directFilm.accrual,
-    paid: totals.overhead.paid + totals.directNoFilm.paid + totals.directFilm.paid
-  };
-
-  // عنوان
-  sheet.getRange('A1:I1').merge()
-    .setValue('📊 تحليل المصروفات')
-    .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
-    .setFontColor(CONFIG.COLORS.TEXT.WHITE)
-    .setFontWeight('bold').setFontSize(14)
-    .setHorizontalAlignment('center');
-
-  // رأس جدول الملخص
-  var dashHeaders = ['البيان', '', '', '', '', 'مستحق (USD)', 'مدفوع (USD)', 'متبقي (USD)', '% السداد'];
-  sheet.getRange(2, 1, 1, 9).setValues([dashHeaders])
-    .setBackground(CONFIG.COLORS.HEADER.SUMMARY)
-    .setFontColor(CONFIG.COLORS.TEXT.WHITE)
-    .setFontWeight('bold').setHorizontalAlignment('center');
-
-  // بيانات الملخص
-  var dashData = [
-    ['🏢 إجمالي المصروفات العمومية', '', '', '', '', totals.overhead.accrual, totals.overhead.paid, totals.overhead.accrual - totals.overhead.paid, totals.overhead.accrual > 0 ? totals.overhead.paid / totals.overhead.accrual : ''],
-    ['🎬 إجمالي مصروفات الأفلام', '', '', '', '', totals.directFilm.accrual, totals.directFilm.paid, totals.directFilm.accrual - totals.directFilm.paid, totals.directFilm.accrual > 0 ? totals.directFilm.paid / totals.directFilm.accrual : ''],
-    ['📋 مصروفات مباشرة بدون مشروع', '', '', '', '', totals.directNoFilm.accrual, totals.directNoFilm.paid, totals.directNoFilm.accrual - totals.directNoFilm.paid, totals.directNoFilm.accrual > 0 ? totals.directNoFilm.paid / totals.directNoFilm.accrual : ''],
-    ['📌 الإجمالي العام', '', '', '', '', totalAll.accrual, totalAll.paid, totalAll.accrual - totalAll.paid, totalAll.accrual > 0 ? totalAll.paid / totalAll.accrual : '']
-  ];
-  sheet.getRange(3, 1, 4, 9).setValues(dashData);
-
-  // تنسيق الملخص
-  sheet.getRange('A3:E6').setFontWeight('bold');
-  sheet.getRange(3, 6, 4, 3).setNumberFormat('$#,##0.00');
-  sheet.getRange(3, 9, 4, 1).setNumberFormat('0.0%');
-  sheet.getRange('A6:I6').setFontWeight('bold').setBackground('#e8eaf6'); // صف الإجمالي
-
-  // إطار الملخص
-  sheet.getRange('A2:I6').setBorder(true, true, true, true, true, true, '#1565c0', SpreadsheetApp.BorderStyle.SOLID);
-
-  // تلوين المتبقي
-  for (var r = 3; r <= 6; r++) {
-    var remVal = sheet.getRange(r, 8).getValue();
-    if (remVal > 0) sheet.getRange(r, 8).setBackground('#ffcdd2');
-    else if (remVal === 0) sheet.getRange(r, 8).setBackground('#c8e6c9');
-  }
-
-  // صف 7: فاصل
-  sheet.setRowHeight(7, 8);
-
-  // ═══════════════════════════════════════════════════════════
-  // جدول التفاصيل (صف 8+)
-  // ═══════════════════════════════════════════════════════════
-  var tableHeaderRow = 8;
-  var tableHeaders = ['التصنيف', 'تصنيف الحركة', 'طبيعة الحركة', 'البند', 'المورد / الجهة', 'مستحق (USD)', 'مدفوع (USD)', 'متبقي (USD)', '% السداد'];
-  sheet.getRange(tableHeaderRow, 1, 1, 9).setValues([tableHeaders])
-    .setBackground(CONFIG.COLORS.HEADER.DASHBOARD)
-    .setFontColor(CONFIG.COLORS.TEXT.WHITE)
-    .setFontWeight('bold').setHorizontalAlignment('center');
-
-  var dataStartRow = tableHeaderRow + 1;
-
-  if (rows.length > 0) {
-    sheet.getRange(dataStartRow, 1, rows.length, 9).setValues(rows);
-    sheet.getRange(dataStartRow, 6, rows.length, 3).setNumberFormat('$#,##0.00');
-    sheet.getRange(dataStartRow, 9, rows.length, 1).setNumberFormat('0.0%');
-
-    // تلوين متناوب
-    for (var ri = 0; ri < rows.length; ri++) {
-      var bg = ri % 2 === 0 ? '#ffffff' : CONFIG.COLORS.BG.LIGHT_BLUE;
-      sheet.getRange(dataStartRow + ri, 1, 1, 9).setBackground(bg);
-    }
-
-    // إطار الجدول
-    sheet.getRange(tableHeaderRow, 1, rows.length + 1, 9)
-      .setBorder(true, true, true, true, true, true, '#bdbdbd', SpreadsheetApp.BorderStyle.SOLID);
-
-    // ⭐ إضافة الفلتر على الجدول
-    var filterRange = sheet.getRange(tableHeaderRow, 1, rows.length + 1, 9);
-    filterRange.createFilter();
-  } else {
-    sheet.getRange(dataStartRow, 1).setValue('لا توجد مصروفات').setFontStyle('italic');
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // تنسيق الأعمدة
-  // ═══════════════════════════════════════════════════════════
-  sheet.setColumnWidth(1, 160);  // التصنيف
-  sheet.setColumnWidth(2, 140);  // تصنيف الحركة
-  sheet.setColumnWidth(3, 140);  // طبيعة الحركة
-  sheet.setColumnWidth(4, 160);  // البند
-  sheet.setColumnWidth(5, 160);  // المورد
-  sheet.setColumnWidth(6, 120);  // مستحق
-  sheet.setColumnWidth(7, 120);  // مدفوع
-  sheet.setColumnWidth(8, 120);  // متبقي
-  sheet.setColumnWidth(9, 80);   // %
-
-  // تجميد صفوف الـ Dashboard + رأس الجدول
-  sheet.setFrozenRows(tableHeaderRow);
-
-  // ═══════════════════════════════════════════════════════════
-  // التذييل
-  // ═══════════════════════════════════════════════════════════
-  var footerRow = dataStartRow + Math.max(rows.length, 1) + 2;
-  var reportDate = Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE, 'dd/MM/yyyy HH:mm');
-  sheet.getRange(footerRow, 1, 1, 9).merge()
-    .setValue('تاريخ التقرير: ' + reportDate)
-    .setHorizontalAlignment('center').setFontSize(9).setFontColor('#757575');
-  sheet.getRange(footerRow + 1, 1, 1, 9).merge()
-    .setValue(CONFIG.COMPANY.CREDITS)
-    .setHorizontalAlignment('center').setFontSize(9).setFontColor('#9e9e9e');
-
-  SpreadsheetApp.flush();
-
-  if (silent) return { success: true, name: 'تحليل المصروفات' };
-  ss.setActiveSheet(sheet);
-  SpreadsheetApp.getUi().alert('✅ تم إنشاء تقرير "تحليل المصروفات"\n\n• ' + rows.length + ' صف\n• استخدم الفلتر في عمود "التصنيف" لعرض فئة معينة');
 }
 
 // ==================== إعادة بناء التدفقات النقدية ====================
@@ -17193,13 +16950,7 @@ function generateAllReportsPackage() {
   try { results.push(rebuildCashFlowReport(true)); } catch(e) { results.push({ success: false, name: 'التدفقات النقدية', error: e.message }); }
 
   // ═══════════════════════════════════════════════════════════
-  // المرحلة 3: تحليل المصروفات الديناميكي
-  // ═══════════════════════════════════════════════════════════
-  ss.toast('3/10 - تحليل المصروفات...', '📦', -1);
-  try { results.push(generateDynamicExpenseReport(true)); } catch(e) { results.push({ success: false, name: 'تحليل المصروفات', error: e.message }); }
-
-  // ═══════════════════════════════════════════════════════════
-  // المرحلة 4: تقارير الربحية
+  // المرحلة 3: تقارير الربحية
   // ═══════════════════════════════════════════════════════════
   ss.toast('4/10 - تقارير ربحية المشاريع...', '📦', -1);
   try {
@@ -17429,7 +17180,28 @@ function generateFilmCostReport(silent) {
   }
   reportSheet = ss.insertSheet(reportSheetName);
   reportSheet.setRightToLeft(true);
-  reportSheet.setTabColor('#d32f2f');
+  reportSheet.setTabColor('#455a64');
+
+  // ─── ألوان صديقة للطباعة ───
+  var CLR = {
+    TITLE_BG: '#37474f',      // رمادي داكن للعنوان الرئيسي
+    TITLE_FG: '#ffffff',
+    SUBTITLE_BG: '#eceff1',   // رمادي فاتح جداً للعنوان الفرعي
+    SUBTITLE_FG: '#455a64',
+    SECTION_BG: '#455a64',    // رمادي متوسط لعناوين الأقسام
+    SECTION_FG: '#ffffff',
+    HEADER_BG: '#cfd8dc',     // رمادي فاتح لرؤوس الجداول
+    HEADER_FG: '#263238',
+    FILM_BG: '#546e7a',       // رمادي-أزرق لترويسة الفيلم
+    FILM_FG: '#ffffff',
+    ITEM_BG: '#eceff1',       // رمادي فاتح جداً لصفوف البنود
+    ZEBRA: '#f5f5f5',         // رمادي خفيف جداً للتظليل المتناوب
+    WHITE: '#ffffff',
+    TOTAL_BG: '#455a64',      // رمادي داكن لصفوف الإجمالي
+    TOTAL_FG: '#ffffff',
+    RED_TEXT: '#c62828',       // أحمر للديون
+    GREEN_TEXT: '#2e7d32'      // أخضر للمسدد
+  };
 
   var numCols = 7;
   var currentRow = 1;
@@ -17438,101 +17210,99 @@ function generateFilmCostReport(silent) {
   // العنوان الرئيسي
   // ═══════════════════════════════════════════════════════════
   reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('📊 تقرير تكاليف الأفلام الشامل')
-    .setBackground('#1a237e')
-    .setFontColor('white')
+    .setValue('تقرير تكاليف الأفلام الشامل')
+    .setBackground(CLR.TITLE_BG)
+    .setFontColor(CLR.TITLE_FG)
     .setFontWeight('bold')
-    .setFontSize(18)
+    .setFontSize(16)
     .setHorizontalAlignment('center');
   currentRow++;
 
   reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') + ' | عدد الأفلام: ' + projectCodes.length)
-    .setBackground('#283593')
-    .setFontColor('#b3b3ff')
-    .setFontSize(11)
+    .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') + '  |  عدد الأفلام: ' + projectCodes.length)
+    .setBackground(CLR.SUBTITLE_BG)
+    .setFontColor(CLR.SUBTITLE_FG)
+    .setFontSize(10)
     .setHorizontalAlignment('center');
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════
-  // 📊 الملخص المجمع (كل الأفلام)
+  // الملخص المجمع (كل الأفلام)
   // ═══════════════════════════════════════════════════════════
   reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('📊 الملخص المجمع - كل الأفلام')
-    .setBackground('#0d47a1')
-    .setFontColor('white')
+    .setValue('الملخص المجمع - كل الأفلام')
+    .setBackground(CLR.SECTION_BG)
+    .setFontColor(CLR.SECTION_FG)
     .setFontWeight('bold')
-    .setFontSize(14)
+    .setFontSize(12)
     .setHorizontalAlignment('center');
   currentRow++;
 
-  // رؤوس ملخص مجمع
   var summaryHeaders = ['البيان', 'المبلغ ($)', '', '', '', '', ''];
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([summaryHeaders])
-    .setBackground('#1565c0')
-    .setFontColor('white')
+    .setBackground(CLR.HEADER_BG)
+    .setFontColor(CLR.HEADER_FG)
     .setFontWeight('bold');
   currentRow++;
 
-  // بيانات الملخص المجمع
   var summaryRows = [
-    ['💰 إجمالي الميزانية المرصودة', grandBudget, '', '', '', '', ''],
-    ['📋 إجمالي التكاليف المستحقة (استحقاق)', grandAccrued, '', '', '', '', ''],
-    ['✅ إجمالي المسدد فعلياً (دفعات)', grandPaid, '', '', '', '', ''],
-    ['📝 إجمالي التسويات', grandSettled, '', '', '', '', ''],
-    ['🔴 إجمالي الديون المعلقة (لم تُسدد)', grandOutstanding, '', '', '', '', '']
+    ['إجمالي الميزانية المرصودة', grandBudget, '', '', '', '', ''],
+    ['إجمالي التكاليف المستحقة (استحقاق)', grandAccrued, '', '', '', '', ''],
+    ['إجمالي المسدد فعلياً (دفعات)', grandPaid, '', '', '', '', ''],
+    ['إجمالي التسويات', grandSettled, '', '', '', '', ''],
+    ['إجمالي الديون المعلقة (لم تُسدد)', grandOutstanding, '', '', '', '', '']
   ];
 
   reportSheet.getRange(currentRow, 1, summaryRows.length, numCols).setValues(summaryRows);
   reportSheet.getRange(currentRow, 2, summaryRows.length, 1).setNumberFormat('$#,##0.00');
 
-  // تلوين صف الميزانية
-  reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#e3f2fd');
-  // تلوين صف المستحق
-  reportSheet.getRange(currentRow + 1, 1, 1, numCols).setBackground('#fff3e0');
-  // تلوين صف المسدد
-  reportSheet.getRange(currentRow + 2, 1, 1, numCols).setBackground('#e8f5e9');
-  // تلوين صف التسويات
-  reportSheet.getRange(currentRow + 3, 1, 1, numCols).setBackground('#f3e5f5');
-  // تلوين صف الديون
-  reportSheet.getRange(currentRow + 4, 1, 1, numCols).setBackground('#ffebee');
-  reportSheet.getRange(currentRow + 4, 2).setFontColor('#c62828').setFontWeight('bold').setFontSize(13);
+  // تظليل متناوب للملخص
+  for (var sr = 0; sr < summaryRows.length; sr++) {
+    if (sr % 2 === 1) {
+      reportSheet.getRange(currentRow + sr, 1, 1, numCols).setBackground(CLR.ZEBRA);
+    }
+  }
+  // الديون المعلقة بخط عريض
+  reportSheet.getRange(currentRow + 4, 1, 1, numCols).setFontWeight('bold');
+  if (grandOutstanding > 0) {
+    reportSheet.getRange(currentRow + 4, 2).setFontColor(CLR.RED_TEXT);
+  }
 
   currentRow += summaryRows.length;
 
   // نسب
   currentRow++;
   if (grandBudget > 0) {
-    reportSheet.getRange(currentRow, 1).setValue('📈 نسبة الصرف من الميزانية:');
+    reportSheet.getRange(currentRow, 1).setValue('نسبة الصرف من الميزانية:');
     reportSheet.getRange(currentRow, 2).setValue(Math.round((grandAccrued / grandBudget) * 100) + '%')
-      .setFontWeight('bold').setFontSize(12);
+      .setFontWeight('bold');
     currentRow++;
   }
   if (grandAccrued > 0) {
-    reportSheet.getRange(currentRow, 1).setValue('📈 نسبة السداد من المستحق:');
+    reportSheet.getRange(currentRow, 1).setValue('نسبة السداد من المستحق:');
     reportSheet.getRange(currentRow, 2).setValue(Math.round(((grandPaid + grandSettled) / grandAccrued) * 100) + '%')
-      .setFontWeight('bold').setFontSize(12);
+      .setFontWeight('bold');
     currentRow++;
   }
 
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════
-  // 📊 جدول ملخص كل الأفلام
+  // جدول ملخص كل الأفلام
   // ═══════════════════════════════════════════════════════════
   reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('📋 ملخص الأفلام')
-    .setBackground('#37474f')
-    .setFontColor('white')
+    .setValue('ملخص الأفلام')
+    .setBackground(CLR.SECTION_BG)
+    .setFontColor(CLR.SECTION_FG)
     .setFontWeight('bold')
-    .setFontSize(13)
+    .setFontSize(12)
     .setHorizontalAlignment('center');
   currentRow++;
 
   var filmTableHeaders = ['كود الفيلم', 'اسم الفيلم', 'الميزانية المرصودة', 'المستحق', 'المسدد', 'الديون المعلقة', 'نسبة السداد'];
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([filmTableHeaders])
-    .setBackground('#546e7a')
-    .setFontColor('white')
+    .setBackground(CLR.HEADER_BG)
+    .setFontColor(CLR.HEADER_FG)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
   currentRow++;
@@ -17554,19 +17324,17 @@ function generateFilmCostReport(silent) {
       fPayPercent
     ]]);
 
-    // تنسيق الأرقام
     reportSheet.getRange(currentRow, 3, 1, 4).setNumberFormat('$#,##0.00');
 
-    // تلوين الديون المعلقة
     if (fOutstanding > 0) {
-      reportSheet.getRange(currentRow, 6).setFontColor('#c62828').setFontWeight('bold');
+      reportSheet.getRange(currentRow, 6).setFontColor(CLR.RED_TEXT).setFontWeight('bold');
     } else {
-      reportSheet.getRange(currentRow, 6).setFontColor('#2e7d32');
+      reportSheet.getRange(currentRow, 6).setFontColor(CLR.GREEN_TEXT);
     }
 
-    // تلوين الصفوف بالتناوب
+    // تظليل متناوب
     if (fi % 2 === 1) {
-      reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#f5f5f5');
+      reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
     }
 
     currentRow++;
@@ -17575,17 +17343,17 @@ function generateFilmCostReport(silent) {
   // صف إجمالي جدول الأفلام
   var allPayPercent = grandAccrued > 0 ? Math.round(((grandPaid + grandSettled) / grandAccrued) * 100) + '%' : '-';
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-    '', '📊 الإجمالي', grandBudget, grandAccrued, grandPaid + grandSettled, grandOutstanding, allPayPercent
+    '', 'الإجمالي', grandBudget, grandAccrued, grandPaid + grandSettled, grandOutstanding, allPayPercent
   ]])
-    .setBackground('#37474f')
-    .setFontColor('white')
+    .setBackground(CLR.TOTAL_BG)
+    .setFontColor(CLR.TOTAL_FG)
     .setFontWeight('bold');
   reportSheet.getRange(currentRow, 3, 1, 4).setNumberFormat('$#,##0.00');
 
   currentRow += 3;
 
   // ═══════════════════════════════════════════════════════════
-  // 🎬 التفصيل لكل فيلم (بند بند + مورد مورد)
+  // التفصيل لكل فيلم (بند بند + مورد مورد)
   // ═══════════════════════════════════════════════════════════
   for (var pi = 0; pi < projectCodes.length; pi++) {
     var projCode = projectCodes[pi];
@@ -17596,39 +17364,40 @@ function generateFilmCostReport(silent) {
     var projOutstanding = projData.totalAccrued - projData.totalPaid - projData.totalSettled;
 
     // ───────────────────────────────────────
-    // عنوان الفيلم
+    // ترويسة الفيلم
     // ───────────────────────────────────────
     reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-      .setValue('🎬 ' + projCode + ' - ' + projName)
-      .setBackground('#b71c1c')
-      .setFontColor('white')
+      .setValue(projCode + ' - ' + projName)
+      .setBackground(CLR.FILM_BG)
+      .setFontColor(CLR.FILM_FG)
       .setFontWeight('bold')
-      .setFontSize(14)
+      .setFontSize(13)
       .setHorizontalAlignment('center');
     currentRow++;
 
-    // ملخص الفيلم
-    var projSummary = [
-      ['الميزانية المرصودة', projBudgetTotal, 'المستحق', projData.totalAccrued, 'المسدد', projData.totalPaid + projData.totalSettled, 'الديون المعلقة'],
-      ['', '', '', '', '', '', projOutstanding]
-    ];
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([projSummary[0]])
-      .setBackground('#ffcdd2')
-      .setFontWeight('bold');
+    // ملخص الفيلم في سطر واحد
+    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+      'الميزانية', projBudgetTotal, 'المستحق', projData.totalAccrued, 'المسدد', projData.totalPaid + projData.totalSettled, 'المعلق'
+    ]])
+      .setBackground(CLR.SUBTITLE_BG)
+      .setFontWeight('bold')
+      .setFontSize(10);
     reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
     reportSheet.getRange(currentRow, 4).setNumberFormat('$#,##0.00');
     reportSheet.getRange(currentRow, 6).setNumberFormat('$#,##0.00');
     currentRow++;
 
-    reportSheet.getRange(currentRow, 7)
+    // صف الديون المعلقة
+    reportSheet.getRange(currentRow, 1, 1, numCols - 1).merge()
+      .setValue('الديون المعلقة على هذا الفيلم:')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('left');
+    reportSheet.getRange(currentRow, numCols)
       .setValue(projOutstanding)
       .setNumberFormat('$#,##0.00')
       .setFontWeight('bold')
-      .setFontSize(13)
-      .setFontColor(projOutstanding > 0 ? '#c62828' : '#2e7d32')
-      .setBackground('#ffebee');
-    reportSheet.getRange(currentRow, 1, 1, 6).setBackground('#ffebee');
-    reportSheet.getRange(currentRow, 1).setValue('🔴 الديون المعلقة ←').setFontWeight('bold');
+      .setFontSize(12)
+      .setFontColor(projOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
     currentRow++;
 
     // ───────────────────────────────────────
@@ -17636,8 +17405,8 @@ function generateFilmCostReport(silent) {
     // ───────────────────────────────────────
     var detailHeaders = ['البند', 'المورد/الجهة', 'الميزانية', 'المستحق', 'المسدد', 'المعلق', 'النسبة'];
     reportSheet.getRange(currentRow, 1, 1, numCols).setValues([detailHeaders])
-      .setBackground('#d32f2f')
-      .setFontColor('white')
+      .setBackground(CLR.HEADER_BG)
+      .setFontColor(CLR.HEADER_FG)
       .setFontWeight('bold')
       .setHorizontalAlignment('center');
     currentRow++;
@@ -17645,6 +17414,7 @@ function generateFilmCostReport(silent) {
     // ───────────────────────────────────────
     // البنود والموردين
     // ───────────────────────────────────────
+    var detailRowIndex = 0;  // عداد لتتبع التظليل المتناوب
     var itemNames = Object.keys(projData.items).sort();
     for (var ii = 0; ii < itemNames.length; ii++) {
       var itemName = itemNames[ii];
@@ -17653,9 +17423,9 @@ function generateFilmCostReport(silent) {
       var itemOutstanding = itemObj.totalAccrued - itemObj.totalPaid - itemObj.totalSettled;
       var itemPayPercent = itemObj.totalAccrued > 0 ? Math.round(((itemObj.totalPaid + itemObj.totalSettled) / itemObj.totalAccrued) * 100) + '%' : '-';
 
-      // صف إجمالي البند (ملخص)
+      // صف إجمالي البند
       reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-        '📦 ' + itemName,
+        itemName,
         '(إجمالي البند)',
         itemBudget,
         itemObj.totalAccrued,
@@ -17663,14 +17433,14 @@ function generateFilmCostReport(silent) {
         itemOutstanding,
         itemPayPercent
       ]])
-        .setBackground('#ffcdd2')
+        .setBackground(CLR.ITEM_BG)
         .setFontWeight('bold');
       reportSheet.getRange(currentRow, 3, 1, 4).setNumberFormat('$#,##0.00');
 
       if (itemOutstanding > 0) {
-        reportSheet.getRange(currentRow, 6).setFontColor('#c62828');
+        reportSheet.getRange(currentRow, 6).setFontColor(CLR.RED_TEXT);
       } else {
-        reportSheet.getRange(currentRow, 6).setFontColor('#2e7d32');
+        reportSheet.getRange(currentRow, 6).setFontColor(CLR.GREEN_TEXT);
       }
       currentRow++;
 
@@ -17684,7 +17454,7 @@ function generateFilmCostReport(silent) {
 
         reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
           '',
-          '  ↳ ' + vName,
+          '  ' + vName,
           '',
           vData.accrued,
           vData.paid + vData.settled,
@@ -17694,14 +17464,15 @@ function generateFilmCostReport(silent) {
         reportSheet.getRange(currentRow, 4, 1, 3).setNumberFormat('$#,##0.00');
 
         if (vOutstanding > 0) {
-          reportSheet.getRange(currentRow, 6).setFontColor('#c62828');
+          reportSheet.getRange(currentRow, 6).setFontColor(CLR.RED_TEXT);
         } else if (vOutstanding === 0 && vData.accrued > 0) {
-          reportSheet.getRange(currentRow, 6).setFontColor('#2e7d32');
+          reportSheet.getRange(currentRow, 6).setFontColor(CLR.GREEN_TEXT);
         }
 
-        // تلوين بالتناوب
-        if (vi % 2 === 1) {
-          reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#fff5f5');
+        // تظليل متناوب (سطر أبيض / سطر رمادي خفيف)
+        detailRowIndex++;
+        if (detailRowIndex % 2 === 0) {
+          reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
         }
         currentRow++;
       }
@@ -17710,7 +17481,7 @@ function generateFilmCostReport(silent) {
     // صف إجمالي الفيلم
     var projPayPercent = projData.totalAccrued > 0 ? Math.round(((projData.totalPaid + projData.totalSettled) / projData.totalAccrued) * 100) + '%' : '-';
     reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      '📊 إجمالي ' + projCode,
+      'إجمالي ' + projCode,
       '',
       projBudgetTotal,
       projData.totalAccrued,
@@ -17718,8 +17489,8 @@ function generateFilmCostReport(silent) {
       projOutstanding,
       projPayPercent
     ]])
-      .setBackground('#b71c1c')
-      .setFontColor('white')
+      .setBackground(CLR.TOTAL_BG)
+      .setFontColor(CLR.TOTAL_FG)
       .setFontWeight('bold');
     reportSheet.getRange(currentRow, 3, 1, 4).setNumberFormat('$#,##0.00');
     currentRow += 2;
