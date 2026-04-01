@@ -3354,6 +3354,33 @@ function generatePartyReceivablesReport(silent) {
   payables.sort(function(a, b) { return b.balance - a.balance; });
 
   // ═══════════════════════════════════════════════════════════════════════
+  // تجميع الأطراف حسب التصنيف (لعرض كل تصنيف كقسم مستقل)
+  // ═══════════════════════════════════════════════════════════════════════
+  var payablesByClass = {};   // { classification: [items] }
+  var receivablesByClass = {};
+
+  for (var pi = 0; pi < payables.length; pi++) {
+    var cls = payables[pi].classification;
+    if (!payablesByClass[cls]) payablesByClass[cls] = { items: [], total: 0 };
+    payablesByClass[cls].items.push(payables[pi]);
+    payablesByClass[cls].total += payables[pi].balance;
+  }
+  for (var ri = 0; ri < receivables.length; ri++) {
+    var cls2 = receivables[ri].classification;
+    if (!receivablesByClass[cls2]) receivablesByClass[cls2] = { items: [], total: 0 };
+    receivablesByClass[cls2].items.push(receivables[ri]);
+    receivablesByClass[cls2].total += receivables[ri].balance;
+  }
+
+  // ترتيب التصنيفات حسب المبلغ (الأكبر أولاً)
+  var payableClassKeys = Object.keys(payablesByClass).sort(function(a, b) {
+    return payablesByClass[b].total - payablesByClass[a].total;
+  });
+  var receivableClassKeys = Object.keys(receivablesByClass).sort(function(a, b) {
+    return receivablesByClass[b].total - receivablesByClass[a].total;
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
   // إنشاء الشيت
   // ═══════════════════════════════════════════════════════════════════════
   const reportSheetName = 'تقرير الاستحقاقات (إجمالي)';
@@ -3364,268 +3391,288 @@ function generatePartyReceivablesReport(silent) {
   } else {
     reportSheet = ss.insertSheet(reportSheetName);
   }
+  reportSheet.setRightToLeft(true);
 
   let currentRow = 1;
-  const numCols = 6;
+  const numCols = 5;
+
+  // ألوان
+  var CLR = {
+    TITLE_BG: '#6a1b9a', TITLE_FG: '#ffffff',
+    SUBTITLE_BG: '#e1bee7', SUBTITLE_FG: '#4a148c',
+    SECTION_BG: '#7b1fa2', SECTION_FG: '#ffffff',
+    CLASS_BG: '#ce93d8', CLASS_FG: '#4a148c',
+    HEADER_BG: '#e0e0e0', HEADER_FG: '#212121',
+    ZEBRA: '#fafafa',
+    TOTAL_BG: '#e1bee7', TOTAL_FG: '#4a148c',
+    GRAND_TOTAL_BG: '#6a1b9a', GRAND_TOTAL_FG: '#ffffff',
+    RED: '#b71c1c', GREEN: '#2e7d32', ORANGE: '#e65100',
+    PAY_BG: '#ffcdd2', REC_BG: '#c8e6c9', NET_BG: '#fff9c4'
+  };
 
   // ═══════════════════════════════════════════════════════════════════════
   // العنوان الرئيسي
   // ═══════════════════════════════════════════════════════════════════════
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('📊 تقرير الاستحقاقات (إجمالي)')
-    .setFontSize(16)
-    .setFontWeight('bold')
-    .setHorizontalAlignment('center')
-    .setBackground('#6a1b9a')
-    .setFontColor('white');
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('تقرير الاستحقاقات الإجمالي')
+    .setFontSize(16).setFontWeight('bold').setHorizontalAlignment('center')
+    .setBackground(CLR.TITLE_BG).setFontColor(CLR.TITLE_FG);
   currentRow++;
 
-  // تاريخ التقرير
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('📅 تاريخ التقرير: ' + Utilities.formatDate(today, 'Asia/Riyadh', 'yyyy-MM-dd HH:mm'))
-    .setFontSize(10)
-    .setHorizontalAlignment('center')
-    .setBackground('#e1bee7');
-  currentRow++;
-
-  // ملاحظة توضيحية
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('💡 هذا التقرير يعرض إجمالي رصيد كل طرف (مدين - دائن) بدون تفاصيل البنود')
-    .setFontSize(9)
-    .setFontStyle('italic')
-    .setHorizontalAlignment('center')
-    .setBackground('#f3e5f5');
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('تاريخ التقرير: ' + Utilities.formatDate(today, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
+    .setFontSize(10).setHorizontalAlignment('center')
+    .setBackground(CLR.SUBTITLE_BG).setFontColor(CLR.SUBTITLE_FG);
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════════════════
   // ملخص حسب التصنيف
   // ═══════════════════════════════════════════════════════════════════════
-  var classKeys = Object.keys(classSummary).filter(function(k) {
-    // إزالة التصنيفات التي ليس لها أرصدة فعلية
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('ملخص حسب التصنيف')
+    .setFontWeight('bold').setFontSize(12).setHorizontalAlignment('center')
+    .setBackground(CLR.SECTION_BG).setFontColor(CLR.SECTION_FG);
+  currentRow++;
+
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['التصنيف', 'علينا', 'لنا', 'الصافي', '']])
+    .setFontWeight('bold').setBackground(CLR.HEADER_BG).setHorizontalAlignment('center');
+  currentRow++;
+
+  // جمع كل التصنيفات الفعلية
+  var allClassKeys = Object.keys(classSummary).filter(function(k) {
     return classSummary[k].owed > 0.01 || classSummary[k].oweUs > 0.01;
   }).sort(function(a, b) {
-    var netA = classSummary[a].owed - classSummary[a].oweUs;
-    var netB = classSummary[b].owed - classSummary[b].oweUs;
-    return Math.abs(netB) - Math.abs(netA);
+    var netA = classSummary[a].owed + classSummary[a].oweUs;
+    var netB = classSummary[b].owed + classSummary[b].oweUs;
+    return netB - netA;
   });
 
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('📋 ملخص حسب التصنيف')
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setBackground('#6a1b9a')
-    .setFontColor('white')
-    .setHorizontalAlignment('center');
-  currentRow++;
-
-  reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue('التصنيف')
-    .setFontWeight('bold').setBackground('#e0e0e0').setHorizontalAlignment('center');
-  reportSheet.getRange(currentRow, 3, 1, 2).merge().setValue('علينا')
-    .setFontWeight('bold').setBackground('#ffcdd2').setHorizontalAlignment('center');
-  reportSheet.getRange(currentRow, 5, 1, 2).merge().setValue('لنا')
-    .setFontWeight('bold').setBackground('#c8e6c9').setHorizontalAlignment('center');
-  currentRow++;
-
-  for (var ck = 0; ck < classKeys.length; ck++) {
-    var cs = classSummary[classKeys[ck]];
-    reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue(classKeys[ck]);
-    reportSheet.getRange(currentRow, 3, 1, 2).merge().setValue(cs.owed)
-      .setNumberFormat('$#,##0.00').setFontWeight('bold')
-      .setFontColor(cs.owed > 0 ? '#b71c1c' : '#333333');
-    reportSheet.getRange(currentRow, 5, 1, 2).merge().setValue(cs.oweUs)
-      .setNumberFormat('$#,##0.00').setFontWeight('bold')
-      .setFontColor(cs.oweUs > 0 ? '#2e7d32' : '#333333');
-    if (ck % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#fafafa');
+  for (var ck = 0; ck < allClassKeys.length; ck++) {
+    var cs = classSummary[allClassKeys[ck]];
+    var csNet = cs.oweUs - cs.owed;
+    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+      allClassKeys[ck], cs.owed, cs.oweUs, csNet, ''
+    ]]);
+    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+    if (cs.owed > 0) reportSheet.getRange(currentRow, 2).setFontColor(CLR.RED).setFontWeight('bold');
+    if (cs.oweUs > 0) reportSheet.getRange(currentRow, 3).setFontColor(CLR.GREEN).setFontWeight('bold');
+    reportSheet.getRange(currentRow, 4).setFontColor(csNet >= 0 ? CLR.GREEN : CLR.RED).setFontWeight('bold');
+    if (ck % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
     currentRow++;
   }
-  currentRow++;
+
+  // صف إجمالي الملخص
+  var grandNet = totalReceivables - totalPayables;
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+    'الإجمالي', totalPayables, totalReceivables, grandNet, ''
+  ]])
+    .setFontWeight('bold').setBackground(CLR.GRAND_TOTAL_BG).setFontColor(CLR.GRAND_TOTAL_FG);
+  reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+  currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════════════════
-  // دالة مساعدة لإضافة قسم
+  // دالة مساعدة: عرض قسم تصنيف بأطرافه
   // ═══════════════════════════════════════════════════════════════════════
-  function addSection(title, items, total, bgColor, textColor) {
-    // عنوان القسم
-    reportSheet.getRange(currentRow, 1, 1, numCols).merge();
-    reportSheet.getRange(currentRow, 1)
-      .setValue(title + ' (' + items.length + ' طرف)')
-      .setFontWeight('bold')
-      .setFontSize(12)
-      .setBackground(bgColor)
-      .setFontColor(textColor)
-      .setHorizontalAlignment('center');
+  function addClassificationSection(classTitle, items, classTotal, classBg, classFg, counterStart) {
+    // ترويسة التصنيف
+    reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+      .setValue(classTitle + ' (' + items.length + ' طرف) — إجمالي: $' + classTotal.toFixed(2))
+      .setFontWeight('bold').setFontSize(11).setHorizontalAlignment('center')
+      .setBackground(classBg).setFontColor(classFg);
     currentRow++;
 
-    if (items.length === 0) {
-      reportSheet.getRange(currentRow, 1, 1, numCols).merge();
-      reportSheet.getRange(currentRow, 1)
-        .setValue('لا توجد بيانات')
-        .setHorizontalAlignment('center')
-        .setFontStyle('italic');
-      currentRow += 2;
-      return;
-    }
-
-    // رأس الجدول
-    var tableHeaders = ['#', 'الطرف', 'التصنيف', 'المستحق', 'المسدد', 'الباقي'];
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([tableHeaders]);
+    // رؤوس الجدول
     reportSheet.getRange(currentRow, 1, 1, numCols)
-      .setFontWeight('bold')
-      .setBackground('#e0e0e0')
-      .setHorizontalAlignment('center');
+      .setValues([['#', 'الطرف', 'المستحق', 'المسدد', 'الباقي']])
+      .setFontWeight('bold').setBackground(CLR.HEADER_BG).setHorizontalAlignment('center');
     currentRow++;
 
-    // البيانات
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
       reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-        i + 1,
-        item.party,
-        item.classification,
-        item.totalDebit,
-        item.totalCredit,
-        item.balance
+        counterStart + i + 1, item.party, item.totalDebit, item.totalCredit, item.balance
       ]]);
-
-      // تنسيق الأرقام
-      reportSheet.getRange(currentRow, 4).setNumberFormat('$#,##0.00');
-      reportSheet.getRange(currentRow, 5).setNumberFormat('$#,##0.00');
-      reportSheet.getRange(currentRow, 6).setNumberFormat('$#,##0.00').setFontWeight('bold');
-
-      // تلوين الصفوف بالتناوب
-      if (i % 2 === 0) {
-        reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#fafafa');
-      }
-
+      reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 5).setFontWeight('bold');
+      if (i % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
       currentRow++;
     }
 
-    // الإجمالي
-    reportSheet.getRange(currentRow, 1, 1, 5).merge();
-    reportSheet.getRange(currentRow, 1)
-      .setValue('الإجمالي:')
-      .setFontWeight('bold')
-      .setHorizontalAlignment('left')
-      .setBackground(bgColor);
-    reportSheet.getRange(currentRow, 6)
-      .setValue(total)
-      .setNumberFormat('$#,##0.00')
-      .setFontWeight('bold')
-      .setFontSize(11)
-      .setBackground(bgColor)
-      .setFontColor(textColor);
+    // إجمالي التصنيف
+    reportSheet.getRange(currentRow, 1, 1, 4).merge()
+      .setValue('إجمالي ' + classTitle + ':')
+      .setFontWeight('bold').setHorizontalAlignment('left')
+      .setBackground(CLR.TOTAL_BG).setFontColor(CLR.TOTAL_FG);
+    reportSheet.getRange(currentRow, 5)
+      .setValue(classTotal)
+      .setNumberFormat('$#,##0.00').setFontWeight('bold').setFontSize(11)
+      .setBackground(CLR.TOTAL_BG).setFontColor(CLR.TOTAL_FG);
     currentRow += 2;
+
+    return counterStart + items.length;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // إضافة الأقسام
+  // مستحقات علينا - مفصلة حسب التصنيف
   // ═══════════════════════════════════════════════════════════════════════
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('مستحقات علينا (ديون) — إجمالي: $' + totalPayables.toFixed(2) + ' (' + payables.length + ' طرف)')
+    .setFontWeight('bold').setFontSize(13).setHorizontalAlignment('center')
+    .setBackground(CLR.PAY_BG).setFontColor(CLR.RED);
+  currentRow++;
 
-  // 1. مستحقات علينا (مصروفات)
-  addSection('💸 مستحقات علينا (ديون)', payables, totalPayables, '#ffcdd2', '#b71c1c');
+  if (payableClassKeys.length === 0) {
+    reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+      .setValue('لا توجد مستحقات علينا').setHorizontalAlignment('center').setFontStyle('italic');
+    currentRow += 2;
+  } else {
+    var payCounter = 0;
+    for (var pck = 0; pck < payableClassKeys.length; pck++) {
+      var pClass = payableClassKeys[pck];
+      var pData = payablesByClass[pClass];
+      payCounter = addClassificationSection(pClass, pData.items, pData.total, CLR.CLASS_BG, CLR.CLASS_FG, payCounter);
+    }
+  }
 
-  // 2. مستحقات لنا (إيرادات)
-  addSection('💰 مستحقات لنا (تحصيلات)', receivables, totalReceivables, '#c8e6c9', '#2e7d32');
+  // ═══════════════════════════════════════════════════════════════════════
+  // مستحقات لنا - مفصلة حسب التصنيف
+  // ═══════════════════════════════════════════════════════════════════════
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('مستحقات لنا (تحصيلات) — إجمالي: $' + totalReceivables.toFixed(2) + ' (' + receivables.length + ' طرف)')
+    .setFontWeight('bold').setFontSize(13).setHorizontalAlignment('center')
+    .setBackground(CLR.REC_BG).setFontColor(CLR.GREEN);
+  currentRow++;
 
-  // 3. دفعات/تحصيلات زائدة (إن وجدت)
+  if (receivableClassKeys.length === 0) {
+    reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+      .setValue('لا توجد مستحقات لنا').setHorizontalAlignment('center').setFontStyle('italic');
+    currentRow += 2;
+  } else {
+    var recCounter = 0;
+    for (var rck = 0; rck < receivableClassKeys.length; rck++) {
+      var rClass = receivableClassKeys[rck];
+      var rData = receivablesByClass[rClass];
+      recCounter = addClassificationSection(rClass, rData.items, rData.total, '#81c784', '#1b5e20', recCounter);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // دفعات/تحصيلات زائدة (إن وجدت)
+  // ═══════════════════════════════════════════════════════════════════════
   if (overpayments.length > 0) {
-    addSection('⚠️ دفعات/تحصيلات زائدة (تحتاج مراجعة)', overpayments, totalOverpayments, '#fff3e0', '#e65100');
+    reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+      .setValue('دفعات/تحصيلات زائدة (تحتاج مراجعة) — ' + overpayments.length + ' طرف')
+      .setFontWeight('bold').setFontSize(12).setHorizontalAlignment('center')
+      .setBackground('#fff3e0').setFontColor(CLR.ORANGE);
+    currentRow++;
+
+    reportSheet.getRange(currentRow, 1, 1, numCols)
+      .setValues([['#', 'الطرف', 'المستحق', 'المسدد', 'الزيادة']])
+      .setFontWeight('bold').setBackground(CLR.HEADER_BG).setHorizontalAlignment('center');
+    currentRow++;
+
+    for (var oi = 0; oi < overpayments.length; oi++) {
+      var op = overpayments[oi];
+      reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+        oi + 1, op.party, op.totalDebit, op.totalCredit, op.balance
+      ]]);
+      reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
+      reportSheet.getRange(currentRow, 5).setFontColor(CLR.ORANGE).setFontWeight('bold');
+      if (oi % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+      currentRow++;
+    }
+    currentRow++;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // الملخص المالي
+  // الملخص المالي النهائي
   // ═══════════════════════════════════════════════════════════════════════
   const netPosition = totalReceivables - totalPayables;
 
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('📊 الملخص المالي')
-    .setFontWeight('bold')
-    .setFontSize(14)
-    .setBackground('#6a1b9a')
-    .setFontColor('white')
-    .setHorizontalAlignment('center');
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('الملخص المالي')
+    .setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center')
+    .setBackground(CLR.TITLE_BG).setFontColor(CLR.TITLE_FG);
   currentRow++;
 
-  // إجمالي المستحقات علينا
-  reportSheet.getRange(currentRow, 1, 1, 4).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('💸 إجمالي المستحقات علينا:')
-    .setFontWeight('bold')
-    .setBackground('#ffcdd2');
-  reportSheet.getRange(currentRow, 5, 1, 2).merge();
-  reportSheet.getRange(currentRow, 5)
-    .setValue(totalPayables)
-    .setNumberFormat('$#,##0.00')
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setBackground('#ffcdd2')
-    .setFontColor('#b71c1c');
+  // تفصيل التصنيفات في الملخص
+  for (var mck = 0; mck < payableClassKeys.length; mck++) {
+    var mClass = payableClassKeys[mck];
+    var mData = payablesByClass[mClass];
+    reportSheet.getRange(currentRow, 1, 1, 3).merge()
+      .setValue('   ' + mClass + ':').setFontWeight('bold');
+    reportSheet.getRange(currentRow, 4, 1, 2).merge()
+      .setValue(mData.total).setNumberFormat('$#,##0.00')
+      .setFontWeight('bold').setFontColor(CLR.RED);
+    if (mck % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+    currentRow++;
+  }
+
+  // إجمالي علينا
+  reportSheet.getRange(currentRow, 1, 1, 3).merge()
+    .setValue('إجمالي المستحقات علينا:')
+    .setFontWeight('bold').setFontSize(12).setBackground(CLR.PAY_BG);
+  reportSheet.getRange(currentRow, 4, 1, 2).merge()
+    .setValue(totalPayables).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(12).setBackground(CLR.PAY_BG).setFontColor(CLR.RED);
   currentRow++;
 
-  // إجمالي المستحقات لنا
-  reportSheet.getRange(currentRow, 1, 1, 4).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('💰 إجمالي المستحقات لنا:')
-    .setFontWeight('bold')
-    .setBackground('#c8e6c9');
-  reportSheet.getRange(currentRow, 5, 1, 2).merge();
-  reportSheet.getRange(currentRow, 5)
-    .setValue(totalReceivables)
-    .setNumberFormat('$#,##0.00')
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setBackground('#c8e6c9')
-    .setFontColor('#2e7d32');
+  // إجمالي لنا
+  reportSheet.getRange(currentRow, 1, 1, 3).merge()
+    .setValue('إجمالي المستحقات لنا:')
+    .setFontWeight('bold').setFontSize(12).setBackground(CLR.REC_BG);
+  reportSheet.getRange(currentRow, 4, 1, 2).merge()
+    .setValue(totalReceivables).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(12).setBackground(CLR.REC_BG).setFontColor(CLR.GREEN);
   currentRow++;
 
   // صافي الموقف
-  reportSheet.getRange(currentRow, 1, 1, 4).merge();
-  reportSheet.getRange(currentRow, 1)
-    .setValue('📊 صافي الموقف المالي:')
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setBackground('#fff9c4');
-  reportSheet.getRange(currentRow, 5, 1, 2).merge();
-  reportSheet.getRange(currentRow, 5)
-    .setValue(netPosition)
-    .setNumberFormat('$#,##0.00')
-    .setFontWeight('bold')
-    .setFontSize(14)
-    .setBackground('#fff9c4')
-    .setFontColor(netPosition >= 0 ? '#2e7d32' : '#b71c1c');
+  reportSheet.getRange(currentRow, 1, 1, 3).merge()
+    .setValue('صافي الموقف المالي:')
+    .setFontWeight('bold').setFontSize(13).setBackground(CLR.NET_BG);
+  reportSheet.getRange(currentRow, 4, 1, 2).merge()
+    .setValue(netPosition).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(14).setBackground(CLR.NET_BG)
+    .setFontColor(netPosition >= 0 ? CLR.GREEN : CLR.RED);
 
   // ═══════════════════════════════════════════════════════════════════════
   // تنسيق الأعمدة
   // ═══════════════════════════════════════════════════════════════════════
   reportSheet.setColumnWidth(1, 40);   // #
-  reportSheet.setColumnWidth(2, 180);  // الطرف
-  reportSheet.setColumnWidth(3, 140);  // التصنيف
-  reportSheet.setColumnWidth(4, 120);  // المستحق
-  reportSheet.setColumnWidth(5, 120);  // المسدد
-  reportSheet.setColumnWidth(6, 120);  // الباقي
+  reportSheet.setColumnWidth(2, 200);  // الطرف
+  reportSheet.setColumnWidth(3, 130);  // المستحق
+  reportSheet.setColumnWidth(4, 130);  // المسدد
+  reportSheet.setColumnWidth(5, 130);  // الباقي
 
-  // تجميد الصفوف العلوية
-  reportSheet.setFrozenRows(3);
+  reportSheet.setFrozenRows(2);
 
   // الانتقال للشيت
   if (!silent) ss.setActiveSheet(reportSheet);
 
   if (silent) return { success: true, name: 'تقرير الاستحقاقات (إجمالي)' };
 
-  // رسالة التأكيد
-  SpreadsheetApp.getUi().alert('✅ تم إنشاء تقرير الاستحقاقات (إجمالي)',
-    'الملخص:\n\n' +
-    '• عدد الأطراف الدائنين (علينا لهم): ' + payables.length + '\n' +
-    '• إجمالي المستحقات علينا: $' + totalPayables.toFixed(2) + '\n\n' +
-    '• عدد الأطراف المدينين (لنا عندهم): ' + receivables.length + '\n' +
-    '• إجمالي المستحقات لنا: $' + totalReceivables.toFixed(2) + '\n\n' +
-    '📊 صافي الموقف: $' + netPosition.toFixed(2) + '\n' +
-    (netPosition >= 0 ? '(لصالحنا ✅)' : '(علينا ⚠️)'),
-    SpreadsheetApp.getUi().ButtonSet.OK);
+  // رسالة التأكيد مع تفصيل التصنيفات
+  var alertDetails = 'الملخص:\n\n';
+  alertDetails += '💸 مستحقات علينا:\n';
+  for (var ad = 0; ad < payableClassKeys.length; ad++) {
+    alertDetails += '   • ' + payableClassKeys[ad] + ': $' + payablesByClass[payableClassKeys[ad]].total.toFixed(2) + '\n';
+  }
+  alertDetails += '   ────────────\n';
+  alertDetails += '   الإجمالي: $' + totalPayables.toFixed(2) + '\n\n';
+
+  if (receivableClassKeys.length > 0) {
+    alertDetails += '💰 مستحقات لنا:\n';
+    for (var ar = 0; ar < receivableClassKeys.length; ar++) {
+      alertDetails += '   • ' + receivableClassKeys[ar] + ': $' + receivablesByClass[receivableClassKeys[ar]].total.toFixed(2) + '\n';
+    }
+    alertDetails += '   ────────────\n';
+    alertDetails += '   الإجمالي: $' + totalReceivables.toFixed(2) + '\n\n';
+  }
+
+  alertDetails += '📊 صافي الموقف: $' + netPosition.toFixed(2) + '\n';
+  alertDetails += (netPosition >= 0 ? '(لصالحنا ✅)' : '(علينا ⚠️)');
+
+  SpreadsheetApp.getUi().alert('✅ تم إنشاء تقرير الاستحقاقات (إجمالي)', alertDetails, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 // ==================== نافذة الاستحقاقات القادمة (30 يوم) ====================
