@@ -17724,23 +17724,21 @@ function generateOldDebtsReport(silent) {
 
   var colC = transHeaders.indexOf('طبيعة الحركة') !== -1 ? transHeaders.indexOf('طبيعة الحركة') : 2;
   var colD = transHeaders.indexOf('تصنيف الحركة') !== -1 ? transHeaders.indexOf('تصنيف الحركة') : 3;
-  var colG = transHeaders.indexOf('البند') !== -1 ? transHeaders.indexOf('البند') : 6;
   var colI = transHeaders.indexOf('اسم المورد/الجهة') !== -1 ? transHeaders.indexOf('اسم المورد/الجهة') : 8;
   var colM = transHeaders.indexOf('القيمة بالدولار') !== -1 ? transHeaders.indexOf('القيمة بالدولار') : 12;
 
-  // entries[party+'||'+item] = { party, item, accrued, paid, settled }
+  // entries[party] = { party, accrued, paid, settled } - تجميع حسب الطرف فقط
   var entries = {};
   var grandAccrued = 0, grandPaid = 0, grandSettled = 0;
 
   for (var i = 1; i < transData.length; i++) {
     var natureType = String(transData[i][colC] || '').trim();
     var classification = String(transData[i][colD] || '').trim();
-    var item = String(transData[i][colG] || '').trim();
     var partyName = String(transData[i][colI] || '').trim() || 'بدون طرف';
     var amountUsd = Number(transData[i][colM]) || 0;
 
     if (classification !== 'ديون قديمة') continue;
-    if (!item || amountUsd <= 0) continue;
+    if (amountUsd <= 0) continue;
 
     var isAccrual = natureType.indexOf('استحقاق مصروف') !== -1 && natureType.indexOf('تسوية') === -1;
     var isPayment = natureType.indexOf('دفعة مصروف') !== -1;
@@ -17748,9 +17746,9 @@ function generateOldDebtsReport(silent) {
 
     if (!isAccrual && !isPayment && !isSettlement) continue;
 
-    var key = partyName + '||' + item;
+    var key = partyName;
     if (!entries[key]) {
-      entries[key] = { party: partyName, item: item, accrued: 0, paid: 0, settled: 0 };
+      entries[key] = { party: partyName, accrued: 0, paid: 0, settled: 0 };
     }
     var entry = entries[key];
 
@@ -17783,7 +17781,7 @@ function generateOldDebtsReport(silent) {
     RED_TEXT: '#c62828', GREEN_TEXT: '#2e7d32'
   };
 
-  var numCols = 5;
+  var numCols = 4;
   var currentRow = 1;
 
   // العنوان
@@ -17814,7 +17812,7 @@ function generateOldDebtsReport(silent) {
   currentRow += 2;
 
   // رؤوس الجدول
-  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['الطرف', 'البند', 'الدين', 'المدفوع', 'الباقي']])
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['الطرف', 'الدين', 'المدفوع', 'الباقي']])
     .setBackground(CLR.HEADER_BG).setFontColor(CLR.HEADER_FG)
     .setFontWeight('bold').setHorizontalAlignment('center');
   currentRow++;
@@ -17827,16 +17825,16 @@ function generateOldDebtsReport(silent) {
     var eOutstanding = eAccrued - ePaid;
 
     reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      e.party, e.item, eAccrued, ePaid, eOutstanding
+      e.party, eAccrued, ePaid, eOutstanding
     ]]);
-    reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
 
     if (eOutstanding > 0) {
-      reportSheet.getRange(currentRow, 5).setFontColor(CLR.RED_TEXT);
+      reportSheet.getRange(currentRow, 4).setFontColor(CLR.RED_TEXT);
     } else if (eOutstanding < -0.01) {
-      reportSheet.getRange(currentRow, 5).setFontColor('#e65100').setFontWeight('bold');
+      reportSheet.getRange(currentRow, 4).setFontColor('#e65100').setFontWeight('bold');
     } else if (eOutstanding === 0 && eAccrued > 0) {
-      reportSheet.getRange(currentRow, 5).setFontColor(CLR.GREEN_TEXT);
+      reportSheet.getRange(currentRow, 4).setFontColor(CLR.GREEN_TEXT);
     }
 
     if (ei % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
@@ -17845,17 +17843,16 @@ function generateOldDebtsReport(silent) {
 
   // صف الإجمالي
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-    'الإجمالي', '', grandAccruedTotal, grandPaid, grandOutstanding
+    'الإجمالي', grandAccruedTotal, grandPaid, grandOutstanding
   ]])
     .setBackground(CLR.TOTAL_BG).setFontColor(CLR.TOTAL_FG).setFontWeight('bold');
-  reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
+  reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
 
   // تنسيقات
-  reportSheet.setColumnWidth(1, 180);
-  reportSheet.setColumnWidth(2, 160);
+  reportSheet.setColumnWidth(1, 200);
+  reportSheet.setColumnWidth(2, 130);
   reportSheet.setColumnWidth(3, 130);
   reportSheet.setColumnWidth(4, 130);
-  reportSheet.setColumnWidth(5, 130);
   reportSheet.setFrozenRows(2);
 
   if (!silent) {
