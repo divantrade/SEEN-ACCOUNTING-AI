@@ -17550,10 +17550,9 @@ function generateOverheadExpensesReport(silent) {
   var colG = transHeaders.indexOf('البند') !== -1 ? transHeaders.indexOf('البند') : 6;
   var colI = transHeaders.indexOf('اسم المورد/الجهة') !== -1 ? transHeaders.indexOf('اسم المورد/الجهة') : 8;
   var colM = transHeaders.indexOf('القيمة بالدولار') !== -1 ? transHeaders.indexOf('القيمة بالدولار') : 12;
-  var colB = transHeaders.indexOf('التاريخ') !== -1 ? transHeaders.indexOf('التاريخ') : 1;
 
-  // entries[vendor] = { vendor, items: { item: { accrued, paid, settled } }, totalAccrued, totalPaid, totalSettled }
-  var vendors = {};
+  // entries[vendor+'||'+item] = { vendor, item, accrued, paid, settled }
+  var entries = {};
   var grandAccrued = 0, grandPaid = 0, grandSettled = 0;
 
   for (var i = 1; i < transData.length; i++) {
@@ -17563,7 +17562,6 @@ function generateOverheadExpensesReport(silent) {
     var vendor = String(transData[i][colI] || '').trim() || 'بدون مورد';
     var amountUsd = Number(transData[i][colM]) || 0;
 
-    // فقط مصروفات عمومية
     if (classification !== 'مصروفات عمومية') continue;
     if (!item || amountUsd <= 0) continue;
 
@@ -17573,288 +17571,125 @@ function generateOverheadExpensesReport(silent) {
 
     if (!isAccrual && !isPayment && !isSettlement) continue;
 
-    // تجميع حسب المورد
-    if (!vendors[vendor]) {
-      vendors[vendor] = { vendor: vendor, items: {}, totalAccrued: 0, totalPaid: 0, totalSettled: 0 };
+    var key = vendor + '||' + item;
+    if (!entries[key]) {
+      entries[key] = { vendor: vendor, item: item, accrued: 0, paid: 0, settled: 0 };
     }
-    var v = vendors[vendor];
+    var entry = entries[key];
 
-    // تجميع حسب البند داخل كل مورد
-    if (!v.items[item]) {
-      v.items[item] = { item: item, accrued: 0, paid: 0, settled: 0 };
-    }
-    var entry = v.items[item];
-
-    if (isAccrual) {
-      entry.accrued += amountUsd;
-      v.totalAccrued += amountUsd;
-      grandAccrued += amountUsd;
-    } else if (isPayment) {
-      entry.paid += amountUsd;
-      v.totalPaid += amountUsd;
-      grandPaid += amountUsd;
-    } else if (isSettlement) {
-      entry.settled += amountUsd;
-      v.totalSettled += amountUsd;
-      grandSettled += amountUsd;
-    }
+    if (isAccrual) { entry.accrued += amountUsd; grandAccrued += amountUsd; }
+    else if (isPayment) { entry.paid += amountUsd; grandPaid += amountUsd; }
+    else if (isSettlement) { entry.settled += amountUsd; grandSettled += amountUsd; }
   }
 
-  var grandOutstanding = (grandAccrued - grandSettled) - grandPaid;
-  var vendorNames = Object.keys(vendors).sort();
+  var grandAccruedTotal = grandAccrued - grandSettled;
+  var grandOutstanding = grandAccruedTotal - grandPaid;
+
+  // ترتيب حسب المورد ثم البند
+  var entryKeys = Object.keys(entries).sort();
 
   // ═══════════════════════════════════════════════════════════
   // 2️⃣ إنشاء شيت التقرير
   // ═══════════════════════════════════════════════════════════
   var reportSheetName = 'تقرير المصروفات العمومية';
   var reportSheet = ss.getSheetByName(reportSheetName);
-  if (reportSheet) {
-    ss.deleteSheet(reportSheet);
-  }
+  if (reportSheet) ss.deleteSheet(reportSheet);
   reportSheet = ss.insertSheet(reportSheetName);
   reportSheet.setRightToLeft(true);
   reportSheet.setTabColor('#795548');
 
   var CLR = {
-    TITLE_BG: '#37474f',
-    TITLE_FG: '#ffffff',
-    SUBTITLE_BG: '#eceff1',
-    SUBTITLE_FG: '#455a64',
-    SECTION_BG: '#455a64',
-    SECTION_FG: '#ffffff',
-    HEADER_BG: '#546e7a',
-    HEADER_FG: '#ffffff',
-    VENDOR_BG: '#4e342e',
-    VENDOR_FG: '#ffffff',
+    TITLE_BG: '#37474f', TITLE_FG: '#ffffff',
+    SUBTITLE_BG: '#eceff1', SUBTITLE_FG: '#455a64',
+    SECTION_BG: '#455a64', SECTION_FG: '#ffffff',
+    HEADER_BG: '#546e7a', HEADER_FG: '#ffffff',
     ZEBRA: '#f5f5f5',
-    TOTAL_BG: '#455a64',
-    TOTAL_FG: '#ffffff',
-    RED_TEXT: '#c62828',
-    GREEN_TEXT: '#2e7d32'
+    TOTAL_BG: '#455a64', TOTAL_FG: '#ffffff',
+    RED_TEXT: '#c62828', GREEN_TEXT: '#2e7d32'
   };
 
   var numCols = 5;
   var currentRow = 1;
 
-  // ═══════════════════════════════════════════════════════════
-  // العنوان الرئيسي
-  // ═══════════════════════════════════════════════════════════
+  // العنوان
   reportSheet.getRange(currentRow, 1, 1, numCols).merge()
     .setValue('تقرير المصروفات العمومية')
-    .setBackground(CLR.TITLE_BG)
-    .setFontColor(CLR.TITLE_FG)
-    .setFontWeight('bold')
-    .setFontSize(16)
-    .setHorizontalAlignment('center');
+    .setBackground(CLR.TITLE_BG).setFontColor(CLR.TITLE_FG)
+    .setFontWeight('bold').setFontSize(16).setHorizontalAlignment('center');
   currentRow++;
 
   reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') + '  |  عدد الموردين: ' + vendorNames.length)
-    .setBackground(CLR.SUBTITLE_BG)
-    .setFontColor(CLR.SUBTITLE_FG)
-    .setFontSize(10)
-    .setHorizontalAlignment('center');
+    .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
+    .setBackground(CLR.SUBTITLE_BG).setFontColor(CLR.SUBTITLE_FG)
+    .setFontSize(10).setHorizontalAlignment('center');
   currentRow += 2;
 
-  // ═══════════════════════════════════════════════════════════
-  // الملخص المجمع
-  // ═══════════════════════════════════════════════════════════
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('الملخص المجمع - المصروفات العمومية')
-    .setBackground(CLR.SECTION_BG)
-    .setFontColor(CLR.SECTION_FG)
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setHorizontalAlignment('center');
+  // الملخص
+  reportSheet.getRange(currentRow, 1).setValue('إجمالي المستحق').setFontWeight('bold');
+  reportSheet.getRange(currentRow, 2).setValue(grandAccruedTotal).setNumberFormat('$#,##0.00').setFontWeight('bold');
   currentRow++;
-
-  var grandAccruedTotal = grandAccrued - grandSettled;
-  var summaryRows = [
-    ['إجمالي المستحق (بعد التسويات)', grandAccruedTotal],
-    ['إجمالي المسدد فعلياً', grandPaid],
-    ['إجمالي الديون المعلقة', grandOutstanding]
-  ];
-  for (var sr = 0; sr < summaryRows.length; sr++) {
-    reportSheet.getRange(currentRow, 1).setValue(summaryRows[sr][0]).setFontWeight('bold');
-    reportSheet.getRange(currentRow, 2).setValue(summaryRows[sr][1]).setNumberFormat('$#,##0.00').setFontWeight('bold');
-    if (sr % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
-    currentRow++;
-  }
-  if (grandOutstanding > 0) {
-    reportSheet.getRange(currentRow - 1, 2).setFontColor(CLR.RED_TEXT);
-  }
-
-  if (grandAccruedTotal > 0) {
-    reportSheet.getRange(currentRow, 1).setValue('نسبة السداد:');
-    reportSheet.getRange(currentRow, 2).setValue(Math.round((grandPaid / grandAccruedTotal) * 100) + '%').setFontWeight('bold');
-    currentRow++;
-  }
-
+  reportSheet.getRange(currentRow, 1).setValue('إجمالي المسدد').setFontWeight('bold');
+  reportSheet.getRange(currentRow, 2).setValue(grandPaid).setNumberFormat('$#,##0.00').setFontWeight('bold');
+  reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+  currentRow++;
+  reportSheet.getRange(currentRow, 1).setValue('إجمالي المتبقي').setFontWeight('bold').setFontSize(12);
+  reportSheet.getRange(currentRow, 2).setValue(grandOutstanding).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(12)
+    .setFontColor(grandOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
   currentRow += 2;
 
-  // ═══════════════════════════════════════════════════════════
-  // جدول ملخص الموردين
-  // ═══════════════════════════════════════════════════════════
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('ملخص الموردين')
-    .setBackground(CLR.SECTION_BG)
-    .setFontColor(CLR.SECTION_FG)
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setHorizontalAlignment('center');
+  // رؤوس الجدول
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['المورد/الجهة', 'البند', 'المستحق', 'المسدد', 'المتبقي']])
+    .setBackground(CLR.HEADER_BG).setFontColor(CLR.HEADER_FG)
+    .setFontWeight('bold').setHorizontalAlignment('center');
   currentRow++;
 
-  var vendorTableHeaders = ['المورد/الجهة', 'المستحق', 'المسدد', 'المتبقي', 'نسبة السداد'];
-  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([vendorTableHeaders])
-    .setBackground(CLR.HEADER_BG)
-    .setFontColor(CLR.HEADER_FG)
-    .setFontWeight('bold')
-    .setHorizontalAlignment('center');
-  currentRow++;
-
-  for (var vi = 0; vi < vendorNames.length; vi++) {
-    var vData = vendors[vendorNames[vi]];
-    var vAccrued = vData.totalAccrued - vData.totalSettled;
-    var vOutstanding = vAccrued - vData.totalPaid;
-    var vPercent = vAccrued > 0 ? Math.round((vData.totalPaid / vAccrued) * 100) + '%' : (vData.totalPaid > 0 ? '⚠️' : '-');
+  // صفوف البيانات
+  for (var ei = 0; ei < entryKeys.length; ei++) {
+    var e = entries[entryKeys[ei]];
+    var eAccrued = e.accrued - e.settled;
+    var ePaid = e.paid;
+    var eOutstanding = eAccrued - ePaid;
 
     reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      vendorNames[vi], vAccrued, vData.totalPaid, vOutstanding, vPercent
+      e.vendor, e.item, eAccrued, ePaid, eOutstanding
     ]]);
-    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
 
-    if (vOutstanding > 0) {
-      reportSheet.getRange(currentRow, 4).setFontColor(CLR.RED_TEXT).setFontWeight('bold');
-    } else if (vOutstanding < -0.01) {
-      reportSheet.getRange(currentRow, 4).setFontColor('#e65100').setFontWeight('bold');
-      reportSheet.getRange(currentRow, 5).setValue('⚠️ خطأ').setFontColor('#e65100');
-    } else if (vOutstanding === 0 && vAccrued > 0) {
-      reportSheet.getRange(currentRow, 4).setFontColor(CLR.GREEN_TEXT);
+    if (eOutstanding > 0) {
+      reportSheet.getRange(currentRow, 5).setFontColor(CLR.RED_TEXT);
+    } else if (eOutstanding < -0.01) {
+      reportSheet.getRange(currentRow, 5).setFontColor('#e65100').setFontWeight('bold');
+    } else if (eOutstanding === 0 && eAccrued > 0) {
+      reportSheet.getRange(currentRow, 5).setFontColor(CLR.GREEN_TEXT);
     }
 
-    if (vi % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+    if (ei % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
     currentRow++;
   }
 
-  // صف إجمالي الموردين
-  var allPercent = grandAccruedTotal > 0 ? Math.round((grandPaid / grandAccruedTotal) * 100) + '%' : '-';
+  // صف الإجمالي
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-    'الإجمالي', grandAccruedTotal, grandPaid, grandOutstanding, allPercent
+    'الإجمالي', '', grandAccruedTotal, grandPaid, grandOutstanding
   ]])
-    .setBackground(CLR.TOTAL_BG)
-    .setFontColor(CLR.TOTAL_FG)
-    .setFontWeight('bold');
-  reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
-  currentRow += 3;
+    .setBackground(CLR.TOTAL_BG).setFontColor(CLR.TOTAL_FG).setFontWeight('bold');
+  reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
 
-  // ═══════════════════════════════════════════════════════════
-  // التفصيل لكل مورد (بند بند)
-  // ═══════════════════════════════════════════════════════════
-  for (var di = 0; di < vendorNames.length; di++) {
-    var vendorName = vendorNames[di];
-    var vendorData = vendors[vendorName];
-    var vendorAccrued = vendorData.totalAccrued - vendorData.totalSettled;
-    var vendorOutstanding = vendorAccrued - vendorData.totalPaid;
-
-    // ترويسة المورد
-    reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-      .setValue(vendorName)
-      .setBackground(CLR.VENDOR_BG)
-      .setFontColor(CLR.VENDOR_FG)
-      .setFontWeight('bold')
-      .setFontSize(12)
-      .setHorizontalAlignment('center');
-    currentRow++;
-
-    // ملخص المورد
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      'المستحق', vendorAccrued, 'المسدد', vendorData.totalPaid, 'المتبقي'
-    ]])
-      .setBackground(CLR.SUBTITLE_BG)
-      .setFontWeight('bold');
-    reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
-    reportSheet.getRange(currentRow, 4).setNumberFormat('$#,##0.00');
-    currentRow++;
-
-    // الديون المعلقة
-    reportSheet.getRange(currentRow, 1, 1, numCols - 1).merge()
-      .setValue('الديون المعلقة على هذا المورد:')
-      .setFontWeight('bold');
-    reportSheet.getRange(currentRow, numCols)
-      .setValue(vendorOutstanding)
-      .setNumberFormat('$#,##0.00')
-      .setFontWeight('bold')
-      .setFontSize(12)
-      .setFontColor(vendorOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
-    currentRow++;
-
-    // رؤوس جدول البنود
-    var itemHeaders = ['البند', 'المستحق', 'المسدد', 'المتبقي', 'النسبة'];
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([itemHeaders])
-      .setBackground(CLR.HEADER_BG)
-      .setFontColor(CLR.HEADER_FG)
-      .setFontWeight('bold')
-      .setHorizontalAlignment('center');
-    currentRow++;
-
-    // صفوف البنود
-    var itemKeys = Object.keys(vendorData.items).sort();
-    for (var ii = 0; ii < itemKeys.length; ii++) {
-      var e = vendorData.items[itemKeys[ii]];
-      var eAccrued = e.accrued - e.settled;
-      var ePaid = e.paid;
-      var eOutstanding = eAccrued - ePaid;
-      var ePercent = eAccrued > 0 ? Math.round((ePaid / eAccrued) * 100) + '%' : (ePaid > 0 ? '⚠️' : '-');
-
-      reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-        e.item, eAccrued, ePaid, eOutstanding, ePercent
-      ]]);
-      reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
-
-      if (eOutstanding > 0) {
-        reportSheet.getRange(currentRow, 4).setFontColor(CLR.RED_TEXT);
-      } else if (eOutstanding < -0.01) {
-        reportSheet.getRange(currentRow, 4).setFontColor('#e65100').setFontWeight('bold');
-        reportSheet.getRange(currentRow, 5).setValue('⚠️ خطأ').setFontColor('#e65100');
-      } else if (eOutstanding === 0 && eAccrued > 0) {
-        reportSheet.getRange(currentRow, 4).setFontColor(CLR.GREEN_TEXT);
-      }
-
-      if (ii % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
-      currentRow++;
-    }
-
-    // صف إجمالي المورد
-    var vendorPercent = vendorAccrued > 0 ? Math.round((vendorData.totalPaid / vendorAccrued) * 100) + '%' : '-';
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      'إجمالي ' + vendorName, vendorAccrued, vendorData.totalPaid, vendorOutstanding, vendorPercent
-    ]])
-      .setBackground(CLR.VENDOR_BG)
-      .setFontColor(CLR.VENDOR_FG)
-      .setFontWeight('bold');
-    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
-    currentRow += 2;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // تنسيقات عامة
-  // ═══════════════════════════════════════════════════════════
-  reportSheet.setColumnWidth(1, 200);  // البند/المورد
-  reportSheet.setColumnWidth(2, 140);  // المستحق
-  reportSheet.setColumnWidth(3, 140);  // المسدد
-  reportSheet.setColumnWidth(4, 140);  // المتبقي
-  reportSheet.setColumnWidth(5, 110);  // النسبة
+  // تنسيقات
+  reportSheet.setColumnWidth(1, 180);
+  reportSheet.setColumnWidth(2, 160);
+  reportSheet.setColumnWidth(3, 130);
+  reportSheet.setColumnWidth(4, 130);
+  reportSheet.setColumnWidth(5, 130);
   reportSheet.setFrozenRows(2);
 
   if (!silent) {
     ss.setActiveSheet(reportSheet);
     SpreadsheetApp.getUi().alert(
       '✅ تم إنشاء تقرير المصروفات العمومية',
-      'الملخص:\n\n' +
-      '📋 المستحق: $' + grandAccruedTotal.toFixed(2) + '\n' +
-      '✅ المسدد: $' + grandPaid.toFixed(2) + '\n' +
-      '🔴 الديون المعلقة: $' + grandOutstanding.toFixed(2) + '\n\n' +
-      '👥 عدد الموردين: ' + vendorNames.length,
+      'المستحق: $' + grandAccruedTotal.toFixed(2) + '\n' +
+      'المسدد: $' + grandPaid.toFixed(2) + '\n' +
+      'المتبقي: $' + grandOutstanding.toFixed(2),
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
@@ -17893,8 +17728,8 @@ function generateOldDebtsReport(silent) {
   var colI = transHeaders.indexOf('اسم المورد/الجهة') !== -1 ? transHeaders.indexOf('اسم المورد/الجهة') : 8;
   var colM = transHeaders.indexOf('القيمة بالدولار') !== -1 ? transHeaders.indexOf('القيمة بالدولار') : 12;
 
-  // parties[name] = { items: { item: { accrued, paid, settled } }, totalAccrued, totalPaid, totalSettled }
-  var parties = {};
+  // entries[party+'||'+item] = { party, item, accrued, paid, settled }
+  var entries = {};
   var grandAccrued = 0, grandPaid = 0, grandSettled = 0;
 
   for (var i = 1; i < transData.length; i++) {
@@ -17913,33 +17748,21 @@ function generateOldDebtsReport(silent) {
 
     if (!isAccrual && !isPayment && !isSettlement) continue;
 
-    if (!parties[partyName]) {
-      parties[partyName] = { items: {}, totalAccrued: 0, totalPaid: 0, totalSettled: 0 };
+    var key = partyName + '||' + item;
+    if (!entries[key]) {
+      entries[key] = { party: partyName, item: item, accrued: 0, paid: 0, settled: 0 };
     }
-    var p = parties[partyName];
+    var entry = entries[key];
 
-    if (!p.items[item]) {
-      p.items[item] = { item: item, accrued: 0, paid: 0, settled: 0 };
-    }
-    var entry = p.items[item];
-
-    if (isAccrual) {
-      entry.accrued += amountUsd;
-      p.totalAccrued += amountUsd;
-      grandAccrued += amountUsd;
-    } else if (isPayment) {
-      entry.paid += amountUsd;
-      p.totalPaid += amountUsd;
-      grandPaid += amountUsd;
-    } else if (isSettlement) {
-      entry.settled += amountUsd;
-      p.totalSettled += amountUsd;
-      grandSettled += amountUsd;
-    }
+    if (isAccrual) { entry.accrued += amountUsd; grandAccrued += amountUsd; }
+    else if (isPayment) { entry.paid += amountUsd; grandPaid += amountUsd; }
+    else if (isSettlement) { entry.settled += amountUsd; grandSettled += amountUsd; }
   }
 
-  var grandOutstanding = (grandAccrued - grandSettled) - grandPaid;
-  var partyNames = Object.keys(parties).sort();
+  var grandAccruedTotal = grandAccrued - grandSettled;
+  var grandOutstanding = grandAccruedTotal - grandPaid;
+
+  var entryKeys = Object.keys(entries).sort();
 
   // ═══════════════════════════════════════════════════════════
   // 2️⃣ إنشاء شيت التقرير
@@ -17952,240 +17775,96 @@ function generateOldDebtsReport(silent) {
   reportSheet.setTabColor('#b71c1c');
 
   var CLR = {
-    TITLE_BG: '#b71c1c',
-    TITLE_FG: '#ffffff',
-    SUBTITLE_BG: '#ffebee',
-    SUBTITLE_FG: '#b71c1c',
-    SECTION_BG: '#c62828',
-    SECTION_FG: '#ffffff',
-    HEADER_BG: '#d32f2f',
-    HEADER_FG: '#ffffff',
-    PARTY_BG: '#880e4f',
-    PARTY_FG: '#ffffff',
+    TITLE_BG: '#b71c1c', TITLE_FG: '#ffffff',
+    SUBTITLE_BG: '#ffebee', SUBTITLE_FG: '#b71c1c',
+    HEADER_BG: '#d32f2f', HEADER_FG: '#ffffff',
     ZEBRA: '#fff3f3',
-    TOTAL_BG: '#b71c1c',
-    TOTAL_FG: '#ffffff',
-    RED_TEXT: '#c62828',
-    GREEN_TEXT: '#2e7d32'
+    TOTAL_BG: '#b71c1c', TOTAL_FG: '#ffffff',
+    RED_TEXT: '#c62828', GREEN_TEXT: '#2e7d32'
   };
 
   var numCols = 5;
   var currentRow = 1;
 
-  // ═══════════════════════════════════════════════════════════
-  // العنوان الرئيسي
-  // ═══════════════════════════════════════════════════════════
+  // العنوان
   reportSheet.getRange(currentRow, 1, 1, numCols).merge()
     .setValue('تقرير الديون القديمة')
-    .setBackground(CLR.TITLE_BG)
-    .setFontColor(CLR.TITLE_FG)
-    .setFontWeight('bold')
-    .setFontSize(16)
-    .setHorizontalAlignment('center');
+    .setBackground(CLR.TITLE_BG).setFontColor(CLR.TITLE_FG)
+    .setFontWeight('bold').setFontSize(16).setHorizontalAlignment('center');
   currentRow++;
 
   reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') + '  |  عدد الأطراف: ' + partyNames.length)
-    .setBackground(CLR.SUBTITLE_BG)
-    .setFontColor(CLR.SUBTITLE_FG)
-    .setFontSize(10)
-    .setHorizontalAlignment('center');
+    .setValue('تاريخ التقرير: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
+    .setBackground(CLR.SUBTITLE_BG).setFontColor(CLR.SUBTITLE_FG)
+    .setFontSize(10).setHorizontalAlignment('center');
   currentRow += 2;
 
-  // ═══════════════════════════════════════════════════════════
-  // الترويسة - إجمالي الديون
-  // ═══════════════════════════════════════════════════════════
-  var grandAccruedTotal = grandAccrued - grandSettled;
-
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('ملخص الديون القديمة')
-    .setBackground(CLR.SECTION_BG)
-    .setFontColor(CLR.SECTION_FG)
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setHorizontalAlignment('center');
+  // الملخص
+  reportSheet.getRange(currentRow, 1).setValue('إجمالي الديون').setFontWeight('bold').setFontSize(11);
+  reportSheet.getRange(currentRow, 2).setValue(grandAccruedTotal).setNumberFormat('$#,##0.00').setFontWeight('bold').setFontSize(11);
   currentRow++;
-
-  var summaryData = [
-    ['إجمالي الديون (بعد التسويات)', grandAccruedTotal],
-    ['ما تم دفعه', grandPaid],
-    ['الباقي', grandOutstanding]
-  ];
-  for (var sr = 0; sr < summaryData.length; sr++) {
-    reportSheet.getRange(currentRow, 1).setValue(summaryData[sr][0]).setFontWeight('bold').setFontSize(11);
-    reportSheet.getRange(currentRow, 2).setValue(summaryData[sr][1]).setNumberFormat('$#,##0.00').setFontWeight('bold').setFontSize(11);
-    if (sr % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
-    currentRow++;
-  }
-  // تلوين الباقي
-  reportSheet.getRange(currentRow - 1, 2).setFontColor(grandOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT).setFontSize(13);
-
-  if (grandAccruedTotal > 0) {
-    reportSheet.getRange(currentRow, 1).setValue('نسبة السداد:');
-    reportSheet.getRange(currentRow, 2).setValue(Math.round((grandPaid / grandAccruedTotal) * 100) + '%').setFontWeight('bold');
-    currentRow++;
-  }
-
+  reportSheet.getRange(currentRow, 1).setValue('ما تم دفعه').setFontWeight('bold').setFontSize(11);
+  reportSheet.getRange(currentRow, 2).setValue(grandPaid).setNumberFormat('$#,##0.00').setFontWeight('bold').setFontSize(11);
+  reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+  currentRow++;
+  reportSheet.getRange(currentRow, 1).setValue('الباقي').setFontWeight('bold').setFontSize(13);
+  reportSheet.getRange(currentRow, 2).setValue(grandOutstanding).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(13)
+    .setFontColor(grandOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
   currentRow += 2;
 
-  // ═══════════════════════════════════════════════════════════
-  // جدول ملخص الأطراف
-  // ═══════════════════════════════════════════════════════════
-  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-    .setValue('ملخص الديون حسب الطرف')
-    .setBackground(CLR.SECTION_BG)
-    .setFontColor(CLR.SECTION_FG)
-    .setFontWeight('bold')
-    .setFontSize(12)
-    .setHorizontalAlignment('center');
+  // رؤوس الجدول
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['الطرف', 'البند', 'الدين', 'المدفوع', 'الباقي']])
+    .setBackground(CLR.HEADER_BG).setFontColor(CLR.HEADER_FG)
+    .setFontWeight('bold').setHorizontalAlignment('center');
   currentRow++;
 
-  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['الطرف', 'إجمالي الدين', 'ما تم دفعه', 'الباقي', 'نسبة السداد']])
-    .setBackground(CLR.HEADER_BG)
-    .setFontColor(CLR.HEADER_FG)
-    .setFontWeight('bold')
-    .setHorizontalAlignment('center');
-  currentRow++;
-
-  for (var vi = 0; vi < partyNames.length; vi++) {
-    var vData = parties[partyNames[vi]];
-    var vAccrued = vData.totalAccrued - vData.totalSettled;
-    var vOutstanding = vAccrued - vData.totalPaid;
-    var vPercent = vAccrued > 0 ? Math.round((vData.totalPaid / vAccrued) * 100) + '%' : (vData.totalPaid > 0 ? '⚠️' : '-');
+  // صفوف البيانات
+  for (var ei = 0; ei < entryKeys.length; ei++) {
+    var e = entries[entryKeys[ei]];
+    var eAccrued = e.accrued - e.settled;
+    var ePaid = e.paid;
+    var eOutstanding = eAccrued - ePaid;
 
     reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      partyNames[vi], vAccrued, vData.totalPaid, vOutstanding, vPercent
+      e.party, e.item, eAccrued, ePaid, eOutstanding
     ]]);
-    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
 
-    if (vOutstanding > 0) {
-      reportSheet.getRange(currentRow, 4).setFontColor(CLR.RED_TEXT).setFontWeight('bold');
-    } else if (vOutstanding < -0.01) {
-      reportSheet.getRange(currentRow, 4).setFontColor('#e65100').setFontWeight('bold');
-      reportSheet.getRange(currentRow, 5).setValue('⚠️ خطأ').setFontColor('#e65100');
-    } else if (vOutstanding === 0 && vAccrued > 0) {
-      reportSheet.getRange(currentRow, 4).setFontColor(CLR.GREEN_TEXT);
+    if (eOutstanding > 0) {
+      reportSheet.getRange(currentRow, 5).setFontColor(CLR.RED_TEXT);
+    } else if (eOutstanding < -0.01) {
+      reportSheet.getRange(currentRow, 5).setFontColor('#e65100').setFontWeight('bold');
+    } else if (eOutstanding === 0 && eAccrued > 0) {
+      reportSheet.getRange(currentRow, 5).setFontColor(CLR.GREEN_TEXT);
     }
 
-    if (vi % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+    if (ei % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
     currentRow++;
   }
 
   // صف الإجمالي
-  var allPercent = grandAccruedTotal > 0 ? Math.round((grandPaid / grandAccruedTotal) * 100) + '%' : '-';
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-    'الإجمالي', grandAccruedTotal, grandPaid, grandOutstanding, allPercent
+    'الإجمالي', '', grandAccruedTotal, grandPaid, grandOutstanding
   ]])
-    .setBackground(CLR.TOTAL_BG)
-    .setFontColor(CLR.TOTAL_FG)
-    .setFontWeight('bold');
-  reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
-  currentRow += 3;
+    .setBackground(CLR.TOTAL_BG).setFontColor(CLR.TOTAL_FG).setFontWeight('bold');
+  reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
 
-  // ═══════════════════════════════════════════════════════════
-  // التفصيل لكل طرف
-  // ═══════════════════════════════════════════════════════════
-  for (var di = 0; di < partyNames.length; di++) {
-    var pName = partyNames[di];
-    var pData = parties[pName];
-    var pAccrued = pData.totalAccrued - pData.totalSettled;
-    var pOutstanding = pAccrued - pData.totalPaid;
-
-    reportSheet.getRange(currentRow, 1, 1, numCols).merge()
-      .setValue(pName)
-      .setBackground(CLR.PARTY_BG)
-      .setFontColor(CLR.PARTY_FG)
-      .setFontWeight('bold')
-      .setFontSize(12)
-      .setHorizontalAlignment('center');
-    currentRow++;
-
-    // ملخص الطرف
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      'إجمالي الدين', pAccrued, 'ما تم دفعه', pData.totalPaid, 'الباقي'
-    ]])
-      .setBackground(CLR.SUBTITLE_BG)
-      .setFontWeight('bold');
-    reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
-    reportSheet.getRange(currentRow, 4).setNumberFormat('$#,##0.00');
-    currentRow++;
-
-    reportSheet.getRange(currentRow, 1, 1, numCols - 1).merge()
-      .setValue('الباقي على هذا الطرف:')
-      .setFontWeight('bold');
-    reportSheet.getRange(currentRow, numCols)
-      .setValue(pOutstanding)
-      .setNumberFormat('$#,##0.00')
-      .setFontWeight('bold')
-      .setFontSize(12)
-      .setFontColor(pOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
-    currentRow++;
-
-    // رؤوس البنود
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['البند', 'الدين', 'المدفوع', 'الباقي', 'النسبة']])
-      .setBackground(CLR.HEADER_BG)
-      .setFontColor(CLR.HEADER_FG)
-      .setFontWeight('bold')
-      .setHorizontalAlignment('center');
-    currentRow++;
-
-    var itemKeys = Object.keys(pData.items).sort();
-    for (var ii = 0; ii < itemKeys.length; ii++) {
-      var e = pData.items[itemKeys[ii]];
-      var eAccrued = e.accrued - e.settled;
-      var ePaid = e.paid;
-      var eOutstanding = eAccrued - ePaid;
-      var ePercent = eAccrued > 0 ? Math.round((ePaid / eAccrued) * 100) + '%' : (ePaid > 0 ? '⚠️' : '-');
-
-      reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-        e.item, eAccrued, ePaid, eOutstanding, ePercent
-      ]]);
-      reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
-
-      if (eOutstanding > 0) {
-        reportSheet.getRange(currentRow, 4).setFontColor(CLR.RED_TEXT);
-      } else if (eOutstanding < -0.01) {
-        reportSheet.getRange(currentRow, 4).setFontColor('#e65100').setFontWeight('bold');
-        reportSheet.getRange(currentRow, 5).setValue('⚠️ خطأ').setFontColor('#e65100');
-      } else if (eOutstanding === 0 && eAccrued > 0) {
-        reportSheet.getRange(currentRow, 4).setFontColor(CLR.GREEN_TEXT);
-      }
-
-      if (ii % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
-      currentRow++;
-    }
-
-    // إجمالي الطرف
-    var pPercent = pAccrued > 0 ? Math.round((pData.totalPaid / pAccrued) * 100) + '%' : '-';
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      'إجمالي ' + pName, pAccrued, pData.totalPaid, pOutstanding, pPercent
-    ]])
-      .setBackground(CLR.PARTY_BG)
-      .setFontColor(CLR.PARTY_FG)
-      .setFontWeight('bold');
-    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
-    currentRow += 2;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // تنسيقات عامة
-  // ═══════════════════════════════════════════════════════════
-  reportSheet.setColumnWidth(1, 200);
-  reportSheet.setColumnWidth(2, 140);
-  reportSheet.setColumnWidth(3, 140);
-  reportSheet.setColumnWidth(4, 140);
-  reportSheet.setColumnWidth(5, 110);
+  // تنسيقات
+  reportSheet.setColumnWidth(1, 180);
+  reportSheet.setColumnWidth(2, 160);
+  reportSheet.setColumnWidth(3, 130);
+  reportSheet.setColumnWidth(4, 130);
+  reportSheet.setColumnWidth(5, 130);
   reportSheet.setFrozenRows(2);
 
   if (!silent) {
     ss.setActiveSheet(reportSheet);
     SpreadsheetApp.getUi().alert(
       '✅ تم إنشاء تقرير الديون القديمة',
-      'الملخص:\n\n' +
-      '📋 إجمالي الديون: $' + grandAccruedTotal.toFixed(2) + '\n' +
-      '✅ ما تم دفعه: $' + grandPaid.toFixed(2) + '\n' +
-      '🔴 الباقي: $' + grandOutstanding.toFixed(2) + '\n\n' +
-      '👥 عدد الأطراف: ' + partyNames.length,
+      'إجمالي الديون: $' + grandAccruedTotal.toFixed(2) + '\n' +
+      'ما تم دفعه: $' + grandPaid.toFixed(2) + '\n' +
+      'الباقي: $' + grandOutstanding.toFixed(2),
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
