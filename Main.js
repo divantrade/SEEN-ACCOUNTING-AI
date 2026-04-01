@@ -196,6 +196,7 @@ function onOpen() {
         .addItem('🔗 مراجعة وإصلاح نوع الحركة', 'reviewAndFixMovementTypes')
         .addItem('⚖️ فحص الاستحقاقات والدفعات (سريع)', 'checkAccrualPaymentBalance')
         .addItem('⚖️ تقرير الاستحقاقات والدفعات (شيت)', 'generateAccrualPaymentReport')
+        .addItem('🔍 فحص سلامة البيانات (دفعات بدون استحقاق)', 'runDataIntegrityCheck')
         .addItem('🎨 إعادة تطبيق التلوين الشرطي', 'refreshTransactionsFormatting')
         .addItem('💵 تحديث شامل (M, N, O, U, V)', 'refreshValueAndBalanceFormulas')
         .addSeparator()
@@ -17542,6 +17543,9 @@ function generateFilmCostReport(silent) {
 
       if (itemOutstanding > 0) {
         reportSheet.getRange(currentRow, 6).setFontColor(CLR.RED_TEXT);
+      } else if (itemOutstanding < -0.01) {
+        reportSheet.getRange(currentRow, 6).setFontColor('#e65100').setFontWeight('bold');
+        reportSheet.getRange(currentRow, 7).setValue('⚠️ خطأ').setFontColor('#e65100').setFontWeight('bold');
       } else {
         reportSheet.getRange(currentRow, 6).setFontColor(CLR.GREEN_TEXT);
       }
@@ -17568,6 +17572,10 @@ function generateFilmCostReport(silent) {
 
         if (vOutstanding > 0) {
           reportSheet.getRange(currentRow, 6).setFontColor(CLR.RED_TEXT);
+        } else if (vOutstanding < -0.01) {
+          // ⚠️ تحذير: المسدد أكبر من المستحق (خطأ بيانات محتمل)
+          reportSheet.getRange(currentRow, 6).setFontColor('#e65100').setFontWeight('bold');
+          reportSheet.getRange(currentRow, 7).setValue('⚠️ خطأ').setFontColor('#e65100').setFontWeight('bold');
         } else if (vOutstanding === 0 && vData.accrued > 0) {
           reportSheet.getRange(currentRow, 6).setFontColor(CLR.GREEN_TEXT);
         }
@@ -17628,4 +17636,247 @@ function generateFilmCostReport(silent) {
   }
 
   return { success: true, name: 'تقرير تكاليف الأفلام' };
+}
+
+
+// ==================== 🔍 فحص سلامة البيانات (دفعات بدون استحقاقات) ====================
+
+/**
+ * فحص سلامة البيانات المالية
+ * يكتشف الحالات التي يكون فيها المسدد أكبر من المستحق
+ * (دفعات بدون استحقاقات مقابلة = خطأ إدخال محتمل)
+ *
+ * الفحوصات:
+ * 1. لكل مورد + مشروع + بند: هل المسدد > المستحق؟
+ * 2. دفعات مسجلة بدون أي استحقاق مقابل
+ * 3. ملخص إجمالي بالمشاكل المكتشفة
+ */
+function runDataIntegrityCheck() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+
+  if (!transSheet) {
+    SpreadsheetApp.getUi().alert('⚠️ لم يتم العثور على دفتر الحركات المالية');
+    return;
+  }
+
+  var data = transSheet.getDataRange().getValues();
+  var headers = data[0];
+
+  var colA = 0;   // رقم الحركة
+  var colB = 1;   // التاريخ
+  var colC = headers.indexOf('طبيعة الحركة') !== -1 ? headers.indexOf('طبيعة الحركة') : 2;
+  var colD = headers.indexOf('تصنيف الحركة') !== -1 ? headers.indexOf('تصنيف الحركة') : 3;
+  var colE = headers.indexOf('كود المشروع') !== -1 ? headers.indexOf('كود المشروع') : 4;
+  var colF = headers.indexOf('اسم المشروع') !== -1 ? headers.indexOf('اسم المشروع') : 5;
+  var colG = headers.indexOf('البند') !== -1 ? headers.indexOf('البند') : 6;
+  var colI = headers.indexOf('اسم المورد/الجهة') !== -1 ? headers.indexOf('اسم المورد/الجهة') : 8;
+  var colM = headers.indexOf('القيمة بالدولار') !== -1 ? headers.indexOf('القيمة بالدولار') : 12;
+
+  // تجميع: مورد + مشروع + بند
+  var groups = {};
+
+  for (var i = 1; i < data.length; i++) {
+    var natureType = String(data[i][colC] || '').trim();
+    var vendor = String(data[i][colI] || '').trim();
+    var project = String(data[i][colE] || '').trim();
+    var projectName = String(data[i][colF] || '').trim();
+    var item = String(data[i][colG] || '').trim();
+    var classification = String(data[i][colD] || '').trim();
+    var amountUsd = Number(data[i][colM]) || 0;
+    var rowNum = i + 1;
+
+    if (!vendor || amountUsd <= 0) continue;
+
+    var isAccrual = natureType.indexOf('استحقاق مصروف') !== -1 && natureType.indexOf('تسوية') === -1;
+    var isPayment = natureType.indexOf('دفعة مصروف') !== -1;
+    var isSettlement = natureType.indexOf('تسوية استحقاق مصروف') !== -1;
+
+    if (!isAccrual && !isPayment && !isSettlement) continue;
+
+    var key = vendor + '||' + (project || 'بدون مشروع') + '||' + (item || 'بدون بند');
+    if (!groups[key]) {
+      groups[key] = {
+        vendor: vendor,
+        project: project || 'بدون مشروع',
+        projectName: projectName,
+        item: item || 'بدون بند',
+        classification: classification,
+        accrued: 0,
+        paid: 0,
+        settled: 0,
+        accrualRows: [],
+        paymentRows: []
+      };
+    }
+
+    if (isAccrual) {
+      groups[key].accrued += amountUsd;
+      groups[key].accrualRows.push(rowNum);
+    } else if (isPayment) {
+      groups[key].paid += amountUsd;
+      groups[key].paymentRows.push(rowNum);
+    } else if (isSettlement) {
+      groups[key].settled += amountUsd;
+    }
+  }
+
+  // البحث عن المشاكل
+  var problems = [];
+
+  for (var k in groups) {
+    var g = groups[k];
+    var outstanding = g.accrued - g.paid - g.settled;
+
+    // مشكلة 1: المسدد أكبر من المستحق (رصيد سالب)
+    if (outstanding < -0.01) {
+      problems.push({
+        type: 'المسدد أكبر من المستحق',
+        vendor: g.vendor,
+        project: g.project,
+        projectName: g.projectName,
+        item: g.item,
+        classification: g.classification,
+        accrued: g.accrued,
+        paid: g.paid + g.settled,
+        diff: Math.abs(outstanding),
+        rows: g.paymentRows.concat(g.accrualRows)
+      });
+    }
+
+    // مشكلة 2: دفعات بدون أي استحقاق
+    if (g.paid > 0 && g.accrued === 0) {
+      problems.push({
+        type: 'دفعات بدون استحقاق',
+        vendor: g.vendor,
+        project: g.project,
+        projectName: g.projectName,
+        item: g.item,
+        classification: g.classification,
+        accrued: 0,
+        paid: g.paid,
+        diff: g.paid,
+        rows: g.paymentRows
+      });
+    }
+  }
+
+  // ترتيب حسب الفرق (الأكبر أولاً)
+  problems.sort(function(a, b) { return b.diff - a.diff; });
+
+  // إنشاء شيت التقرير
+  var reportName = 'فحص سلامة البيانات';
+  var sheet = ss.getSheetByName(reportName);
+  if (sheet) ss.deleteSheet(sheet);
+  sheet = ss.insertSheet(reportName);
+  sheet.setRightToLeft(true);
+  sheet.setTabColor('#e65100');
+
+  var numCols = 9;
+  var row = 1;
+
+  // العنوان
+  sheet.getRange(row, 1, 1, numCols).merge()
+    .setValue('فحص سلامة البيانات المالية')
+    .setBackground('#37474f').setFontColor('#ffffff')
+    .setFontWeight('bold').setFontSize(16).setHorizontalAlignment('center');
+  row++;
+
+  sheet.getRange(row, 1, 1, numCols).merge()
+    .setValue('تاريخ الفحص: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') +
+             '  |  المشاكل المكتشفة: ' + problems.length)
+    .setBackground('#eceff1').setFontSize(10).setHorizontalAlignment('center');
+  row += 2;
+
+  if (problems.length === 0) {
+    sheet.getRange(row, 1, 1, numCols).merge()
+      .setValue('لا توجد مشاكل - جميع البيانات سليمة')
+      .setBackground('#e8f5e9').setFontColor('#2e7d32')
+      .setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center');
+  } else {
+    // ملخص
+    var totalDiff = 0;
+    var paymentsWithoutAccrual = 0;
+    var excessPayments = 0;
+    for (var p = 0; p < problems.length; p++) {
+      totalDiff += problems[p].diff;
+      if (problems[p].type === 'دفعات بدون استحقاق') paymentsWithoutAccrual++;
+      else excessPayments++;
+    }
+
+    sheet.getRange(row, 1, 1, numCols).merge()
+      .setValue('ملخص المشاكل')
+      .setBackground('#455a64').setFontColor('#ffffff')
+      .setFontWeight('bold').setFontSize(12).setHorizontalAlignment('center');
+    row++;
+
+    var summaryData = [
+      ['إجمالي المشاكل', problems.length, '', 'إجمالي الفرق', totalDiff, '', '', '', ''],
+      ['دفعات بدون استحقاق', paymentsWithoutAccrual, '', 'مسدد أكبر من المستحق', excessPayments, '', '', '', '']
+    ];
+    sheet.getRange(row, 1, 2, numCols).setValues(summaryData);
+    sheet.getRange(row, 5).setNumberFormat('$#,##0.00').setFontWeight('bold').setFontColor('#c62828');
+    row += 3;
+
+    // جدول المشاكل
+    sheet.getRange(row, 1, 1, numCols).merge()
+      .setValue('تفاصيل المشاكل (' + problems.length + ')')
+      .setBackground('#455a64').setFontColor('#ffffff')
+      .setFontWeight('bold').setFontSize(12).setHorizontalAlignment('center');
+    row++;
+
+    var detailHeaders = ['نوع المشكلة', 'المورد/الجهة', 'المشروع', 'البند', 'التصنيف', 'المستحق', 'المسدد', 'الفرق', 'صفوف الحركات'];
+    sheet.getRange(row, 1, 1, numCols).setValues([detailHeaders])
+      .setBackground('#cfd8dc').setFontWeight('bold').setHorizontalAlignment('center');
+    row++;
+
+    for (var pi = 0; pi < problems.length; pi++) {
+      var prob = problems[pi];
+      var rowsText = prob.rows.length <= 5 ? prob.rows.join(', ') : prob.rows.slice(0, 5).join(', ') + '...';
+
+      sheet.getRange(row, 1, 1, numCols).setValues([[
+        prob.type,
+        prob.vendor,
+        prob.projectName ? (prob.project + ' - ' + prob.projectName) : prob.project,
+        prob.item,
+        prob.classification,
+        prob.accrued,
+        prob.paid,
+        prob.diff,
+        rowsText
+      ]]);
+
+      sheet.getRange(row, 6, 1, 3).setNumberFormat('$#,##0.00');
+      sheet.getRange(row, 8).setFontColor('#c62828').setFontWeight('bold');
+
+      if (pi % 2 === 1) {
+        sheet.getRange(row, 1, 1, numCols).setBackground('#f5f5f5');
+      }
+      row++;
+    }
+  }
+
+  // تنسيق
+  sheet.setColumnWidth(1, 150);
+  sheet.setColumnWidth(2, 150);
+  sheet.setColumnWidth(3, 180);
+  sheet.setColumnWidth(4, 130);
+  sheet.setColumnWidth(5, 130);
+  sheet.setColumnWidth(6, 110);
+  sheet.setColumnWidth(7, 110);
+  sheet.setColumnWidth(8, 110);
+  sheet.setColumnWidth(9, 130);
+  sheet.setFrozenRows(2);
+
+  ss.setActiveSheet(sheet);
+
+  SpreadsheetApp.getUi().alert(
+    '🔍 فحص سلامة البيانات',
+    'تم الفحص.\n\n' +
+    'المشاكل المكتشفة: ' + problems.length + '\n' +
+    (problems.length > 0 ? 'إجمالي الفرق: $' + totalDiff.toFixed(2) + '\n\n' +
+    'دفعات بدون استحقاق: ' + paymentsWithoutAccrual + '\n' +
+    'مسدد > مستحق: ' + excessPayments : 'جميع البيانات سليمة ✅'),
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
