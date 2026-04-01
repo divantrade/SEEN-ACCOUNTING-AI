@@ -3324,6 +3324,54 @@ function generatePartyReceivablesReport(silent) {
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════════════════
+  // ملخص حسب التصنيف (تجميع من نفس بيانات الأطراف)
+  // ═══════════════════════════════════════════════════════════════════════
+  var classSummary = {}; // { classification: balance }
+  var allItems = payables.concat(receivables);
+  for (var ci = 0; ci < allItems.length; ci++) {
+    var cls = allItems[ci].classification || 'بدون تصنيف';
+    if (!classSummary[cls]) classSummary[cls] = 0;
+    // payables = علينا (موجب)، receivables = لنا (موجب أيضاً في الجدول لكن بالعكس)
+    if (allItems[ci].nature === 'مصروف') {
+      classSummary[cls] += allItems[ci].balance; // علينا
+    } else {
+      classSummary[cls] -= allItems[ci].balance; // لنا (سالب = لصالحنا)
+    }
+  }
+
+  // ترتيب حسب القيمة المطلقة
+  var classKeys = Object.keys(classSummary).sort(function(a, b) {
+    return Math.abs(classSummary[b]) - Math.abs(classSummary[a]);
+  });
+
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge();
+  reportSheet.getRange(currentRow, 1)
+    .setValue('📋 ملخص حسب التصنيف')
+    .setFontWeight('bold')
+    .setFontSize(12)
+    .setBackground('#6a1b9a')
+    .setFontColor('white')
+    .setHorizontalAlignment('center');
+  currentRow++;
+
+  reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue('التصنيف')
+    .setFontWeight('bold').setBackground('#e0e0e0').setHorizontalAlignment('center');
+  reportSheet.getRange(currentRow, 3, 1, 4).merge().setValue('صافي الرصيد')
+    .setFontWeight('bold').setBackground('#e0e0e0').setHorizontalAlignment('center');
+  currentRow++;
+
+  for (var ck = 0; ck < classKeys.length; ck++) {
+    var clsVal = classSummary[classKeys[ck]];
+    reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue(classKeys[ck]);
+    reportSheet.getRange(currentRow, 3, 1, 4).merge().setValue(clsVal)
+      .setNumberFormat('$#,##0.00').setFontWeight('bold')
+      .setFontColor(clsVal > 0.01 ? '#b71c1c' : (clsVal < -0.01 ? '#2e7d32' : '#333333'));
+    if (ck % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#fafafa');
+    currentRow++;
+  }
+  currentRow++;
+
+  // ═══════════════════════════════════════════════════════════════════════
   // دالة مساعدة لإضافة قسم
   // ═══════════════════════════════════════════════════════════════════════
   function addSection(title, items, total, bgColor, textColor) {
