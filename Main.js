@@ -3183,9 +3183,11 @@ function generatePartyReceivablesReport(silent) {
   var colM = headers.indexOf('القيمة بالدولار') !== -1 ? headers.indexOf('القيمة بالدولار') : 12;
 
   // ═══════════════════════════════════════════════════════════════════════
-  // تجميع الحركات حسب طرف + تصنيف (نفس منطق تقارير الديون والأفلام)
+  // تجميع الحركات حسب طرف + تصنيف
+  // يستخدم عمود N (نوع الحركة المحسوب) + عمود C كـ fallback
   // ═══════════════════════════════════════════════════════════════════════
   // key = party + '||' + classification
+  var colN = 13; // عمود N - نوع الحركة (محسوب من C)
   var entries = {};
 
   for (var i = 1; i < data.length; i++) {
@@ -3193,37 +3195,37 @@ function generatePartyReceivablesReport(silent) {
     var classification = String(data[i][colD] || '').trim() || 'بدون تصنيف';
     var party = String(data[i][colI] || '').trim();
     var amountUsd = Number(data[i][colM]) || 0;
+    var movementKind = String(data[i][colN] || '').trim(); // N - نوع الحركة
 
     if (!party || amountUsd <= 0) continue;
+    if (!natureType) continue;
 
-    // نفس الشروط المستخدمة في تقرير الديون والأفلام
-    var isAccrual = natureType.indexOf('استحقاق مصروف') !== -1 && natureType.indexOf('تسوية') === -1;
-    var isPayment = natureType.indexOf('دفعة مصروف') !== -1;
-    var isSettlement = natureType.indexOf('تسوية استحقاق مصروف') !== -1;
+    // تحديد النوع: أولاً من عمود N (يغطي كل الأنواع المعروفة)
+    var isDebit = false, isCredit = false, isSettlementType = false;
 
-    // إيرادات
-    var isRevenueAccrual = natureType.indexOf('استحقاق إيراد') !== -1 && natureType.indexOf('تسوية') === -1;
-    var isRevenueCollection = natureType.indexOf('تحصيل إيراد') !== -1;
-    var isRevenueSettlement = natureType.indexOf('تسوية استحقاق إيراد') !== -1;
+    if (movementKind) {
+      // عمود N موجود - نستخدمه مباشرة
+      isDebit = movementKind.indexOf('مدين استحقاق') !== -1;
+      isCredit = movementKind.indexOf('دائن دفعة') !== -1;
+      isSettlementType = movementKind.indexOf('دائن تسوية') !== -1;
+    }
 
-    // تمويل
-    var isFunding = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1 && natureType.indexOf('استلام تمويل') === -1;
-    var isFundingReceived = natureType.indexOf('استلام تمويل') !== -1;
-    var isFundingRepayment = natureType.indexOf('سداد تمويل') !== -1;
+    // لو عمود N فاضي - نصنف من عمود C بمنطق عام
+    if (!isDebit && !isCredit && !isSettlementType) {
+      if (natureType.indexOf('تسوية') !== -1) {
+        isSettlementType = true;
+      } else if (natureType.indexOf('سداد') !== -1 || natureType.indexOf('دفعة') !== -1 ||
+                 natureType.indexOf('تحصيل') !== -1 || natureType.indexOf('استلام') !== -1 ||
+                 natureType.indexOf('استرداد') !== -1) {
+        isCredit = true;
+      } else {
+        isDebit = true;
+      }
+    }
 
-    // تأمين
-    var isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
-    var isInsuranceRefund = natureType.indexOf('استرداد تأمين') !== -1;
-
-    // تحديد نوع الحركة
-    var isDebit = isAccrual || isRevenueAccrual || isFunding || isInsurancePaid;
-    var isCredit = isPayment || isRevenueCollection || isFundingRepayment || isFundingReceived || isInsuranceRefund;
-    var isSettlementType = isSettlement || isRevenueSettlement;
-
-    if (!isDebit && !isCredit && !isSettlementType) continue;
-
-    // تحديد هل إيراد أو مصروف (من طبيعة الحركة)
-    var isRevenue = isRevenueAccrual || isRevenueCollection || isRevenueSettlement || isInsurancePaid || isInsuranceRefund;
+    // تحديد هل إيراد أو مصروف
+    var isRevenue = natureType.indexOf('إيراد') !== -1 || natureType.indexOf('تحصيل') !== -1 ||
+                    natureType.indexOf('تأمين مدفوع') !== -1 || natureType.indexOf('استرداد تأمين') !== -1;
 
     var key = party + '||' + classification;
     if (!entries[key]) {
