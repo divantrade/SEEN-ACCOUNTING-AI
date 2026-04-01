@@ -100,10 +100,6 @@ function handleReportCallback(chatId, data, session) {
             // تقرير الإيرادات - مباشر
             handleGenerateRevenuesReport(chatId, session);
 
-        } else if (data === 'report_dynamic_expenses') {
-            // تحليل المصروفات - مباشر
-            handleGenerateDynamicExpensesReport(chatId, session);
-
         } else if (data === 'report_cashflow') {
             handleGenerateDirectReport_(chatId, session, 'cashflow', generateCashflowPDF);
 
@@ -563,29 +559,6 @@ function handleGenerateDirectReport_(chatId, session, reportType, generateFn) {
 
     } catch (error) {
         Logger.log('❌ Error generating ' + reportType + ': ' + error.message);
-        sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.ERROR);
-    }
-}
-
-/**
- * توليد تقرير تحليل المصروفات
- */
-function handleGenerateDynamicExpensesReport(chatId, session) {
-    try {
-        sendGeneratingMessage(chatId, 'dynamic_expenses');
-
-        const result = generateDynamicExpensesPDF(chatId);
-
-        session.reportState = null;
-        session.reportData = {};
-        saveAIUserSession(chatId, session);
-
-        if (!result.success) {
-            sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.ERROR);
-        }
-
-    } catch (error) {
-        Logger.log('❌ Error generating dynamic expenses: ' + error.message);
         sendAIMessage(chatId, REPORTS_CONFIG.MESSAGES.ERROR);
     }
 }

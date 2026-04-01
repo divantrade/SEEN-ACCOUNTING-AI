@@ -33,7 +33,6 @@ const CONFIG = {
         VENDORS_REPORT: 'تقرير الموردين',
         FUNDERS_REPORT: 'تقرير الممولين',
         EXPENSES_REPORT: 'تقرير المصروفات',
-        DYNAMIC_EXPENSES: 'تحليل المصروفات',
         REVENUE_REPORT: 'تقرير الإيرادات',
         CASHFLOW: 'التدفقات النقدية',
         DASHBOARD: 'لوحة التحكم',
