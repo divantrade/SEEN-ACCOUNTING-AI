@@ -17200,7 +17200,7 @@ function generateFilmCostReport(silent) {
     var vendor = String(transData[i][colI] || '').trim() || 'بدون مورد';
     var amountUsd = Number(transData[i][colM]) || 0;
 
-    if (!item || amountUsd <= 0) continue;
+    if (!item || amountUsd === 0) continue;
 
     // فقط مصروفات (استحقاق + دفعة + تسوية)
     var isAccrual = natureType.indexOf('استحقاق مصروف') !== -1 && natureType.indexOf('تسوية') === -1;
@@ -17250,6 +17250,13 @@ function generateFilmCostReport(silent) {
     grandBudget += (budgetByProject[projectCodes[pc]] || { _total: 0 })._total;
   }
   var grandOutstanding = (grandAccrued - grandSettled) - grandPaid;
+
+  // التحقق من وجود بيانات
+  if (projectCodes.length === 0) {
+    if (silent) return { success: true, name: 'تقرير تكاليف الأفلام', warning: 'لا توجد حركات مصروفات مرتبطة بمشاريع' };
+    SpreadsheetApp.getUi().alert('⚠️ لا توجد بيانات', 'لم يتم العثور على أي حركات مصروفات مرتبطة بمشاريع (أفلام).', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
 
   // ═══════════════════════════════════════════════════════════
   // 5️⃣ إنشاء شيت التقرير
@@ -17499,6 +17506,7 @@ function generateFilmCostReport(silent) {
     // صفوف البيانات (كل سطر = بند + مورد)
     // ───────────────────────────────────────
     var entryKeys = Object.keys(projData.entries).sort();
+    var shownBudgetItems = {}; // لتتبع البنود التي عُرضت ميزانيتها بالفعل
     for (var ei = 0; ei < entryKeys.length; ei++) {
       var e = projData.entries[entryKeys[ei]];
       var eAccrued = e.accrued - e.settled;
@@ -17507,25 +17515,29 @@ function generateFilmCostReport(silent) {
       var ePercent = eAccrued > 0 ? Math.round((ePaid / eAccrued) * 100) + '%' : (ePaid > 0 ? '⚠️' : '-');
       var eBudget = projBudget[e.item] || 0;
 
+      // عرض الميزانية فقط في أول ظهور للبند (عشان ما تتكررش)
+      var showBudget = (eBudget > 0 && !shownBudgetItems[e.item]);
+      if (showBudget) shownBudgetItems[e.item] = true;
+
       reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
         e.item,
         e.vendor,
-        eBudget > 0 ? eBudget : '',
+        showBudget ? eBudget : '',
         eAccrued,
         ePaid,
         eOutstanding,
         ePercent
       ]]);
       reportSheet.getRange(currentRow, 4, 1, 3).setNumberFormat('$#,##0.00');
-      if (eBudget > 0) reportSheet.getRange(currentRow, 3).setNumberFormat('$#,##0.00');
+      if (showBudget) reportSheet.getRange(currentRow, 3).setNumberFormat('$#,##0.00');
 
       // تلوين المعلق
-      if (eOutstanding > 0) {
+      if (eOutstanding > 0.01) {
         reportSheet.getRange(currentRow, 6).setFontColor(CLR.RED_TEXT);
       } else if (eOutstanding < -0.01) {
         reportSheet.getRange(currentRow, 6).setFontColor('#e65100').setFontWeight('bold');
         reportSheet.getRange(currentRow, 7).setValue('⚠️ خطأ').setFontColor('#e65100').setFontWeight('bold');
-      } else if (eOutstanding === 0 && eAccrued > 0) {
+      } else if (Math.abs(eOutstanding) <= 0.01 && eAccrued > 0) {
         reportSheet.getRange(currentRow, 6).setFontColor(CLR.GREEN_TEXT);
       }
 
@@ -17534,9 +17546,6 @@ function generateFilmCostReport(silent) {
         reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
       }
       currentRow++;
-
-      // حذف الميزانية من الصفوف التالية لنفس البند (عشان ما تتكررش)
-      // سنعرض الميزانية فقط في أول ظهور للبند
     }
 
     // صف إجمالي الفيلم
@@ -17578,7 +17587,8 @@ function generateFilmCostReport(silent) {
       'الملخص المجمع:\n\n' +
       '💰 الميزانية المرصودة: $' + grandBudget.toFixed(2) + '\n' +
       '📋 التكاليف المستحقة: $' + grandAccrued.toFixed(2) + '\n' +
-      '✅ المسدد فعلياً: $' + (grandPaid + grandSettled).toFixed(2) + '\n' +
+      '📝 تسويات الاستحقاق: $' + grandSettled.toFixed(2) + '\n' +
+      '✅ المسدد فعلياً (دفعات): $' + grandPaid.toFixed(2) + '\n' +
       '🔴 الديون المعلقة: $' + grandOutstanding.toFixed(2) + '\n\n' +
       '📊 عدد الأفلام: ' + projectCodes.length,
       SpreadsheetApp.getUi().ButtonSet.OK
@@ -17883,23 +17893,31 @@ function generateOldDebtsReport(silent) {
   var transData = transSheet.getDataRange().getValues();
   var transHeaders = transData[0];
 
+  var colB = transHeaders.indexOf('التاريخ') !== -1 ? transHeaders.indexOf('التاريخ') : 1;
   var colC = transHeaders.indexOf('طبيعة الحركة') !== -1 ? transHeaders.indexOf('طبيعة الحركة') : 2;
   var colD = transHeaders.indexOf('تصنيف الحركة') !== -1 ? transHeaders.indexOf('تصنيف الحركة') : 3;
+  var colG = transHeaders.indexOf('البند') !== -1 ? transHeaders.indexOf('البند') : 6;
   var colI = transHeaders.indexOf('اسم المورد/الجهة') !== -1 ? transHeaders.indexOf('اسم المورد/الجهة') : 8;
   var colM = transHeaders.indexOf('القيمة بالدولار') !== -1 ? transHeaders.indexOf('القيمة بالدولار') : 12;
 
-  // entries[party] = { party, accrued, paid, settled } - تجميع حسب الطرف فقط
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // entries[party] = { party, accrued, paid, settled, items: {}, earliestDate, aging: {0-30, 31-60, 61-90, 90+} }
   var entries = {};
   var grandAccrued = 0, grandPaid = 0, grandSettled = 0;
+  var grandAging = { bucket30: 0, bucket60: 0, bucket90: 0, bucketOver90: 0 };
 
   for (var i = 1; i < transData.length; i++) {
     var natureType = String(transData[i][colC] || '').trim();
     var classification = String(transData[i][colD] || '').trim();
     var partyName = String(transData[i][colI] || '').trim() || 'بدون طرف';
+    var itemName = String(transData[i][colG] || '').trim() || '-';
     var amountUsd = Number(transData[i][colM]) || 0;
+    var transDate = transData[i][colB];
 
     if (classification !== 'ديون قديمة') continue;
-    if (amountUsd <= 0) continue;
+    if (amountUsd === 0) continue;
 
     var isAccrual = natureType.indexOf('استحقاق مصروف') !== -1 && natureType.indexOf('تسوية') === -1;
     var isPayment = natureType.indexOf('دفعة مصروف') !== -1;
@@ -17909,19 +17927,68 @@ function generateOldDebtsReport(silent) {
 
     var key = partyName;
     if (!entries[key]) {
-      entries[key] = { party: partyName, accrued: 0, paid: 0, settled: 0 };
+      entries[key] = {
+        party: partyName, accrued: 0, paid: 0, settled: 0,
+        items: {}, earliestDate: null,
+        aging: { bucket30: 0, bucket60: 0, bucket90: 0, bucketOver90: 0 }
+      };
     }
     var entry = entries[key];
 
-    if (isAccrual) { entry.accrued += amountUsd; grandAccrued += amountUsd; }
-    else if (isPayment) { entry.paid += amountUsd; grandPaid += amountUsd; }
-    else if (isSettlement) { entry.settled += amountUsd; grandSettled += amountUsd; }
+    // تتبع البنود لكل طرف
+    if (isAccrual && itemName !== '-') {
+      entry.items[itemName] = (entry.items[itemName] || 0) + amountUsd;
+    }
+
+    if (isAccrual) {
+      entry.accrued += amountUsd;
+      grandAccrued += amountUsd;
+
+      // حساب عمر الدين بناءً على تاريخ الاستحقاق
+      if (transDate instanceof Date && !isNaN(transDate.getTime())) {
+        var ageDays = Math.floor((today - transDate) / (1000 * 60 * 60 * 24));
+        if (ageDays <= 30) {
+          entry.aging.bucket30 += amountUsd;
+          grandAging.bucket30 += amountUsd;
+        } else if (ageDays <= 60) {
+          entry.aging.bucket60 += amountUsd;
+          grandAging.bucket60 += amountUsd;
+        } else if (ageDays <= 90) {
+          entry.aging.bucket90 += amountUsd;
+          grandAging.bucket90 += amountUsd;
+        } else {
+          entry.aging.bucketOver90 += amountUsd;
+          grandAging.bucketOver90 += amountUsd;
+        }
+
+        if (!entry.earliestDate || transDate < entry.earliestDate) {
+          entry.earliestDate = transDate;
+        }
+      } else {
+        // إذا لم يكن التاريخ صالحاً، نضعه في أقدم فئة
+        entry.aging.bucketOver90 += amountUsd;
+        grandAging.bucketOver90 += amountUsd;
+      }
+    } else if (isPayment) {
+      entry.paid += amountUsd;
+      grandPaid += amountUsd;
+    } else if (isSettlement) {
+      entry.settled += amountUsd;
+      grandSettled += amountUsd;
+    }
   }
 
   var grandAccruedTotal = grandAccrued - grandSettled;
   var grandOutstanding = grandAccruedTotal - grandPaid;
 
   var entryKeys = Object.keys(entries).sort();
+
+  // التحقق من وجود بيانات
+  if (entryKeys.length === 0) {
+    if (silent) return { success: true, name: 'تقرير الديون القديمة', warning: 'لا توجد حركات بتصنيف ديون قديمة' };
+    SpreadsheetApp.getUi().alert('⚠️ لا توجد بيانات', 'لم يتم العثور على أي حركات بتصنيف "ديون قديمة".', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
 
   // ═══════════════════════════════════════════════════════════
   // 2️⃣ إنشاء شيت التقرير
@@ -17936,13 +18003,15 @@ function generateOldDebtsReport(silent) {
   var CLR = {
     TITLE_BG: '#6d4c41', TITLE_FG: '#ffffff',
     SUBTITLE_BG: '#efebe9', SUBTITLE_FG: '#5d4037',
-    HEADER_BG: '#8d6e63', HEADER_FG: '#ffffff',
+    SECTION_BG: '#8d6e63', SECTION_FG: '#ffffff',
+    HEADER_BG: '#bcaaa4', HEADER_FG: '#3e2723',
     ZEBRA: '#faf5f2',
     TOTAL_BG: '#6d4c41', TOTAL_FG: '#ffffff',
-    RED_TEXT: '#bf360c', GREEN_TEXT: '#2e7d32'
+    RED_TEXT: '#bf360c', GREEN_TEXT: '#2e7d32',
+    ORANGE_TEXT: '#e65100'
   };
 
-  var numCols = 4;
+  var numCols = 8;
   var currentRow = 1;
 
   // العنوان
@@ -17958,7 +18027,9 @@ function generateOldDebtsReport(silent) {
     .setFontSize(10).setHorizontalAlignment('center');
   currentRow += 2;
 
-  // الملخص
+  // ═══════════════════════════════════════════════════════════
+  // الملخص العام
+  // ═══════════════════════════════════════════════════════════
   reportSheet.getRange(currentRow, 1).setValue('إجمالي الديون').setFontWeight('bold').setFontSize(11);
   reportSheet.getRange(currentRow, 2).setValue(grandAccruedTotal).setNumberFormat('$#,##0.00').setFontWeight('bold').setFontSize(11);
   currentRow++;
@@ -17972,8 +18043,56 @@ function generateOldDebtsReport(silent) {
     .setFontColor(grandOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
   currentRow += 2;
 
+  // ═══════════════════════════════════════════════════════════
+  // ملخص أعمار الديون (Aging Summary)
+  // ═══════════════════════════════════════════════════════════
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('تحليل أعمار الديون (حسب تاريخ الاستحقاق)')
+    .setBackground(CLR.SECTION_BG).setFontColor(CLR.SECTION_FG)
+    .setFontWeight('bold').setFontSize(12).setHorizontalAlignment('center');
+  currentRow++;
+
+  var agingHeaders = ['الفئة العمرية', 'المبلغ ($)', 'النسبة', '', '', '', '', ''];
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([agingHeaders])
+    .setBackground(CLR.HEADER_BG).setFontColor(CLR.HEADER_FG).setFontWeight('bold');
+  currentRow++;
+
+  var agingRows = [
+    ['0 - 30 يوم', grandAging.bucket30, grandAccrued > 0 ? Math.round((grandAging.bucket30 / grandAccrued) * 100) + '%' : '-'],
+    ['31 - 60 يوم', grandAging.bucket60, grandAccrued > 0 ? Math.round((grandAging.bucket60 / grandAccrued) * 100) + '%' : '-'],
+    ['61 - 90 يوم', grandAging.bucket90, grandAccrued > 0 ? Math.round((grandAging.bucket90 / grandAccrued) * 100) + '%' : '-'],
+    ['أكثر من 90 يوم', grandAging.bucketOver90, grandAccrued > 0 ? Math.round((grandAging.bucketOver90 / grandAccrued) * 100) + '%' : '-']
+  ];
+
+  for (var ag = 0; ag < agingRows.length; ag++) {
+    var agRow = [agingRows[ag][0], agingRows[ag][1], agingRows[ag][2], '', '', '', '', ''];
+    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([agRow]);
+    reportSheet.getRange(currentRow, 2).setNumberFormat('$#,##0.00');
+    if (ag % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+    // تلوين الفئات الأقدم بالأحمر
+    if (ag === 3 && agingRows[ag][1] > 0) {
+      reportSheet.getRange(currentRow, 2).setFontColor(CLR.RED_TEXT).setFontWeight('bold');
+    } else if (ag === 2 && agingRows[ag][1] > 0) {
+      reportSheet.getRange(currentRow, 2).setFontColor(CLR.ORANGE_TEXT);
+    }
+    currentRow++;
+  }
+
+  currentRow += 2;
+
+  // ═══════════════════════════════════════════════════════════
+  // جدول تفصيلي بالأطراف مع أعمار الديون
+  // ═══════════════════════════════════════════════════════════
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('تفصيل الديون حسب الأطراف')
+    .setBackground(CLR.SECTION_BG).setFontColor(CLR.SECTION_FG)
+    .setFontWeight('bold').setFontSize(12).setHorizontalAlignment('center');
+  currentRow++;
+
   // رؤوس الجدول
-  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['الطرف', 'الدين', 'المدفوع', 'الباقي']])
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+    'الطرف', 'أقدم دين', 'الدين', 'المدفوع', 'الباقي', '0-30 يوم', '31-60 يوم', '61-90 يوم'
+  ]])
     .setBackground(CLR.HEADER_BG).setFontColor(CLR.HEADER_FG)
     .setFontWeight('bold').setHorizontalAlignment('center');
   currentRow++;
@@ -17985,35 +18104,69 @@ function generateOldDebtsReport(silent) {
     var ePaid = e.paid;
     var eOutstanding = eAccrued - ePaid;
 
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      e.party, eAccrued, ePaid, eOutstanding
-    ]]);
-    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+    var earliestDateStr = '';
+    if (e.earliestDate instanceof Date && !isNaN(e.earliestDate.getTime())) {
+      earliestDateStr = Utilities.formatDate(e.earliestDate, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+    }
 
-    if (eOutstanding > 0) {
-      reportSheet.getRange(currentRow, 4).setFontColor(CLR.RED_TEXT);
+    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+      e.party, earliestDateStr, eAccrued, ePaid, eOutstanding,
+      e.aging.bucket30 > 0 ? e.aging.bucket30 : '',
+      e.aging.bucket60 > 0 ? e.aging.bucket60 : '',
+      e.aging.bucket90 + e.aging.bucketOver90 > 0 ? e.aging.bucket90 + e.aging.bucketOver90 : ''
+    ]]);
+    reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
+    if (e.aging.bucket30 > 0) reportSheet.getRange(currentRow, 6).setNumberFormat('$#,##0.00');
+    if (e.aging.bucket60 > 0) reportSheet.getRange(currentRow, 7).setNumberFormat('$#,##0.00');
+    if (e.aging.bucket90 + e.aging.bucketOver90 > 0) reportSheet.getRange(currentRow, 8).setNumberFormat('$#,##0.00');
+
+    if (eOutstanding > 0.01) {
+      reportSheet.getRange(currentRow, 5).setFontColor(CLR.RED_TEXT);
     } else if (eOutstanding < -0.01) {
-      reportSheet.getRange(currentRow, 4).setFontColor('#e65100').setFontWeight('bold');
-    } else if (eOutstanding === 0 && eAccrued > 0) {
-      reportSheet.getRange(currentRow, 4).setFontColor(CLR.GREEN_TEXT);
+      reportSheet.getRange(currentRow, 5).setFontColor(CLR.ORANGE_TEXT).setFontWeight('bold');
+    } else if (Math.abs(eOutstanding) <= 0.01 && eAccrued > 0) {
+      reportSheet.getRange(currentRow, 5).setFontColor(CLR.GREEN_TEXT);
+    }
+
+    // تلوين ديون أكثر من 60 يوم
+    if (e.aging.bucket90 + e.aging.bucketOver90 > 0) {
+      reportSheet.getRange(currentRow, 8).setFontColor(CLR.RED_TEXT).setFontWeight('bold');
     }
 
     if (ei % 2 === 1) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
     currentRow++;
+
+    // عرض البنود تحت كل طرف (إن وجدت)
+    var itemNames = Object.keys(e.items);
+    if (itemNames.length > 1) {
+      for (var ii = 0; ii < itemNames.length; ii++) {
+        reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+          '   ↳ ' + itemNames[ii], '', e.items[itemNames[ii]], '', '', '', '', ''
+        ]]);
+        reportSheet.getRange(currentRow, 3).setNumberFormat('$#,##0.00');
+        reportSheet.getRange(currentRow, 1, 1, numCols).setFontColor('#78909c').setFontSize(9);
+        currentRow++;
+      }
+    }
   }
 
   // صف الإجمالي
   reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-    'الإجمالي', grandAccruedTotal, grandPaid, grandOutstanding
+    'الإجمالي', '', grandAccruedTotal, grandPaid, grandOutstanding,
+    grandAging.bucket30, grandAging.bucket60, grandAging.bucket90 + grandAging.bucketOver90
   ]])
     .setBackground(CLR.TOTAL_BG).setFontColor(CLR.TOTAL_FG).setFontWeight('bold');
-  reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+  reportSheet.getRange(currentRow, 3, 1, 6).setNumberFormat('$#,##0.00');
 
   // تنسيقات
-  reportSheet.setColumnWidth(1, 200);
-  reportSheet.setColumnWidth(2, 130);
-  reportSheet.setColumnWidth(3, 130);
-  reportSheet.setColumnWidth(4, 130);
+  reportSheet.setColumnWidth(1, 200);  // الطرف
+  reportSheet.setColumnWidth(2, 100);  // أقدم دين
+  reportSheet.setColumnWidth(3, 130);  // الدين
+  reportSheet.setColumnWidth(4, 130);  // المدفوع
+  reportSheet.setColumnWidth(5, 130);  // الباقي
+  reportSheet.setColumnWidth(6, 110);  // 0-30
+  reportSheet.setColumnWidth(7, 110);  // 31-60
+  reportSheet.setColumnWidth(8, 110);  // 61-90+
   reportSheet.setFrozenRows(2);
 
   if (!silent) {
@@ -18022,7 +18175,12 @@ function generateOldDebtsReport(silent) {
       '✅ تم إنشاء تقرير الديون القديمة',
       'إجمالي الديون: $' + grandAccruedTotal.toFixed(2) + '\n' +
       'ما تم دفعه: $' + grandPaid.toFixed(2) + '\n' +
-      'الباقي: $' + grandOutstanding.toFixed(2),
+      'الباقي: $' + grandOutstanding.toFixed(2) + '\n\n' +
+      'تحليل الأعمار:\n' +
+      '• 0-30 يوم: $' + grandAging.bucket30.toFixed(2) + '\n' +
+      '• 31-60 يوم: $' + grandAging.bucket60.toFixed(2) + '\n' +
+      '• 61-90 يوم: $' + grandAging.bucket90.toFixed(2) + '\n' +
+      '• أكثر من 90 يوم: $' + grandAging.bucketOver90.toFixed(2),
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
