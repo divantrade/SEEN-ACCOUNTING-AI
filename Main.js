@@ -3197,8 +3197,13 @@ function generatePartyReceivablesReport(silent) {
     var amountUsd = Number(data[i][colM]) || 0;
     var movementKind = String(data[i][colN] || '').trim(); // N - نوع الحركة
 
-    if (!party || amountUsd <= 0) continue;
+    if (!party || amountUsd === 0) continue;
     if (!natureType) continue;
+
+    // استبعاد الحركات المحايدة التي لا تمثل استحقاقات أو ديون
+    if (natureType.indexOf('تحويل داخلي') !== -1 ||
+        natureType.indexOf('تغيير عملة') !== -1 ||
+        natureType.indexOf('مصاريف بنكية') !== -1) continue;
 
     // تحديد النوع: أولاً من عمود N (يغطي كل الأنواع المعروفة)
     var isDebit = false, isCredit = false, isSettlementType = false;
@@ -3218,8 +3223,12 @@ function generatePartyReceivablesReport(silent) {
                  natureType.indexOf('تحصيل') !== -1 || natureType.indexOf('استلام') !== -1 ||
                  natureType.indexOf('استرداد') !== -1) {
         isCredit = true;
-      } else {
+      } else if (natureType.indexOf('استحقاق') !== -1 || natureType.indexOf('تمويل') !== -1 ||
+                 natureType.indexOf('تأمين مدفوع') !== -1) {
         isDebit = true;
+      } else {
+        // حركة غير معروفة - نتجاهلها بدل افتراض أنها مدين
+        continue;
       }
     }
 
@@ -3249,14 +3258,24 @@ function generatePartyReceivablesReport(silent) {
   // ═══════════════════════════════════════════════════════════════════════
   var receivables = [];  // مستحقات لنا
   var payables = [];     // مستحقات علينا
+  var overpayments = []; // دفعات زائدة (دفع أكثر من المستحق)
 
   var totalReceivables = 0;
   var totalPayables = 0;
+  var totalOverpayments = 0;
 
   // ملخص حسب التصنيف
   var classSummary = {}; // { classification: { owed, oweUs } }
 
   var entryKeys = Object.keys(entries);
+
+  // التحقق من وجود بيانات
+  if (entryKeys.length === 0) {
+    if (silent) return { success: true, name: 'تقرير الاستحقاقات (إجمالي)', warning: 'لا توجد حركات استحقاق' };
+    SpreadsheetApp.getUi().alert('⚠️ لا توجد بيانات', 'لم يتم العثور على أي حركات استحقاق في دفتر الحركات.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
   for (var ei = 0; ei < entryKeys.length; ei++) {
     var e = entries[entryKeys[ei]];
     var netAccrued = e.accrued - e.settled;
@@ -3284,12 +3303,22 @@ function generatePartyReceivablesReport(silent) {
         receivables.push(item);
         totalReceivables += balance;
         classSummary[e.classification].oweUs += balance;
+      } else if (balance < 0) {
+        // تحصيل زائد - حصّلنا أكثر من المستحق (علينا إرجاعه)
+        item.overpaymentNote = 'تحصيل زائد عن المستحق';
+        overpayments.push(item);
+        totalOverpayments += Math.abs(balance);
       }
     } else {
       if (balance > 0) {
         payables.push(item);
         totalPayables += balance;
         classSummary[e.classification].owed += balance;
+      } else if (balance < 0) {
+        // دفعة زائدة - دفعنا أكثر من المستحق (لنا عندهم)
+        item.overpaymentNote = 'دفعة زائدة عن المستحق';
+        overpayments.push(item);
+        totalOverpayments += Math.abs(balance);
       }
     }
   }
@@ -3472,6 +3501,11 @@ function generatePartyReceivablesReport(silent) {
   // 2. مستحقات لنا (إيرادات)
   addSection('💰 مستحقات لنا (تحصيلات)', receivables, totalReceivables, '#c8e6c9', '#2e7d32');
 
+  // 3. دفعات/تحصيلات زائدة (إن وجدت)
+  if (overpayments.length > 0) {
+    addSection('⚠️ دفعات/تحصيلات زائدة (تحتاج مراجعة)', overpayments, totalOverpayments, '#fff3e0', '#e65100');
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // الملخص المالي
   // ═══════════════════════════════════════════════════════════════════════
@@ -3556,9 +3590,9 @@ function generatePartyReceivablesReport(silent) {
   // رسالة التأكيد
   SpreadsheetApp.getUi().alert('✅ تم إنشاء تقرير الاستحقاقات (إجمالي)',
     'الملخص:\n\n' +
-    '• عدد الأطراف المدينين لنا: ' + payables.length + '\n' +
+    '• عدد الأطراف الدائنين (علينا لهم): ' + payables.length + '\n' +
     '• إجمالي المستحقات علينا: $' + totalPayables.toFixed(2) + '\n\n' +
-    '• عدد الأطراف الدائنين لنا: ' + receivables.length + '\n' +
+    '• عدد الأطراف المدينين (لنا عندهم): ' + receivables.length + '\n' +
     '• إجمالي المستحقات لنا: $' + totalReceivables.toFixed(2) + '\n\n' +
     '📊 صافي الموقف: $' + netPosition.toFixed(2) + '\n' +
     (netPosition >= 0 ? '(لصالحنا ✅)' : '(علينا ⚠️)'),
