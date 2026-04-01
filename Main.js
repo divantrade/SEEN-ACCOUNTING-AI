@@ -3156,9 +3156,11 @@ function generateDueReport(silent) {
 
 // ==================== تقرير الاستحقاقات (إجمالي) ====================
 /**
- * تقرير يعرض إجمالي المستحقات لكل طرف بشكل مجمع
- * بدون تفاصيل كل بند/مشروع - فقط رصيد الطرف الإجمالي
- * الرصيد = إجمالي المدين - إجمالي الدائن
+ * تقرير يعرض إجمالي المستحقات لكل طرف+تصنيف بشكل مجمع
+ * يستخدم نفس منطق تقرير الديون القديمة وتقرير الأفلام:
+ * - يقرأ من عمود C (طبيعة الحركة) - مصدر الحقيقة
+ * - يفصل التسويات عن المدفوعات
+ * - يجمّع حسب طرف + تصنيف (لو طرف عنده أكثر من تصنيف يظهر أكثر من مرة)
  */
 function generatePartyReceivablesReport(silent) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3171,110 +3173,128 @@ function generatePartyReceivablesReport(silent) {
   }
 
   const data = transSheet.getDataRange().getValues();
+  const headers = data[0];
   const today = new Date();
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // تجميع الحركات حسب الطرف فقط (إجمالي مدين - إجمالي دائن)
-  // ═══════════════════════════════════════════════════════════════════════
-  const partyTotals = {};
+  // أعمدة من مصدر الحقيقة (نفس منطق تقرير الديون والأفلام)
+  var colC = headers.indexOf('طبيعة الحركة') !== -1 ? headers.indexOf('طبيعة الحركة') : 2;
+  var colD = headers.indexOf('تصنيف الحركة') !== -1 ? headers.indexOf('تصنيف الحركة') : 3;
+  var colI = headers.indexOf('اسم المورد/الجهة') !== -1 ? headers.indexOf('اسم المورد/الجهة') : 8;
+  var colM = headers.indexOf('القيمة بالدولار') !== -1 ? headers.indexOf('القيمة بالدولار') : 12;
 
-  for (let i = 1; i < data.length; i++) {
-    const movementKind = String(data[i][13] || ''); // N - نوع الحركة
-    const party = String(data[i][8] || '').trim();  // I - الطرف
-    const amountUsd = Number(data[i][12]) || 0;     // M - المبلغ بالدولار
-    const natureType = String(data[i][2] || '');    // C - طبيعة الحركة
-    const classification = String(data[i][3] || '').trim(); // D - تصنيف الحركة
+  // ═══════════════════════════════════════════════════════════════════════
+  // تجميع الحركات حسب طرف + تصنيف (نفس منطق تقارير الديون والأفلام)
+  // ═══════════════════════════════════════════════════════════════════════
+  // key = party + '||' + classification
+  var entries = {};
+
+  for (var i = 1; i < data.length; i++) {
+    var natureType = String(data[i][colC] || '').trim();
+    var classification = String(data[i][colD] || '').trim() || 'بدون تصنيف';
+    var party = String(data[i][colI] || '').trim();
+    var amountUsd = Number(data[i][colM]) || 0;
 
     if (!party || amountUsd <= 0) continue;
 
-    // ✅ تحديد نوع الحركة بدقة (نفس منطق تقرير البنود)
-    const isDebitAccrual = movementKind.indexOf('مدين استحقاق') !== -1;
-    const isCreditPayment = movementKind.indexOf('دائن دفعة') !== -1;
-    const isCreditSettlement = movementKind.indexOf('دائن تسوية') !== -1;
-    // ✅ تمويل (دخول قرض) = دائن دفعة لكن يُعتبر دين على الشركة
-    const isFundingIn = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1;
-    // ✅ تأمين مدفوع = دائن دفعة لكن يُعتبر مستحق لنا
-    const isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
+    // نفس الشروط المستخدمة في تقرير الديون والأفلام
+    var isAccrual = natureType.indexOf('استحقاق مصروف') !== -1 && natureType.indexOf('تسوية') === -1;
+    var isPayment = natureType.indexOf('دفعة مصروف') !== -1;
+    var isSettlement = natureType.indexOf('تسوية استحقاق مصروف') !== -1;
 
-    if (!isDebitAccrual && !isCreditPayment && !isCreditSettlement) continue;
+    // إيرادات
+    var isRevenueAccrual = natureType.indexOf('استحقاق إيراد') !== -1 && natureType.indexOf('تسوية') === -1;
+    var isRevenueCollection = natureType.indexOf('تحصيل إيراد') !== -1;
+    var isRevenueSettlement = natureType.indexOf('تسوية استحقاق إيراد') !== -1;
 
-    // إنشاء سجل الطرف إذا لم يكن موجوداً
-    if (!partyTotals[party]) {
-      partyTotals[party] = {
-        totalDebit: 0,
-        totalCredit: 0,
-        nature: natureType,
-        classification: classification || 'بدون تصنيف',
-        transactionCount: 0
+    // تمويل
+    var isFunding = natureType.indexOf('تمويل') !== -1 && natureType.indexOf('سداد تمويل') === -1 && natureType.indexOf('استلام تمويل') === -1;
+    var isFundingReceived = natureType.indexOf('استلام تمويل') !== -1;
+    var isFundingRepayment = natureType.indexOf('سداد تمويل') !== -1;
+
+    // تأمين
+    var isInsurancePaid = natureType.indexOf('تأمين مدفوع') !== -1;
+    var isInsuranceRefund = natureType.indexOf('استرداد تأمين') !== -1;
+
+    // تحديد نوع الحركة
+    var isDebit = isAccrual || isRevenueAccrual || isFunding || isInsurancePaid;
+    var isCredit = isPayment || isRevenueCollection || isFundingRepayment || isFundingReceived || isInsuranceRefund;
+    var isSettlementType = isSettlement || isRevenueSettlement;
+
+    if (!isDebit && !isCredit && !isSettlementType) continue;
+
+    // تحديد هل إيراد أو مصروف (من طبيعة الحركة)
+    var isRevenue = isRevenueAccrual || isRevenueCollection || isRevenueSettlement || isInsurancePaid || isInsuranceRefund;
+
+    var key = party + '||' + classification;
+    if (!entries[key]) {
+      entries[key] = {
+        party: party,
+        classification: classification,
+        accrued: 0,
+        paid: 0,
+        settled: 0,
+        isRevenue: isRevenue
       };
     }
 
-    partyTotals[party].transactionCount++;
-
-    if (isDebitAccrual || isInsurancePaid || isFundingIn) {
-      // ✅ مدين استحقاق أو تأمين مدفوع أو تمويل = يزيد المدين
-      partyTotals[party].totalDebit += amountUsd;
-      if (!partyTotals[party].nature) {
-        partyTotals[party].nature = natureType;
-      }
-    } else if (isCreditPayment || isCreditSettlement) {
-      // ✅ دائن دفعة أو تسوية = يزيد الدائن
-      partyTotals[party].totalCredit += amountUsd;
-    }
-
+    if (isDebit) { entries[key].accrued += amountUsd; }
+    else if (isCredit) { entries[key].paid += amountUsd; }
+    else if (isSettlementType) { entries[key].settled += amountUsd; }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // حساب الرصيد وتصنيف الأطراف
+  // حساب الرصيد وتصنيف الأطراف (نفس معادلة الديون والأفلام)
   // ═══════════════════════════════════════════════════════════════════════
-  const receivables = [];  // مستحقات لنا (إيرادات)
-  const payables = [];     // مستحقات علينا (مصروفات)
+  var receivables = [];  // مستحقات لنا
+  var payables = [];     // مستحقات علينا
 
-  let totalReceivables = 0;
-  let totalPayables = 0;
+  var totalReceivables = 0;
+  var totalPayables = 0;
 
-  for (const party in partyTotals) {
-    const data = partyTotals[party];
-    const balance = data.totalDebit - data.totalCredit;
+  // ملخص حسب التصنيف
+  var classSummary = {}; // { classification: { owed, oweUs } }
 
-    // تجاهل الأرصدة الصغيرة جداً (أقل من سنت)
+  var entryKeys = Object.keys(entries);
+  for (var ei = 0; ei < entryKeys.length; ei++) {
+    var e = entries[entryKeys[ei]];
+    var netAccrued = e.accrued - e.settled;
+    var balance = netAccrued - e.paid;
+
+    // تجاهل الأرصدة الصغيرة
     if (Math.abs(balance) < 0.01) continue;
 
-    // تحديد إذا كان إيراد أو مصروف
-    const isRevenue = data.nature && (
-      data.nature.includes('إيراد') ||
-      data.nature.includes('تحصيل') ||
-      data.nature.includes('تأمين مدفوع')
-    );
-
-    const item = {
-      party: party,
-      totalDebit: data.totalDebit,
-      totalCredit: data.totalCredit,
+    var item = {
+      party: e.party,
+      classification: e.classification,
+      totalDebit: e.accrued,
+      totalCredit: e.paid + e.settled,
       balance: Math.abs(balance),
-      transactionCount: data.transactionCount,
-      nature: isRevenue ? 'إيراد' : 'مصروف',
-      classification: data.classification
+      isRevenue: e.isRevenue
     };
 
-    if (isRevenue) {
-      // إيرادات مستحقة لنا
+    // تجميع للملخص حسب التصنيف
+    if (!classSummary[e.classification]) {
+      classSummary[e.classification] = { owed: 0, oweUs: 0 };
+    }
+
+    if (e.isRevenue) {
       if (balance > 0) {
         receivables.push(item);
         totalReceivables += balance;
+        classSummary[e.classification].oweUs += balance;
       }
     } else {
-      // مصروفات مستحقة علينا
       if (balance > 0) {
         payables.push(item);
         totalPayables += balance;
+        classSummary[e.classification].owed += balance;
       }
     }
   }
 
   // ترتيب حسب المبلغ (الأكبر أولاً)
-  receivables.sort((a, b) => b.balance - a.balance);
-  payables.sort((a, b) => b.balance - a.balance);
+  receivables.sort(function(a, b) { return b.balance - a.balance; });
+  payables.sort(function(a, b) { return b.balance - a.balance; });
 
   // ═══════════════════════════════════════════════════════════════════════
   // إنشاء الشيت
@@ -3324,24 +3344,12 @@ function generatePartyReceivablesReport(silent) {
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════════════════
-  // ملخص حسب التصنيف (تجميع من نفس بيانات الأطراف)
+  // ملخص حسب التصنيف
   // ═══════════════════════════════════════════════════════════════════════
-  var classSummary = {}; // { classification: balance }
-  var allItems = payables.concat(receivables);
-  for (var ci = 0; ci < allItems.length; ci++) {
-    var cls = allItems[ci].classification || 'بدون تصنيف';
-    if (!classSummary[cls]) classSummary[cls] = 0;
-    // payables = علينا (موجب)، receivables = لنا (موجب أيضاً في الجدول لكن بالعكس)
-    if (allItems[ci].nature === 'مصروف') {
-      classSummary[cls] += allItems[ci].balance; // علينا
-    } else {
-      classSummary[cls] -= allItems[ci].balance; // لنا (سالب = لصالحنا)
-    }
-  }
-
-  // ترتيب حسب القيمة المطلقة
   var classKeys = Object.keys(classSummary).sort(function(a, b) {
-    return Math.abs(classSummary[b]) - Math.abs(classSummary[a]);
+    var netA = classSummary[a].owed - classSummary[a].oweUs;
+    var netB = classSummary[b].owed - classSummary[b].oweUs;
+    return Math.abs(netB) - Math.abs(netA);
   });
 
   reportSheet.getRange(currentRow, 1, 1, numCols).merge();
@@ -3356,16 +3364,21 @@ function generatePartyReceivablesReport(silent) {
 
   reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue('التصنيف')
     .setFontWeight('bold').setBackground('#e0e0e0').setHorizontalAlignment('center');
-  reportSheet.getRange(currentRow, 3, 1, 4).merge().setValue('صافي الرصيد')
-    .setFontWeight('bold').setBackground('#e0e0e0').setHorizontalAlignment('center');
+  reportSheet.getRange(currentRow, 3, 1, 2).merge().setValue('علينا')
+    .setFontWeight('bold').setBackground('#ffcdd2').setHorizontalAlignment('center');
+  reportSheet.getRange(currentRow, 5, 1, 2).merge().setValue('لنا')
+    .setFontWeight('bold').setBackground('#c8e6c9').setHorizontalAlignment('center');
   currentRow++;
 
   for (var ck = 0; ck < classKeys.length; ck++) {
-    var clsVal = classSummary[classKeys[ck]];
+    var cs = classSummary[classKeys[ck]];
     reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue(classKeys[ck]);
-    reportSheet.getRange(currentRow, 3, 1, 4).merge().setValue(clsVal)
+    reportSheet.getRange(currentRow, 3, 1, 2).merge().setValue(cs.owed)
       .setNumberFormat('$#,##0.00').setFontWeight('bold')
-      .setFontColor(clsVal > 0.01 ? '#b71c1c' : (clsVal < -0.01 ? '#2e7d32' : '#333333'));
+      .setFontColor(cs.owed > 0 ? '#b71c1c' : '#333333');
+    reportSheet.getRange(currentRow, 5, 1, 2).merge().setValue(cs.oweUs)
+      .setNumberFormat('$#,##0.00').setFontWeight('bold')
+      .setFontColor(cs.oweUs > 0 ? '#2e7d32' : '#333333');
     if (ck % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground('#fafafa');
     currentRow++;
   }
@@ -3397,8 +3410,8 @@ function generatePartyReceivablesReport(silent) {
     }
 
     // رأس الجدول
-    const headers = ['#', 'الطرف', 'التصنيف', 'إجمالي المدين', 'إجمالي الدائن', 'الرصيد'];
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([headers]);
+    var tableHeaders = ['#', 'الطرف', 'التصنيف', 'المستحق', 'المسدد', 'الباقي'];
+    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([tableHeaders]);
     reportSheet.getRange(currentRow, 1, 1, numCols)
       .setFontWeight('bold')
       .setBackground('#e0e0e0')
@@ -3406,8 +3419,8 @@ function generatePartyReceivablesReport(silent) {
     currentRow++;
 
     // البيانات
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
       reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
         i + 1,
         item.party,
@@ -3526,9 +3539,9 @@ function generatePartyReceivablesReport(silent) {
   reportSheet.setColumnWidth(1, 40);   // #
   reportSheet.setColumnWidth(2, 180);  // الطرف
   reportSheet.setColumnWidth(3, 140);  // التصنيف
-  reportSheet.setColumnWidth(4, 120);  // إجمالي المدين
-  reportSheet.setColumnWidth(5, 120);  // إجمالي الدائن
-  reportSheet.setColumnWidth(6, 120);  // الرصيد
+  reportSheet.setColumnWidth(4, 120);  // المستحق
+  reportSheet.setColumnWidth(5, 120);  // المسدد
+  reportSheet.setColumnWidth(6, 120);  // الباقي
 
   // تجميد الصفوف العلوية
   reportSheet.setFrozenRows(3);
