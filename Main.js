@@ -17109,24 +17109,29 @@ function generateFilmCostReport(silent) {
   var transHeaders = transData[0];
 
   var colC = transHeaders.indexOf('طبيعة الحركة') !== -1 ? transHeaders.indexOf('طبيعة الحركة') : 2;
+  var colD = transHeaders.indexOf('تصنيف الحركة') !== -1 ? transHeaders.indexOf('تصنيف الحركة') : 3;
   var colE = transHeaders.indexOf('كود المشروع') !== -1 ? transHeaders.indexOf('كود المشروع') : 4;
   var colG = transHeaders.indexOf('البند') !== -1 ? transHeaders.indexOf('البند') : 6;
   var colH = transHeaders.indexOf('التفاصيل') !== -1 ? transHeaders.indexOf('التفاصيل') : 7;
   var colI = transHeaders.indexOf('اسم المورد/الجهة') !== -1 ? transHeaders.indexOf('اسم المورد/الجهة') : 8;
   var colM = transHeaders.indexOf('القيمة بالدولار') !== -1 ? transHeaders.indexOf('القيمة بالدولار') : 12;
 
-  // هيكل البيانات: projects[projectCode].items[itemName].vendors[vendorName] = { accrued, paid, settled }
+  // هيكل البيانات:
+  // projects[projectCode].items[itemName].vendors[vendorName] = { accrued, paid, settled }
+  // classificationTotals[classification] = { accrued, paid, settled }
   var projects = {};
+  var classificationTotals = {};
 
   for (var i = 1; i < transData.length; i++) {
     var natureType = String(transData[i][colC] || '').trim();
+    var classification = String(transData[i][colD] || '').trim();
     var projectCode = String(transData[i][colE] || '').trim().toUpperCase();
     var rawItem = String(transData[i][colG] || '').trim();
     var item = ITEM_GROUP_MAP[rawItem] || rawItem;  // دمج البنود المتشابهة
     var vendor = String(transData[i][colI] || '').trim() || 'بدون مورد';
     var amountUsd = Number(transData[i][colM]) || 0;
 
-    if (!projectCode || !item || amountUsd <= 0) continue;
+    if (!item || amountUsd <= 0) continue;
 
     // فقط مصروفات (استحقاق + دفعة + تسوية)
     var isAccrual = natureType.indexOf('استحقاق مصروف') !== -1 && natureType.indexOf('تسوية') === -1;
@@ -17134,6 +17139,18 @@ function generateFilmCostReport(silent) {
     var isSettlement = natureType.indexOf('تسوية استحقاق مصروف') !== -1;
 
     if (!isAccrual && !isPayment && !isSettlement) continue;
+
+    // ── تجميع حسب التصنيف ──
+    var classKey = classification || 'بدون تصنيف';
+    if (!classificationTotals[classKey]) {
+      classificationTotals[classKey] = { accrued: 0, paid: 0, settled: 0 };
+    }
+    if (isAccrual) classificationTotals[classKey].accrued += amountUsd;
+    else if (isPayment) classificationTotals[classKey].paid += amountUsd;
+    else if (isSettlement) classificationTotals[classKey].settled += amountUsd;
+
+    // ── تجميع حسب المشروع (فقط للحركات المرتبطة بمشروع) ──
+    if (!projectCode) continue;
 
     // إنشاء هيكل البيانات
     if (!projects[projectCode]) {
@@ -17297,6 +17314,81 @@ function generateFilmCostReport(silent) {
   }
 
   currentRow += 2;
+
+  // ═══════════════════════════════════════════════════════════
+  // تصنيف المصروفات (مستحق / مسدد / معلق)
+  // ═══════════════════════════════════════════════════════════
+  reportSheet.getRange(currentRow, 1, 1, numCols).merge()
+    .setValue('تصنيف المصروفات')
+    .setBackground(CLR.SECTION_BG)
+    .setFontColor(CLR.SECTION_FG)
+    .setFontWeight('bold')
+    .setFontSize(12)
+    .setHorizontalAlignment('center');
+  currentRow++;
+
+  var classHeaders = ['التصنيف', '', '', 'المستحق', 'المسدد', 'الديون المعلقة', 'نسبة السداد'];
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([classHeaders])
+    .setBackground(CLR.HEADER_BG)
+    .setFontColor(CLR.HEADER_FG)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center');
+  currentRow++;
+
+  // ترتيب التصنيفات بشكل منطقي
+  var classOrder = ['مصروفات عمومية', 'مصروفات مباشرة', 'ديون قديمة', 'تسويق', 'مصروفات أخرى'];
+  var classKeys = Object.keys(classificationTotals).sort(function(a, b) {
+    var ia = classOrder.indexOf(a);
+    var ib = classOrder.indexOf(b);
+    if (ia === -1) ia = 99;
+    if (ib === -1) ib = 99;
+    return ia - ib;
+  });
+
+  var classRowIdx = 0;
+  for (var ci = 0; ci < classKeys.length; ci++) {
+    var cKey = classKeys[ci];
+    var cData = classificationTotals[cKey];
+    var cOutstanding = cData.accrued - cData.paid - cData.settled;
+    var cPercent = cData.accrued > 0 ? Math.round(((cData.paid + cData.settled) / cData.accrued) * 100) + '%' : '-';
+
+    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+      cKey, '', '', cData.accrued, cData.paid + cData.settled, cOutstanding, cPercent
+    ]]);
+    reportSheet.getRange(currentRow, 4, 1, 3).setNumberFormat('$#,##0.00');
+
+    if (cOutstanding > 0) {
+      reportSheet.getRange(currentRow, 6).setFontColor(CLR.RED_TEXT).setFontWeight('bold');
+    } else {
+      reportSheet.getRange(currentRow, 6).setFontColor(CLR.GREEN_TEXT);
+    }
+
+    if (classRowIdx % 2 === 1) {
+      reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+    }
+    classRowIdx++;
+    currentRow++;
+  }
+
+  // صف إجمالي التصنيفات
+  var classGrandAccrued = 0, classGrandPaid = 0, classGrandSettled = 0;
+  for (var ck in classificationTotals) {
+    classGrandAccrued += classificationTotals[ck].accrued;
+    classGrandPaid += classificationTotals[ck].paid;
+    classGrandSettled += classificationTotals[ck].settled;
+  }
+  var classGrandOutstanding = classGrandAccrued - classGrandPaid - classGrandSettled;
+  var classGrandPercent = classGrandAccrued > 0 ? Math.round(((classGrandPaid + classGrandSettled) / classGrandAccrued) * 100) + '%' : '-';
+
+  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
+    'الإجمالي', '', '', classGrandAccrued, classGrandPaid + classGrandSettled, classGrandOutstanding, classGrandPercent
+  ]])
+    .setBackground(CLR.TOTAL_BG)
+    .setFontColor(CLR.TOTAL_FG)
+    .setFontWeight('bold');
+  reportSheet.getRange(currentRow, 4, 1, 3).setNumberFormat('$#,##0.00');
+
+  currentRow += 3;
 
   // ═══════════════════════════════════════════════════════════
   // جدول ملخص كل الأفلام
