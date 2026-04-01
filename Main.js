@@ -17608,6 +17608,34 @@ function generateOverheadExpensesReport(silent) {
   var grandAccruedTotal = grandAccrued - grandSettled;
   var grandOutstanding = grandAccruedTotal - grandPaid;
 
+  // حساب الديون الفعلية والزيادات بشكل منفصل (لكل طرف+بند عبر كل الشهور)
+  var partyItemTotals = {}; // key = party+'||'+item
+  for (var mk = 0; mk < monthKeys.length; mk++) {
+    var mm = months[monthKeys[mk]];
+    var mmItems = Object.keys(mm.items);
+    for (var mmi = 0; mmi < mmItems.length; mmi++) {
+      var mmItm = mm.items[mmItems[mmi]];
+      var mmParties = Object.keys(mmItm.parties);
+      for (var mmp = 0; mmp < mmParties.length; mmp++) {
+        var pp = mmItm.parties[mmParties[mmp]];
+        var piKey = mmParties[mmp] + '||' + mmItems[mmi];
+        if (!partyItemTotals[piKey]) partyItemTotals[piKey] = { accrued: 0, paid: 0, settled: 0 };
+        partyItemTotals[piKey].accrued += pp.accrued;
+        partyItemTotals[piKey].paid += pp.paid;
+        partyItemTotals[piKey].settled += pp.settled;
+      }
+    }
+  }
+  var totalOwed = 0; // ديون فعلية (اللي لسه عليهم)
+  var totalOverpaid = 0; // زيادات (اللي أخدوا أكتر)
+  var piKeys = Object.keys(partyItemTotals);
+  for (var pik = 0; pik < piKeys.length; pik++) {
+    var pit = partyItemTotals[piKeys[pik]];
+    var pitNet = (pit.accrued - pit.settled) - pit.paid;
+    if (pitNet > 0) totalOwed += pitNet;
+    else if (pitNet < 0) totalOverpaid += Math.abs(pitNet);
+  }
+
   // ═══════════════════════════════════════════════════════════
   // 2️⃣ إنشاء شيت التقرير
   // ═══════════════════════════════════════════════════════════
@@ -17653,10 +17681,21 @@ function generateOverheadExpensesReport(silent) {
   reportSheet.getRange(currentRow, 2).setValue(grandPaid).setNumberFormat('$#,##0.00').setFontWeight('bold');
   reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
   currentRow++;
-  reportSheet.getRange(currentRow, 1).setValue('إجمالي المتبقي').setFontWeight('bold').setFontSize(12);
+  reportSheet.getRange(currentRow, 1).setValue('صافي المتبقي').setFontWeight('bold');
   reportSheet.getRange(currentRow, 2).setValue(grandOutstanding).setNumberFormat('$#,##0.00')
-    .setFontWeight('bold').setFontSize(12)
+    .setFontWeight('bold')
     .setFontColor(grandOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
+  currentRow += 2;
+
+  // التفصيل الحقيقي: ديون فعلية vs زيادات
+  reportSheet.getRange(currentRow, 1).setValue('ديون فعلية (لسه مطلوبة)').setFontWeight('bold').setFontSize(12);
+  reportSheet.getRange(currentRow, 2).setValue(totalOwed).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(12).setFontColor(CLR.RED_TEXT);
+  currentRow++;
+  reportSheet.getRange(currentRow, 1).setValue('زيادات مدفوعة (أخدوا أكتر)').setFontWeight('bold').setFontSize(12);
+  reportSheet.getRange(currentRow, 2).setValue(totalOverpaid).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(12).setFontColor('#e65100');
+  reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════
