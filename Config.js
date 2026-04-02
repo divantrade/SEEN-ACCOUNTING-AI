@@ -34,6 +34,7 @@ const CONFIG = {
         FUNDERS_REPORT: 'تقرير الممولين',
         EXPENSES_REPORT: 'تقرير المصروفات',
         REVENUE_REPORT: 'تقرير الإيرادات',
+        SALES_EXPENSES_REPORT: 'تقرير الإيرادات والمصروفات',
         CASHFLOW: 'التدفقات النقدية',
         DASHBOARD: 'لوحة التحكم',
 
@@ -135,6 +136,7 @@ const CONFIG = {
             SUMMARY: '#1e88e5',
             TOTALS: '#1b5e20',
             DETAILS: '#01579b',
+            SALES_EXPENSES: '#1a5276',
             INCOME_STATEMENT: '#1565c0',
             BALANCE_SHEET: '#00695c',
             CHART_OF_ACCOUNTS: '#5d4037',
