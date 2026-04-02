@@ -3179,6 +3179,7 @@ function generatePartyReceivablesReport(silent) {
   // أعمدة من مصدر الحقيقة (نفس منطق تقرير الديون والأفلام)
   var colC = headers.indexOf('طبيعة الحركة') !== -1 ? headers.indexOf('طبيعة الحركة') : 2;
   var colD = headers.indexOf('تصنيف الحركة') !== -1 ? headers.indexOf('تصنيف الحركة') : 3;
+  var colE = headers.indexOf('كود المشروع') !== -1 ? headers.indexOf('كود المشروع') : 4;
   var colI = headers.indexOf('اسم المورد/الجهة') !== -1 ? headers.indexOf('اسم المورد/الجهة') : 8;
   var colM = headers.indexOf('القيمة بالدولار') !== -1 ? headers.indexOf('القيمة بالدولار') : 12;
 
@@ -3208,6 +3209,7 @@ function generatePartyReceivablesReport(silent) {
   for (var i = 1; i < data.length; i++) {
     var natureType = String(data[i][colC] || '').trim();
     var rawClassification = String(data[i][colD] || '').trim() || 'بدون تصنيف';
+    var projectCode = String(data[i][colE] || '').trim();
     var party = String(data[i][colI] || '').trim();
     var amountUsd = Number(data[i][colM]) || 0;
     var movementKind = String(data[i][colN] || '').trim(); // N - نوع الحركة
@@ -3252,6 +3254,11 @@ function generatePartyReceivablesReport(silent) {
 
     // تطبيع التصنيف (توحيد تصنيف السداد مع تصنيف الاستحقاق)
     var classification = normalizeClassification(rawClassification, natureType);
+
+    // تقسيم "مصروفات مباشرة" حسب وجود كود مشروع (فيلم)
+    if (classification === 'مصروفات مباشرة') {
+      classification = projectCode ? 'مصروفات مباشرة (أفلام)' : 'مصروفات مباشرة (أخرى)';
+    }
 
     // التجميع حسب الطرف + التصنيف المطبّع
     var key = party + '||' + classification;
