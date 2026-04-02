@@ -3432,7 +3432,14 @@ function generatePartyReceivablesReport(silent) {
     .setBackground(CLR.SECTION_BG).setFontColor(CLR.SECTION_FG);
   currentRow++;
 
-  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([['التصنيف', 'علينا', 'لنا', 'الصافي', '']])
+  // رؤوس: التصنيف (A+B مدمجين)، علينا (C)، لنا (D)، الصافي (E)
+  reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue('التصنيف')
+    .setFontWeight('bold').setBackground(CLR.HEADER_BG).setHorizontalAlignment('center');
+  reportSheet.getRange(currentRow, 3).setValue('علينا')
+    .setFontWeight('bold').setBackground(CLR.HEADER_BG).setHorizontalAlignment('center');
+  reportSheet.getRange(currentRow, 4).setValue('لنا')
+    .setFontWeight('bold').setBackground(CLR.HEADER_BG).setHorizontalAlignment('center');
+  reportSheet.getRange(currentRow, 5).setValue('الصافي')
     .setFontWeight('bold').setBackground(CLR.HEADER_BG).setHorizontalAlignment('center');
   currentRow++;
 
@@ -3448,24 +3455,27 @@ function generatePartyReceivablesReport(silent) {
   for (var ck = 0; ck < allClassKeys.length; ck++) {
     var cs = classSummary[allClassKeys[ck]];
     var csNet = cs.oweUs - cs.owed;
-    reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-      allClassKeys[ck], cs.owed, cs.oweUs, csNet, ''
-    ]]);
-    reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
-    if (cs.owed > 0) reportSheet.getRange(currentRow, 2).setFontColor(CLR.RED).setFontWeight('bold');
-    if (cs.oweUs > 0) reportSheet.getRange(currentRow, 3).setFontColor(CLR.GREEN).setFontWeight('bold');
-    reportSheet.getRange(currentRow, 4).setFontColor(csNet >= 0 ? CLR.GREEN : CLR.RED).setFontWeight('bold');
+    reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue(allClassKeys[ck]);
+    reportSheet.getRange(currentRow, 3).setValue(cs.owed).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow, 4).setValue(cs.oweUs).setNumberFormat('$#,##0.00');
+    reportSheet.getRange(currentRow, 5).setValue(csNet).setNumberFormat('$#,##0.00');
+    if (cs.owed > 0) reportSheet.getRange(currentRow, 3).setFontColor(CLR.RED).setFontWeight('bold');
+    if (cs.oweUs > 0) reportSheet.getRange(currentRow, 4).setFontColor(CLR.GREEN).setFontWeight('bold');
+    reportSheet.getRange(currentRow, 5).setFontColor(csNet >= 0 ? CLR.GREEN : CLR.RED).setFontWeight('bold');
     if (ck % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
     currentRow++;
   }
 
   // صف إجمالي الملخص
   var grandNet = totalReceivables - totalPayables;
-  reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-    'الإجمالي', totalPayables, totalReceivables, grandNet, ''
-  ]])
+  reportSheet.getRange(currentRow, 1, 1, 2).merge().setValue('الإجمالي')
     .setFontWeight('bold').setBackground(CLR.GRAND_TOTAL_BG).setFontColor(CLR.GRAND_TOTAL_FG);
-  reportSheet.getRange(currentRow, 2, 1, 3).setNumberFormat('$#,##0.00');
+  reportSheet.getRange(currentRow, 3).setValue(totalPayables).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setBackground(CLR.GRAND_TOTAL_BG).setFontColor(CLR.GRAND_TOTAL_FG);
+  reportSheet.getRange(currentRow, 4).setValue(totalReceivables).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setBackground(CLR.GRAND_TOTAL_BG).setFontColor(CLR.GRAND_TOTAL_FG);
+  reportSheet.getRange(currentRow, 5).setValue(grandNet).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setBackground(CLR.GRAND_TOTAL_BG).setFontColor(CLR.GRAND_TOTAL_FG);
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════════════════
