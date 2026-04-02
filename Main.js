@@ -3313,6 +3313,13 @@ function generatePartyReceivablesReport(silent) {
     // التصنيف جاهز مسبقاً (مصروفات مباشرة مقسمة حسب كود الفيلم عند التجميع)
     var displayClass = e.classification;
 
+    // ── مصروفات مباشرة (أفلام): دفعات زائدة تُصنف كـ "دفعات مقدمة (أفلام)" ──
+    // لمطابقة تقرير تكاليف الأفلام: الزائد عن الاستحقاق يُخصم من الديون المعلقة
+    // لذلك نفصله كتصنيف مستقل حتى لا يُضخم رقم مصروفات الأفلام
+    if (displayClass === 'مصروفات مباشرة (أفلام)' && balance < 0) {
+      displayClass = 'دفعات مقدمة (أفلام)';
+    }
+
     var item = {
       party: e.party,
       classification: displayClass,
@@ -3351,7 +3358,16 @@ function generatePartyReceivablesReport(silent) {
         payables.push(item);
         totalPayables += balance;
       } else if (balance < 0) {
-        item.overpaymentNote = 'دفعة زائدة عن المستحق';
+        // دفعات مقدمة (أفلام) تظهر كمستحقات لنا (دفعنا أكثر من المستحق)
+        if (displayClass === 'دفعات مقدمة (أفلام)') {
+          classSummary[displayClass].oweUs += Math.abs(balance);
+          // خصم من مصروفات مباشرة (أفلام) لمطابقة تقرير الأفلام
+          if (!classSummary['مصروفات مباشرة (أفلام)']) {
+            classSummary['مصروفات مباشرة (أفلام)'] = { owed: 0, oweUs: 0 };
+          }
+          classSummary['مصروفات مباشرة (أفلام)'].owed -= Math.abs(balance);
+        }
+        item.overpaymentNote = displayClass === 'دفعات مقدمة (أفلام)' ? 'دفعة مقدمة بدون استحقاق' : 'دفعة زائدة عن المستحق';
         overpayments.push(item);
         totalOverpayments += Math.abs(balance);
       }
@@ -3592,11 +3608,13 @@ function generatePartyReceivablesReport(silent) {
 
     for (var oi = 0; oi < overpayments.length; oi++) {
       var op = overpayments[oi];
+      var opLabel = op.party + (op.overpaymentNote ? ' (' + op.overpaymentNote + ')' : '');
       reportSheet.getRange(currentRow, 1, 1, numCols).setValues([[
-        oi + 1, op.party, op.totalDebit, op.totalCredit, op.balance
+        oi + 1, opLabel, op.totalDebit, op.totalCredit, op.balance
       ]]);
       reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
-      reportSheet.getRange(currentRow, 5).setFontColor(CLR.ORANGE).setFontWeight('bold');
+      var opColor = op.classification === 'دفعات مقدمة (أفلام)' ? '#1565c0' : CLR.ORANGE;
+      reportSheet.getRange(currentRow, 5).setFontColor(opColor).setFontWeight('bold');
       if (oi % 2 === 0) reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
       currentRow++;
     }
