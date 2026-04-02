@@ -3636,7 +3636,7 @@ function generatePartyReceivablesReport(silent) {
   // ═══════════════════════════════════════════════════════════════════════
   // تنسيق الأعمدة
   // ═══════════════════════════════════════════════════════════════════════
-  reportSheet.setColumnWidth(1, 40);   // #
+  reportSheet.setColumnWidth(1, 160);  // # / التصنيف
   reportSheet.setColumnWidth(2, 200);  // الطرف
   reportSheet.setColumnWidth(3, 130);  // المستحق
   reportSheet.setColumnWidth(4, 130);  // المسدد
