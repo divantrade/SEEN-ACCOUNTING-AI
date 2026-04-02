@@ -3255,10 +3255,9 @@ function generatePartyReceivablesReport(silent) {
     // تطبيع التصنيف (توحيد تصنيف السداد مع تصنيف الاستحقاق)
     var classification = normalizeClassification(rawClassification, natureType);
 
-    // تقسيم "مصروفات مباشرة" حسب وجود كود مشروع (فيلم)
-    if (classification === 'مصروفات مباشرة') {
-      classification = projectCode ? 'مصروفات مباشرة (أفلام)' : 'مصروفات مباشرة (أخرى)';
-    }
+    // "مصروفات مباشرة": نجمع الكل تحت تصنيف واحد أولاً
+    // ونتتبع مبالغ الاستحقاق حسب وجود كود مشروع للتقسيم لاحقاً
+    var isDirectExpense = (classification === 'مصروفات مباشرة');
 
     // التجميع حسب الطرف + التصنيف المطبّع
     var key = party + '||' + classification;
@@ -3269,11 +3268,20 @@ function generatePartyReceivablesReport(silent) {
         accrued: 0,
         paid: 0,
         settled: 0,
-        isRevenue: isRevenue
+        isRevenue: isRevenue,
+        filmAccrued: 0,    // استحقاقات مرتبطة بأفلام (لها كود مشروع)
+        nonFilmAccrued: 0  // استحقاقات بدون أفلام
       };
     }
 
-    if (isDebit) { entries[key].accrued += amountUsd; }
+    if (isDebit) {
+      entries[key].accrued += amountUsd;
+      // تتبع نسبة الأفلام (فقط للمصروفات المباشرة)
+      if (isDirectExpense) {
+        if (projectCode) { entries[key].filmAccrued += amountUsd; }
+        else { entries[key].nonFilmAccrued += amountUsd; }
+      }
+    }
     else if (isCredit) { entries[key].paid += amountUsd; }
     else if (isSettlementType) { entries[key].settled += amountUsd; }
   }
@@ -3309,9 +3317,57 @@ function generatePartyReceivablesReport(silent) {
     // تجاهل الأرصدة الصغيرة
     if (Math.abs(balance) < 0.01) continue;
 
+    // تقسيم "مصروفات مباشرة" إلى أفلام/أخرى بعد حساب الرصيد
+    // التقسيم بنسبة الاستحقاقات (لأن الدفعات قد لا تحمل كود مشروع)
+    if (e.classification === 'مصروفات مباشرة' && e.filmAccrued > 0 && e.nonFilmAccrued > 0) {
+      // الطرف لديه استحقاقات أفلام وأخرى - نقسم الرصيد بنسبة الاستحقاق
+      var filmRatio = e.filmAccrued / (e.filmAccrued + e.nonFilmAccrued);
+      var filmBalance = balance * filmRatio;
+      var nonFilmBalance = balance * (1 - filmRatio);
+
+      // إنشاء بندين منفصلين
+      var filmItem = {
+        party: e.party, classification: 'مصروفات مباشرة (أفلام)',
+        totalDebit: e.accrued * filmRatio, totalCredit: (e.paid + e.settled) * filmRatio,
+        balance: Math.abs(filmBalance), isRevenue: e.isRevenue
+      };
+      var nonFilmItem = {
+        party: e.party, classification: 'مصروفات مباشرة (أخرى)',
+        totalDebit: e.accrued * (1 - filmRatio), totalCredit: (e.paid + e.settled) * (1 - filmRatio),
+        balance: Math.abs(nonFilmBalance), isRevenue: e.isRevenue
+      };
+
+      var splitItems = [
+        { item: filmItem, bal: filmBalance, cls: 'مصروفات مباشرة (أفلام)' },
+        { item: nonFilmItem, bal: nonFilmBalance, cls: 'مصروفات مباشرة (أخرى)' }
+      ];
+
+      for (var si = 0; si < splitItems.length; si++) {
+        var s = splitItems[si];
+        if (Math.abs(s.bal) < 0.01) continue;
+        if (!classSummary[s.cls]) classSummary[s.cls] = { owed: 0, oweUs: 0 };
+        if (s.bal > 0) {
+          payables.push(s.item);
+          totalPayables += Math.abs(s.bal);
+          classSummary[s.cls].owed += Math.abs(s.bal);
+        } else {
+          s.item.overpaymentNote = 'دفعة زائدة عن المستحق';
+          overpayments.push(s.item);
+          totalOverpayments += Math.abs(s.bal);
+        }
+      }
+      continue; // تم معالجة هذا الطرف، ننتقل للتالي
+    }
+
+    // لو "مصروفات مباشرة" كلها أفلام أو كلها أخرى
+    var displayClass = e.classification;
+    if (e.classification === 'مصروفات مباشرة') {
+      displayClass = e.filmAccrued > 0 ? 'مصروفات مباشرة (أفلام)' : 'مصروفات مباشرة (أخرى)';
+    }
+
     var item = {
       party: e.party,
-      classification: e.classification,
+      classification: displayClass,
       totalDebit: e.accrued,
       totalCredit: e.paid + e.settled,
       balance: Math.abs(balance),
@@ -3319,17 +3375,17 @@ function generatePartyReceivablesReport(silent) {
     };
 
     // تجميع للملخص حسب التصنيف
-    if (!classSummary[e.classification]) {
-      classSummary[e.classification] = { owed: 0, oweUs: 0 };
+    if (!classSummary[displayClass]) {
+      classSummary[displayClass] = { owed: 0, oweUs: 0 };
     }
 
     if (e.isRevenue) {
       if (balance > 0) {
-        classSummary[e.classification].oweUs += balance;
+        classSummary[displayClass].oweUs += balance;
       }
     } else {
       if (balance > 0) {
-        classSummary[e.classification].owed += balance;
+        classSummary[displayClass].owed += balance;
       }
     }
 
