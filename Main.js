@@ -3183,16 +3183,31 @@ function generatePartyReceivablesReport(silent) {
   var colM = headers.indexOf('القيمة بالدولار') !== -1 ? headers.indexOf('القيمة بالدولار') : 12;
 
   // ═══════════════════════════════════════════════════════════════════════
-  // تجميع الحركات حسب طرف + تصنيف
+  // تجميع الحركات حسب طرف + تصنيف (مع تطبيع التصنيف)
   // يستخدم عمود N (نوع الحركة المحسوب) + عمود C كـ fallback
   // ═══════════════════════════════════════════════════════════════════════
-  // key = party + '||' + classification
   var colN = 13; // عمود N - نوع الحركة (محسوب من C)
   var entries = {};
 
+  // دالة تطبيع التصنيف: توحيد تصنيفات السداد مع تصنيفات الاستحقاق
+  // مثال: "سداد تمويل" ← "سلفة قصيرة" | "سداد تمويل طويل الأجل" ← "تمويل طويل الأجل"
+  function normalizeClassification(cls, nature) {
+    cls = cls.trim();
+    if (cls.indexOf('سداد تمويل طويل') !== -1) return 'تمويل طويل الأجل';
+    if (cls.indexOf('سداد سلفة') !== -1) return 'سلفة قصيرة';
+    if (cls === 'سداد تمويل') {
+      // تحديد النوع من طبيعة الحركة (عمود C)
+      if (nature.indexOf('تمويل طويل') !== -1) return 'تمويل طويل الأجل';
+      return 'سلفة قصيرة';
+    }
+    if (cls === 'تمويل (دخول قرض)') return 'سلفة قصيرة';
+    if (cls === 'استرداد تأمين') return 'تأمين';
+    return cls;
+  }
+
   for (var i = 1; i < data.length; i++) {
     var natureType = String(data[i][colC] || '').trim();
-    var classification = String(data[i][colD] || '').trim() || 'بدون تصنيف';
+    var rawClassification = String(data[i][colD] || '').trim() || 'بدون تصنيف';
     var party = String(data[i][colI] || '').trim();
     var amountUsd = Number(data[i][colM]) || 0;
     var movementKind = String(data[i][colN] || '').trim(); // N - نوع الحركة
@@ -3227,7 +3242,6 @@ function generatePartyReceivablesReport(silent) {
                  natureType.indexOf('تأمين مدفوع') !== -1 || natureType.indexOf('سلفة') !== -1) {
         isDebit = true;
       } else {
-        // حركة غير معروفة - نتجاهلها بدل افتراض أنها مدين
         continue;
       }
     }
@@ -3236,25 +3250,20 @@ function generatePartyReceivablesReport(silent) {
     var isRevenue = natureType.indexOf('إيراد') !== -1 || natureType.indexOf('تحصيل') !== -1 ||
                     natureType.indexOf('تأمين مدفوع') !== -1 || natureType.indexOf('استرداد تأمين') !== -1;
 
-    // التجميع حسب الطرف + الاتجاه (إيراد/مصروف)
-    // بدلاً من الطرف + التصنيف - لأن الاستحقاق وسداده قد يكونان بتصنيفات مختلفة
-    // مثال: سلفة تصنيفها "تمويل (دخول قرض)" وسدادها "سداد تمويل"
-    var direction = isRevenue ? 'R' : 'E';
-    var key = party + '||' + direction;
+    // تطبيع التصنيف (توحيد تصنيف السداد مع تصنيف الاستحقاق)
+    var classification = normalizeClassification(rawClassification, natureType);
+
+    // التجميع حسب الطرف + التصنيف المطبّع
+    var key = party + '||' + classification;
     if (!entries[key]) {
       entries[key] = {
         party: party,
-        classifications: {},  // تتبع التصنيفات ومبالغها للعرض
+        classification: classification,
         accrued: 0,
         paid: 0,
         settled: 0,
         isRevenue: isRevenue
       };
-    }
-
-    // تتبع التصنيف ومبلغه (فقط للاستحقاقات - لتحديد التصنيف الرئيسي)
-    if (isDebit) {
-      entries[key].classifications[classification] = (entries[key].classifications[classification] || 0) + amountUsd;
     }
 
     if (isDebit) { entries[key].accrued += amountUsd; }
@@ -3293,38 +3302,27 @@ function generatePartyReceivablesReport(silent) {
     // تجاهل الأرصدة الصغيرة
     if (Math.abs(balance) < 0.01) continue;
 
-    // تحديد التصنيف الرئيسي (الأكبر مبلغاً) من التصنيفات المسجلة
-    var primaryClassification = 'بدون تصنيف';
-    var maxClassAmount = 0;
-    var classNames = Object.keys(e.classifications);
-    for (var ci = 0; ci < classNames.length; ci++) {
-      if (e.classifications[classNames[ci]] > maxClassAmount) {
-        maxClassAmount = e.classifications[classNames[ci]];
-        primaryClassification = classNames[ci];
-      }
-    }
-
     var item = {
       party: e.party,
-      classification: primaryClassification,
+      classification: e.classification,
       totalDebit: e.accrued,
       totalCredit: e.paid + e.settled,
       balance: Math.abs(balance),
       isRevenue: e.isRevenue
     };
 
-    // تجميع للملخص حسب التصنيفات (توزيع الرصيد على التصنيفات بنسب الاستحقاق)
-    for (var ci2 = 0; ci2 < classNames.length; ci2++) {
-      var clsName = classNames[ci2];
-      if (!classSummary[clsName]) {
-        classSummary[clsName] = { owed: 0, oweUs: 0 };
+    // تجميع للملخص حسب التصنيف
+    if (!classSummary[e.classification]) {
+      classSummary[e.classification] = { owed: 0, oweUs: 0 };
+    }
+
+    if (e.isRevenue) {
+      if (balance > 0) {
+        classSummary[e.classification].oweUs += balance;
       }
-      // توزيع الرصيد المتبقي على التصنيفات بنسبة مساهمة كل تصنيف في الاستحقاق
-      var clsRatio = e.accrued > 0 ? e.classifications[clsName] / e.accrued : 0;
-      if (e.isRevenue && balance > 0) {
-        classSummary[clsName].oweUs += balance * clsRatio;
-      } else if (!e.isRevenue && balance > 0) {
-        classSummary[clsName].owed += balance * clsRatio;
+    } else {
+      if (balance > 0) {
+        classSummary[e.classification].owed += balance;
       }
     }
 
