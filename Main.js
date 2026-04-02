@@ -3636,7 +3636,7 @@ function generatePartyReceivablesReport(silent) {
   // ═══════════════════════════════════════════════════════════════════════
   // تنسيق الأعمدة
   // ═══════════════════════════════════════════════════════════════════════
-  reportSheet.setColumnWidth(1, 40);   // #
+  reportSheet.setColumnWidth(1, 160);  // # / التصنيف
   reportSheet.setColumnWidth(2, 200);  // الطرف
   reportSheet.setColumnWidth(3, 130);  // المستحق
   reportSheet.setColumnWidth(4, 130);  // المسدد
@@ -17755,7 +17755,7 @@ function generateOverheadExpensesReport(silent) {
     var dateVal = transData[i][colB];
 
     if (classification !== 'مصروفات عمومية') continue;
-    if (!item || amountUsd <= 0) continue;
+    if (!item || amountUsd === 0) continue;
 
     var isAccrual = natureType.indexOf('استحقاق مصروف') !== -1 && natureType.indexOf('تسوية') === -1;
     var isPayment = natureType.indexOf('دفعة مصروف') !== -1;
@@ -17813,15 +17813,30 @@ function generateOverheadExpensesReport(silent) {
       }
     }
   }
-  var totalOwed = 0; // ديون فعلية (اللي لسه عليهم)
-  var totalOverpaid = 0; // زيادات (اللي أخدوا أكتر)
+  var totalOwed = 0;        // ديون فعلية (استحقاق لم يُسدد بالكامل)
+  var totalDirectPaid = 0;  // مصروفات فعلية مدفوعة مباشرة بدون استحقاق
+  var totalFullyPaid = 0;   // استحقاقات تم سدادها بالكامل
   var piKeys = Object.keys(partyItemTotals);
   for (var pik = 0; pik < piKeys.length; pik++) {
     var pit = partyItemTotals[piKeys[pik]];
-    var pitNet = (pit.accrued - pit.settled) - pit.paid;
-    if (pitNet > 0) totalOwed += pitNet;
-    else if (pitNet < 0) totalOverpaid += Math.abs(pitNet);
+    var pitAccrued = pit.accrued - pit.settled;
+    var pitNet = pitAccrued - pit.paid;
+    if (pitAccrued > 0 && pitNet > 0.01) {
+      // استحقاق لم يُسدد بالكامل = دين فعلي
+      totalOwed += pitNet;
+      totalFullyPaid += pit.paid; // الجزء المسدد من الاستحقاق
+    } else if (pitAccrued > 0 && pitNet <= 0.01) {
+      // استحقاق تم سداده بالكامل (أو أكثر)
+      totalFullyPaid += pitAccrued;
+      if (pit.paid > pitAccrued + 0.01) {
+        totalDirectPaid += (pit.paid - pitAccrued); // الزيادة عن الاستحقاق = مصروف فعلي إضافي
+      }
+    } else if (pitAccrued <= 0.01 && pit.paid > 0) {
+      // دفعة مباشرة بدون استحقاق = مصروف فعلي مدفوع
+      totalDirectPaid += pit.paid;
+    }
   }
+  var totalActualSpent = totalFullyPaid + totalDirectPaid; // إجمالي ما صُرف فعلياً
 
   // ═══════════════════════════════════════════════════════════
   // 2️⃣ إنشاء شيت التقرير
@@ -17861,28 +17876,25 @@ function generateOverheadExpensesReport(silent) {
   currentRow += 2;
 
   // الملخص الإجمالي
-  reportSheet.getRange(currentRow, 1).setValue('إجمالي المستحق').setFontWeight('bold');
-  reportSheet.getRange(currentRow, 2).setValue(grandAccruedTotal).setNumberFormat('$#,##0.00').setFontWeight('bold');
+  reportSheet.getRange(currentRow, 1).setValue('مصروفات فعلية مسددة').setFontWeight('bold').setFontSize(12);
+  reportSheet.getRange(currentRow, 2).setValue(totalActualSpent).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(12).setFontColor(CLR.GREEN_TEXT);
   currentRow++;
-  reportSheet.getRange(currentRow, 1).setValue('إجمالي المسدد').setFontWeight('bold');
-  reportSheet.getRange(currentRow, 2).setValue(grandPaid).setNumberFormat('$#,##0.00').setFontWeight('bold');
+  reportSheet.getRange(currentRow, 1).setValue('   منها: دفعات مباشرة بدون استحقاق').setFontSize(10);
+  reportSheet.getRange(currentRow, 2).setValue(totalDirectPaid).setNumberFormat('$#,##0.00').setFontSize(10);
   reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
   currentRow++;
-  reportSheet.getRange(currentRow, 1).setValue('صافي المتبقي').setFontWeight('bold');
-  reportSheet.getRange(currentRow, 2).setValue(grandOutstanding).setNumberFormat('$#,##0.00')
-    .setFontWeight('bold')
-    .setFontColor(grandOutstanding > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
-  currentRow += 2;
-
-  // التفصيل الحقيقي: ديون فعلية vs زيادات
+  reportSheet.getRange(currentRow, 1).setValue('   منها: استحقاقات تم سدادها').setFontSize(10);
+  reportSheet.getRange(currentRow, 2).setValue(totalFullyPaid).setNumberFormat('$#,##0.00').setFontSize(10);
+  currentRow++;
   reportSheet.getRange(currentRow, 1).setValue('ديون فعلية (لسه مطلوبة)').setFontWeight('bold').setFontSize(12);
   reportSheet.getRange(currentRow, 2).setValue(totalOwed).setNumberFormat('$#,##0.00')
-    .setFontWeight('bold').setFontSize(12).setFontColor(CLR.RED_TEXT);
-  currentRow++;
-  reportSheet.getRange(currentRow, 1).setValue('زيادات مدفوعة (أخدوا أكتر)').setFontWeight('bold').setFontSize(12);
-  reportSheet.getRange(currentRow, 2).setValue(totalOverpaid).setNumberFormat('$#,##0.00')
-    .setFontWeight('bold').setFontSize(12).setFontColor('#e65100');
+    .setFontWeight('bold').setFontSize(12).setFontColor(totalOwed > 0 ? CLR.RED_TEXT : CLR.GREEN_TEXT);
   reportSheet.getRange(currentRow, 1, 1, numCols).setBackground(CLR.ZEBRA);
+  currentRow++;
+  reportSheet.getRange(currentRow, 1).setValue('إجمالي المصروفات العمومية').setFontWeight('bold').setFontSize(13);
+  reportSheet.getRange(currentRow, 2).setValue(totalActualSpent + totalOwed).setNumberFormat('$#,##0.00')
+    .setFontWeight('bold').setFontSize(13);
   currentRow += 2;
 
   // ═══════════════════════════════════════════════════════════
@@ -17924,11 +17936,17 @@ function generateOverheadExpensesReport(silent) {
         ]]);
         reportSheet.getRange(currentRow, 3, 1, 3).setNumberFormat('$#,##0.00');
 
-        if (pOutstanding > 0) {
+        if (pOutstanding > 0.01) {
+          // دين فعلي - لم يُسدد بالكامل
           reportSheet.getRange(currentRow, 5).setFontColor(CLR.RED_TEXT);
-        } else if (pOutstanding < -0.01) {
-          reportSheet.getRange(currentRow, 5).setFontColor('#e65100').setFontWeight('bold');
-        } else if (pOutstanding === 0 && pAccrued > 0) {
+        } else if (pAccrued <= 0.01 && p.paid > 0) {
+          // مصروف فعلي مدفوع مباشرة بدون استحقاق - عادي
+          reportSheet.getRange(currentRow, 5).setValue('مسدد').setFontColor(CLR.GREEN_TEXT).setFontSize(9);
+        } else if (Math.abs(pOutstanding) <= 0.01 && pAccrued > 0) {
+          // استحقاق تم سداده بالكامل
+          reportSheet.getRange(currentRow, 5).setFontColor(CLR.GREEN_TEXT);
+        } else if (pOutstanding < -0.01 && pAccrued > 0) {
+          // دفع أكثر من الاستحقاق - الزيادة مصروف فعلي
           reportSheet.getRange(currentRow, 5).setFontColor(CLR.GREEN_TEXT);
         }
 
@@ -17966,9 +17984,11 @@ function generateOverheadExpensesReport(silent) {
     ss.setActiveSheet(reportSheet);
     SpreadsheetApp.getUi().alert(
       '✅ تم إنشاء تقرير المصروفات العمومية',
-      'المستحق: $' + grandAccruedTotal.toFixed(2) + '\n' +
-      'المسدد: $' + grandPaid.toFixed(2) + '\n' +
-      'المتبقي: $' + grandOutstanding.toFixed(2),
+      'مصروفات فعلية مسددة: $' + totalActualSpent.toFixed(2) + '\n' +
+      '   (دفعات مباشرة: $' + totalDirectPaid.toFixed(2) + ')\n' +
+      '   (استحقاقات مسددة: $' + totalFullyPaid.toFixed(2) + ')\n' +
+      'ديون فعلية (لسه مطلوبة): $' + totalOwed.toFixed(2) + '\n' +
+      'إجمالي المصروفات العمومية: $' + (totalActualSpent + totalOwed).toFixed(2),
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
