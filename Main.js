@@ -3210,6 +3210,7 @@ function generatePartyReceivablesReport(silent) {
     var natureType = String(data[i][colC] || '').trim();
     var rawClassification = String(data[i][colD] || '').trim() || 'بدون تصنيف';
     var projectCode = String(data[i][colE] || '').trim();
+    var itemName = String(data[i][headers.indexOf('البند') !== -1 ? headers.indexOf('البند') : 6] || '').trim();
     var party = String(data[i][colI] || '').trim();
     var amountUsd = Number(data[i][colM]) || 0;
     var movementKind = String(data[i][colN] || '').trim(); // N - نوع الحركة
@@ -3277,8 +3278,9 @@ function generatePartyReceivablesReport(silent) {
     if (isDebit) {
       entries[key].accrued += amountUsd;
       // تتبع نسبة الأفلام (فقط للمصروفات المباشرة)
+      // نفس شروط تقرير الأفلام: كود مشروع + بند
       if (isDirectExpense) {
-        if (projectCode) { entries[key].filmAccrued += amountUsd; }
+        if (projectCode && itemName) { entries[key].filmAccrued += amountUsd; }
         else { entries[key].nonFilmAccrued += amountUsd; }
       }
     }
