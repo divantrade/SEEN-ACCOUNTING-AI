@@ -90,6 +90,8 @@ function onOpen() {
         .addItem('💰 تقرير الإيرادات الملخص', 'rebuildRevenueSummaryReport')
         .addItem('💵 تقرير التدفقات النقدية', 'rebuildCashFlowReport')
         .addSeparator()
+        .addItem('📊 تقرير الإيرادات والمصروفات (شامل)', 'generateSalesExpensesReport')
+        .addSeparator()
         .addItem('🔄 تحديث كل التقارير الملخصة', 'rebuildAllSummaryReports')
     )
 
@@ -6829,6 +6831,7 @@ function rebuildAllSummaryReports(silent) {
   results.push(rebuildFunderSummaryReport(true));
   results.push(rebuildExpenseSummaryReport(true));
   results.push(rebuildRevenueSummaryReport(true));
+  results.push(generateSalesExpensesReport(true));
   results.push(rebuildCashFlowReport(true));
 
   if (silent) return results;
@@ -7120,6 +7123,387 @@ function createRevenueReportSheet(ss) {
   sheet.getRange('A1').setNote(
     'يمكنك عمل Pivot Table من دفتر الحركات (طبيعة الحركة = استحقاق إيراد / تحصيل إيراد) لملء هذا التقرير.'
   );
+}
+
+// ==================== تقرير الإيرادات والمصروفات (Sales & Expenses Report) ====================
+/**
+ * إنشاء شيت تقرير الإيرادات الفعلية من المبيعات + المصروفات الفعلية (مستحق / مدفوع / متبقي كديون)
+ * يستثني: القروض، السلف، التمويل، التأمينات، التحويلات الداخلية
+ */
+function createSalesExpensesReportSheet(ss) {
+  var sheet = getOrCreateSheet_(ss, CONFIG.SHEETS.SALES_EXPENSES_REPORT);
+
+  sheet.setColumnWidth(1, 280);
+  sheet.setColumnWidth(2, 160);
+  sheet.setColumnWidth(3, 160);
+  sheet.setColumnWidth(4, 160);
+  sheet.setColumnWidth(5, 140);
+
+  sheet.setFrozenRows(0);
+  return sheet;
+}
+
+/**
+ * تقرير شامل: الإيرادات الفعلية من المبيعات + المصروفات الفعلية
+ * ✅ الإيرادات: استحقاق إيراد / تحصيل إيراد / تسوية إيراد فقط (بدون تمويل أو سلف)
+ * ✅ المصروفات: استحقاق مصروف / دفعة مصروف / تسوية مصروف فقط (بدون تمويل أو تأمين)
+ * يعرض: المستحق - المدفوع/المحصل - المتبقي كديون
+ */
+function generateSalesExpensesReport(silent) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var transSheet = ss.getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+
+  if (!transSheet) {
+    if (silent) return { success: false, name: 'تقرير الإيرادات والمصروفات', error: 'دفتر الحركات غير موجود' };
+    SpreadsheetApp.getUi().alert('⚠️ تأكد من وجود "دفتر الحركات المالية".');
+    return;
+  }
+
+  // إنشاء الشيت
+  var sheet = createSalesExpensesReportSheet(ss);
+  var data = transSheet.getDataRange().getValues();
+
+  // ══════════════════════════════════════════════════
+  // بناء خريطة المشاريع
+  // ══════════════════════════════════════════════════
+  var projectMap = {};
+  var projectsSheet = ss.getSheetByName(CONFIG.SHEETS.PROJECTS);
+  if (projectsSheet) {
+    var pData = projectsSheet.getDataRange().getValues();
+    for (var p = 1; p < pData.length; p++) {
+      var code = pData[p][0];
+      if (code) projectMap[code] = { name: pData[p][1], channel: pData[p][3] || '' };
+    }
+  }
+
+  // ══════════════════════════════════════════════════
+  // 1) تجميع الإيرادات الفعلية (من المبيعات فقط)
+  // ══════════════════════════════════════════════════
+  var revenueMap = {};
+  var totalRevExpected = 0, totalRevReceived = 0;
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var typeStr = String(row[2] || '');
+    var amountUsd = Number(row[12]) || 0;
+    if (!amountUsd) continue;
+
+    // إيرادات فقط (استحقاق إيراد / تحصيل إيراد / تسوية استحقاق إيراد)
+    if (!typeStr.includes('استحقاق إيراد') && !typeStr.includes('تحصيل إيراد') && !typeStr.includes('تسوية استحقاق إيراد')) continue;
+
+    var projectCode = String(row[4] || '').trim();
+    var clientName = String(row[8] || '').trim();
+    var key = projectCode || clientName || 'إيرادات أخرى';
+
+    if (!revenueMap[key]) {
+      var info = projectMap[key] || {};
+      revenueMap[key] = {
+        label: info.name || projectCode || clientName || 'إيرادات أخرى',
+        channel: info.channel || clientName || '',
+        expected: 0, received: 0, lastDate: null
+      };
+    }
+    var rv = revenueMap[key];
+
+    if (typeStr.includes('تسوية استحقاق إيراد')) {
+      rv.expected -= amountUsd;
+    } else if (typeStr.includes('استحقاق إيراد')) {
+      rv.expected += amountUsd;
+    }
+    if (typeStr.includes('تحصيل إيراد')) {
+      rv.received += amountUsd;
+      var date = row[1];
+      if (date) {
+        var d = new Date(date);
+        if (!rv.lastDate || d > rv.lastDate) rv.lastDate = d;
+      }
+    }
+  }
+
+  // حساب إجمالي الإيرادات
+  var revKeys = Object.keys(revenueMap);
+  for (var ri = 0; ri < revKeys.length; ri++) {
+    totalRevExpected += revenueMap[revKeys[ri]].expected;
+    totalRevReceived += revenueMap[revKeys[ri]].received;
+  }
+
+  // ══════════════════════════════════════════════════
+  // 2) تجميع المصروفات الفعلية (بدون تمويل / تأمين / تحويلات)
+  // ══════════════════════════════════════════════════
+  var expenseMap = {};
+  var totalExpAccrual = 0, totalExpPaid = 0;
+
+  for (var j = 1; j < data.length; j++) {
+    var row2 = data[j];
+    var typeStr2 = String(row2[2] || '');
+    var amountUsd2 = Number(row2[12]) || 0;
+    if (!amountUsd2) continue;
+
+    // مصروفات فقط
+    if (!typeStr2.includes('استحقاق مصروف') && !typeStr2.includes('دفعة مصروف') && !typeStr2.includes('تسوية استحقاق مصروف')) continue;
+
+    var item = String(row2[6] || '').trim() || 'بدون بند';
+    var classification = String(row2[3] || '').trim() || '';
+    var vendor = String(row2[8] || '').trim() || '';
+    var expKey = item + '||' + classification;
+
+    if (!expenseMap[expKey]) {
+      expenseMap[expKey] = { item: item, classification: classification, accrual: 0, paid: 0 };
+    }
+    var ex = expenseMap[expKey];
+
+    if (typeStr2.includes('تسوية استحقاق مصروف')) {
+      ex.accrual -= amountUsd2;
+    } else if (typeStr2.includes('استحقاق مصروف')) {
+      ex.accrual += amountUsd2;
+    } else if (typeStr2.includes('دفعة مصروف')) {
+      ex.paid += amountUsd2;
+    }
+  }
+
+  // حساب إجمالي المصروفات
+  var expKeys = Object.keys(expenseMap);
+  for (var ei = 0; ei < expKeys.length; ei++) {
+    totalExpAccrual += expenseMap[expKeys[ei]].accrual;
+    totalExpPaid += expenseMap[expKeys[ei]].paid;
+  }
+
+  // ══════════════════════════════════════════════════
+  // 3) بناء صفوف التقرير
+  // ══════════════════════════════════════════════════
+  var rows = [];
+  var currentRow = 1;
+  var moneyRanges = [];
+  var sectionHeaderRows = [];
+  var subHeaderRows = [];
+  var totalRows = [];
+  var netRow = null;
+  var debtRows = [];
+
+  // ─── عنوان التقرير ───
+  rows.push(['تقرير الإيرادات الفعلية والمصروفات', '', '', '', '']);
+  rows.push([Utilities.formatDate(new Date(), CONFIG.COMPANY.TIMEZONE || Session.getScriptTimeZone(), 'dd/MM/yyyy'), '', '', '', '']);
+  rows.push(['', '', '', '', '']);
+  currentRow = 4;
+
+  // ═══════════════════════════════════════
+  // القسم الأول: الإيرادات الفعلية من المبيعات
+  // ═══════════════════════════════════════
+  rows.push(['📊 أولاً: الإيرادات الفعلية من المبيعات', '', '', '', '']);
+  sectionHeaderRows.push(currentRow);
+  currentRow++;
+
+  rows.push(['المشروع / العميل', 'المستحق', 'المحصّل فعلياً', 'المتبقي (ديون عملاء)', 'الحالة']);
+  subHeaderRows.push(currentRow);
+  currentRow++;
+
+  // ترتيب الإيرادات
+  revKeys.sort(function(a, b) { return String(revenueMap[a].label).localeCompare(String(revenueMap[b].label)); });
+
+  for (var rk = 0; rk < revKeys.length; rk++) {
+    var rev = revenueMap[revKeys[rk]];
+    var revRemaining = rev.expected - rev.received;
+    var status = 'لا يوجد بيانات';
+    if (rev.expected === 0 && rev.received > 0) status = '✅ مقبوض بدون استحقاق';
+    else if (rev.expected > 0 && revRemaining <= 0) status = '✅ مقبوض بالكامل';
+    else if (rev.expected > 0 && revRemaining > 0 && rev.received > 0) status = '⏳ مقبوض جزئياً';
+    else if (rev.expected > 0 && rev.received === 0) status = '❌ لم يُقبض بعد';
+
+    var label = rev.label;
+    if (rev.channel) label += ' (' + rev.channel + ')';
+
+    rows.push([label, rev.expected, rev.received, revRemaining, status]);
+    moneyRanges.push(currentRow);
+    if (revRemaining > 0) debtRows.push(currentRow);
+    currentRow++;
+  }
+
+  // إجمالي الإيرادات
+  var totalRevRemaining = totalRevExpected - totalRevReceived;
+  rows.push(['إجمالي الإيرادات الفعلية', totalRevExpected, totalRevReceived, totalRevRemaining, '']);
+  totalRows.push(currentRow);
+  moneyRanges.push(currentRow);
+  currentRow++;
+
+  rows.push(['', '', '', '', '']);
+  currentRow++;
+
+  // ═══════════════════════════════════════
+  // القسم الثاني: المصروفات الفعلية
+  // ═══════════════════════════════════════
+  rows.push(['📊 ثانياً: المصروفات الفعلية', '', '', '', '']);
+  sectionHeaderRows.push(currentRow);
+  currentRow++;
+
+  rows.push(['البند (التصنيف)', 'المستحق', 'المدفوع فعلياً', 'المتبقي (ديون موردين)', 'نسبة السداد']);
+  subHeaderRows.push(currentRow);
+  currentRow++;
+
+  // ترتيب المصروفات
+  var sortedExpKeys = expKeys.slice().sort(function(a, b) {
+    return String(expenseMap[a].item).localeCompare(String(expenseMap[b].item));
+  });
+
+  for (var ek = 0; ek < sortedExpKeys.length; ek++) {
+    var exp = expenseMap[sortedExpKeys[ek]];
+    var expRemaining = exp.accrual - exp.paid;
+    var paidPercent = exp.accrual > 0 ? (exp.paid / exp.accrual) : 0;
+
+    var expLabel = exp.item;
+    if (exp.classification) expLabel += ' (' + exp.classification + ')';
+
+    rows.push([expLabel, exp.accrual, exp.paid, expRemaining, exp.accrual > 0 ? paidPercent : '']);
+    moneyRanges.push(currentRow);
+    if (expRemaining > 0) debtRows.push(currentRow);
+    currentRow++;
+  }
+
+  // إجمالي المصروفات
+  var totalExpRemaining = totalExpAccrual - totalExpPaid;
+  var totalExpPercent = totalExpAccrual > 0 ? (totalExpPaid / totalExpAccrual) : 0;
+  rows.push(['إجمالي المصروفات الفعلية', totalExpAccrual, totalExpPaid, totalExpRemaining, totalExpAccrual > 0 ? totalExpPercent : '']);
+  totalRows.push(currentRow);
+  moneyRanges.push(currentRow);
+  currentRow++;
+
+  rows.push(['', '', '', '', '']);
+  currentRow++;
+
+  // ═══════════════════════════════════════
+  // القسم الثالث: الملخص العام
+  // ═══════════════════════════════════════
+  rows.push(['📊 ثالثاً: الملخص العام', '', '', '', '']);
+  sectionHeaderRows.push(currentRow);
+  currentRow++;
+
+  rows.push(['البيان', 'المستحق / الإجمالي', 'المحصّل / المدفوع', 'المتبقي كديون', '']);
+  subHeaderRows.push(currentRow);
+  currentRow++;
+
+  rows.push(['إجمالي الإيرادات من المبيعات', totalRevExpected, totalRevReceived, totalRevRemaining, '']);
+  moneyRanges.push(currentRow);
+  currentRow++;
+
+  rows.push(['إجمالي المصروفات التشغيلية', totalExpAccrual, totalExpPaid, totalExpRemaining, '']);
+  moneyRanges.push(currentRow);
+  currentRow++;
+
+  // صافي الربح / الخسارة
+  var netProfit = totalRevExpected - totalExpAccrual;
+  var netCash = totalRevReceived - totalExpPaid;
+  var netDebt = totalRevRemaining - totalExpRemaining;
+  rows.push(['صافي الربح / (الخسارة)', netProfit, netCash, netDebt, '']);
+  netRow = currentRow;
+  moneyRanges.push(currentRow);
+  currentRow++;
+
+  rows.push(['', '', '', '', '']);
+  currentRow++;
+
+  // إجمالي الديون
+  rows.push(['📛 إجمالي الديون المستحقة علينا (موردين)', '', '', totalExpRemaining, '']);
+  moneyRanges.push(currentRow);
+  var debtSummaryRow1 = currentRow;
+  currentRow++;
+
+  rows.push(['📛 إجمالي الديون المستحقة لنا (عملاء)', '', '', totalRevRemaining, '']);
+  moneyRanges.push(currentRow);
+  var debtSummaryRow2 = currentRow;
+  currentRow++;
+
+  // ══════════════════════════════════════════════════
+  // 4) كتابة البيانات وتنسيقها
+  // ══════════════════════════════════════════════════
+  sheet.getRange(1, 1, rows.length, 5).setValues(rows);
+
+  // ─── تنسيق العنوان الرئيسي ───
+  sheet.getRange(1, 1, 1, 5).merge()
+    .setFontSize(CONFIG.FONT.TITLE)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center')
+    .setBackground(CONFIG.COLORS.HEADER.SALES_EXPENSES)
+    .setFontColor(CONFIG.COLORS.TEXT.WHITE);
+
+  sheet.getRange(2, 1, 1, 5).merge()
+    .setHorizontalAlignment('center')
+    .setFontSize(CONFIG.FONT.SMALL)
+    .setFontColor(CONFIG.COLORS.TEXT.DARK);
+
+  // ─── تنسيق عناوين الأقسام ───
+  for (var sh = 0; sh < sectionHeaderRows.length; sh++) {
+    sheet.getRange(sectionHeaderRows[sh], 1, 1, 5).merge()
+      .setBackground('#34495e')
+      .setFontColor(CONFIG.COLORS.TEXT.WHITE)
+      .setFontWeight('bold')
+      .setFontSize(CONFIG.FONT.MEDIUM);
+  }
+
+  // ─── تنسيق عناوين الأعمدة الفرعية ───
+  for (var sbh = 0; sbh < subHeaderRows.length; sbh++) {
+    sheet.getRange(subHeaderRows[sbh], 1, 1, 5)
+      .setBackground(CONFIG.COLORS.BG.GRAY)
+      .setFontWeight('bold')
+      .setFontSize(CONFIG.FONT.NORMAL)
+      .setHorizontalAlignment('center');
+  }
+
+  // ─── تنسيق أعمدة المبالغ ───
+  for (var mr = 0; mr < moneyRanges.length; mr++) {
+    sheet.getRange(moneyRanges[mr], 2, 1, 3).setNumberFormat('$#,##0.00');
+  }
+
+  // ─── تنسيق عمود النسبة (القسم الثاني) ───
+  // نبحث عن صفوف المصروفات ونطبق تنسيق النسبة
+  var expStartRow = subHeaderRows[1] + 1; // بعد هيدر المصروفات
+  var expEndRow = totalRows[1]; // صف إجمالي المصروفات
+  if (expEndRow > expStartRow) {
+    sheet.getRange(expStartRow, 5, expEndRow - expStartRow + 1, 1).setNumberFormat('0.0%');
+  }
+
+  // ─── تنسيق صفوف الإجمالي ───
+  for (var tr = 0; tr < totalRows.length; tr++) {
+    sheet.getRange(totalRows[tr], 1, 1, 5)
+      .setFontWeight('bold')
+      .setBackground(CONFIG.COLORS.BG.LIGHT_GREEN_3)
+      .setFontSize(CONFIG.FONT.NORMAL);
+  }
+
+  // ─── تنسيق صف صافي الربح ───
+  if (netRow) {
+    var netBg = netProfit >= 0 ? CONFIG.COLORS.BG.LIGHT_GREEN_3 : '#ffcdd2';
+    var netColor = netProfit >= 0 ? CONFIG.COLORS.TEXT.SUCCESS_DARK : CONFIG.COLORS.TEXT.DANGER_DARK;
+    sheet.getRange(netRow, 1, 1, 5)
+      .setFontWeight('bold')
+      .setFontSize(CONFIG.FONT.LARGE)
+      .setBackground(netBg)
+      .setFontColor(netColor);
+  }
+
+  // ─── تنسيق صفوف ملخص الديون ───
+  sheet.getRange(debtSummaryRow1, 1, 1, 5)
+    .setFontWeight('bold')
+    .setBackground('#ffcdd2')
+    .setFontColor(CONFIG.COLORS.TEXT.DANGER_DARK);
+  sheet.getRange(debtSummaryRow1, 4, 1, 1).setNumberFormat('$#,##0.00');
+
+  sheet.getRange(debtSummaryRow2, 1, 1, 5)
+    .setFontWeight('bold')
+    .setBackground(CONFIG.COLORS.BG.LIGHT_BLUE)
+    .setFontColor(CONFIG.COLORS.TEXT.PRIMARY);
+  sheet.getRange(debtSummaryRow2, 4, 1, 1).setNumberFormat('$#,##0.00');
+
+  // ─── تلوين الديون المتبقية بالأحمر الفاتح ───
+  for (var dr = 0; dr < debtRows.length; dr++) {
+    sheet.getRange(debtRows[dr], 4, 1, 1)
+      .setFontColor(CONFIG.COLORS.TEXT.DANGER)
+      .setFontWeight('bold');
+  }
+
+  // ─── تفعيل الشيت ───
+  ss.setActiveSheet(sheet);
+
+  if (silent) return { success: true, name: 'تقرير الإيرادات والمصروفات' };
+  SpreadsheetApp.getUi().alert('✅ تم إنشاء "تقرير الإيرادات الفعلية والمصروفات" بنجاح.');
 }
 
 // ==================== قائمة الدخل (Income Statement) ====================
