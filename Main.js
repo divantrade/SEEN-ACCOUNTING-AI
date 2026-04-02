@@ -3210,7 +3210,6 @@ function generatePartyReceivablesReport(silent) {
     var natureType = String(data[i][colC] || '').trim();
     var rawClassification = String(data[i][colD] || '').trim() || 'بدون تصنيف';
     var projectCode = String(data[i][colE] || '').trim();
-    var itemName = String(data[i][headers.indexOf('البند') !== -1 ? headers.indexOf('البند') : 6] || '').trim();
     var party = String(data[i][colI] || '').trim();
     var amountUsd = Number(data[i][colM]) || 0;
     var movementKind = String(data[i][colN] || '').trim(); // N - نوع الحركة
@@ -3256,11 +3255,13 @@ function generatePartyReceivablesReport(silent) {
     // تطبيع التصنيف (توحيد تصنيف السداد مع تصنيف الاستحقاق)
     var classification = normalizeClassification(rawClassification, natureType);
 
-    // "مصروفات مباشرة": نجمع الكل تحت تصنيف واحد أولاً
-    // ونتتبع مبالغ الاستحقاق حسب وجود كود مشروع للتقسيم لاحقاً
-    var isDirectExpense = (classification === 'مصروفات مباشرة');
+    // "مصروفات مباشرة": تقسيم فوري حسب كود الفيلم (نفس معيار تقرير الأفلام)
+    // كود الفيلم = مصروفات مباشرة (أفلام)، بدون كود = مصروفات مباشرة (أخرى)
+    if (classification === 'مصروفات مباشرة') {
+      classification = projectCode ? 'مصروفات مباشرة (أفلام)' : 'مصروفات مباشرة (أخرى)';
+    }
 
-    // التجميع حسب الطرف + التصنيف المطبّع
+    // التجميع حسب الطرف + التصنيف
     var key = party + '||' + classification;
     if (!entries[key]) {
       entries[key] = {
@@ -3269,38 +3270,13 @@ function generatePartyReceivablesReport(silent) {
         accrued: 0,
         paid: 0,
         settled: 0,
-        isRevenue: isRevenue,
-        filmAccrued: 0,    // استحقاقات مرتبطة بأفلام (لها كود مشروع + بند)
-        nonFilmAccrued: 0, // استحقاقات بدون أفلام
-        filmPaid: 0,       // دفعات مرتبطة بأفلام (لها كود مشروع + بند)
-        nonFilmPaid: 0,    // دفعات بدون أفلام
-        filmSettled: 0,    // تسويات مرتبطة بأفلام
-        nonFilmSettled: 0  // تسويات بدون أفلام
+        isRevenue: isRevenue
       };
     }
 
-    if (isDebit) {
-      entries[key].accrued += amountUsd;
-      // تتبع الأفلام (فقط للمصروفات المباشرة) - نفس شروط تقرير الأفلام: كود مشروع + بند
-      if (isDirectExpense) {
-        if (projectCode && itemName) { entries[key].filmAccrued += amountUsd; }
-        else { entries[key].nonFilmAccrued += amountUsd; }
-      }
-    }
-    else if (isCredit) {
-      entries[key].paid += amountUsd;
-      if (isDirectExpense) {
-        if (projectCode && itemName) { entries[key].filmPaid += amountUsd; }
-        else { entries[key].nonFilmPaid += amountUsd; }
-      }
-    }
-    else if (isSettlementType) {
-      entries[key].settled += amountUsd;
-      if (isDirectExpense) {
-        if (projectCode && itemName) { entries[key].filmSettled += amountUsd; }
-        else { entries[key].nonFilmSettled += amountUsd; }
-      }
-    }
+    if (isDebit) { entries[key].accrued += amountUsd; }
+    else if (isCredit) { entries[key].paid += amountUsd; }
+    else if (isSettlementType) { entries[key].settled += amountUsd; }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -3334,68 +3310,7 @@ function generatePartyReceivablesReport(silent) {
     // تجاهل الأرصدة الصغيرة
     if (Math.abs(balance) < 0.01) continue;
 
-    // تقسيم "مصروفات مباشرة" إلى أفلام/أخرى - ربط مباشر (نفس منطق تقرير الأفلام)
-    // بدلاً من التقسيم بنسبة الاستحقاقات، نربط كل حركة مباشرة حسب كود المشروع + البند
-    if (e.classification === 'مصروفات مباشرة' && (e.filmAccrued > 0 || e.nonFilmAccrued > 0)) {
-      // حساب الرصيد لكل قسم بشكل مباشر (نفس معادلة تقرير الأفلام)
-      var filmNetAccrued = e.filmAccrued - e.filmSettled;
-      var filmBalance = filmNetAccrued - e.filmPaid;
-      var nonFilmNetAccrued = e.nonFilmAccrued - e.nonFilmSettled;
-      var nonFilmBalance = nonFilmNetAccrued - e.nonFilmPaid;
-
-      // دفعات/تسويات بدون تصنيف مباشر: توزع بنسبة الاستحقاق كملاذ أخير
-      var totalDirectAccrued = e.filmAccrued + e.nonFilmAccrued;
-      var unattributedPaid = e.paid - e.filmPaid - e.nonFilmPaid;
-      var unattributedSettled = e.settled - e.filmSettled - e.nonFilmSettled;
-      var filmUnattribPaid = 0, filmUnattribSettled = 0, nonFilmUnattribPaid = 0, nonFilmUnattribSettled = 0;
-      if ((Math.abs(unattributedPaid) > 0.01 || Math.abs(unattributedSettled) > 0.01) && totalDirectAccrued > 0) {
-        var ratioForUnattributed = e.filmAccrued / totalDirectAccrued;
-        filmUnattribPaid = unattributedPaid * ratioForUnattributed;
-        filmUnattribSettled = unattributedSettled * ratioForUnattributed;
-        nonFilmUnattribPaid = unattributedPaid * (1 - ratioForUnattributed);
-        nonFilmUnattribSettled = unattributedSettled * (1 - ratioForUnattributed);
-        filmBalance -= filmUnattribPaid + filmUnattribSettled;
-        nonFilmBalance -= nonFilmUnattribPaid + nonFilmUnattribSettled;
-      }
-
-      var splitItems = [];
-      if (e.filmAccrued > 0) {
-        splitItems.push({
-          item: {
-            party: e.party, classification: 'مصروفات مباشرة (أفلام)',
-            totalDebit: e.filmAccrued, totalCredit: e.filmPaid + e.filmSettled + filmUnattribPaid + filmUnattribSettled,
-            balance: Math.abs(filmBalance), isRevenue: e.isRevenue
-          }, bal: filmBalance, cls: 'مصروفات مباشرة (أفلام)'
-        });
-      }
-      if (e.nonFilmAccrued > 0) {
-        splitItems.push({
-          item: {
-            party: e.party, classification: 'مصروفات مباشرة (أخرى)',
-            totalDebit: e.nonFilmAccrued, totalCredit: e.nonFilmPaid + e.nonFilmSettled + nonFilmUnattribPaid + nonFilmUnattribSettled,
-            balance: Math.abs(nonFilmBalance), isRevenue: e.isRevenue
-          }, bal: nonFilmBalance, cls: 'مصروفات مباشرة (أخرى)'
-        });
-      }
-
-      for (var si = 0; si < splitItems.length; si++) {
-        var s = splitItems[si];
-        if (Math.abs(s.bal) < 0.01) continue;
-        if (!classSummary[s.cls]) classSummary[s.cls] = { owed: 0, oweUs: 0 };
-        if (s.bal > 0) {
-          payables.push(s.item);
-          totalPayables += Math.abs(s.bal);
-          classSummary[s.cls].owed += Math.abs(s.bal);
-        } else {
-          s.item.overpaymentNote = 'دفعة زائدة عن المستحق';
-          overpayments.push(s.item);
-          totalOverpayments += Math.abs(s.bal);
-        }
-      }
-      continue;
-    }
-
-    // تصنيفات أخرى (غير مصروفات مباشرة)
+    // التصنيف جاهز مسبقاً (مصروفات مباشرة مقسمة حسب كود الفيلم عند التجميع)
     var displayClass = e.classification;
 
     var item = {
